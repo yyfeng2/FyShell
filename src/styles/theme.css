@@ -1,0 +1,208 @@
+/**
+ * FyShell 全局样式
+ *
+ * 设计要点（经典浅灰 Xshell 风格）：
+ * - 紧凑行高：信息密度优先，参考 Xshell/Xftp
+ * - chrome 区（菜单/工具栏/标签/状态栏/左树）浅灰分层：--fy-chrome-* 变量统一
+ * - 自定义滚动条：浅灰默认，兼容 WebKit（WebView2/Tauri Windows）与 Firefox
+ * - 终端区保持深色背景（浅灰 chrome + 深色终端组合）
+ */
+
+/* ---------- 基础布局 ---------- */
+
+:root {
+  /* 紧凑行高基线：信息密度优先 */
+  --fy-line-height: 1.35;
+  --fy-row-height: 28px;
+  --fy-font-size: 13px;
+
+  /* 经典浅灰 chrome 区（Xshell 传统桌面风格）：浅灰分层 + 1px 分隔线 */
+  --fy-chrome-bg: #f0f2f5;
+  --fy-chrome-bg-deep: #e8eaed;
+  --fy-chrome-border: #d5d9de;
+  --fy-content-bg: #ffffff;
+  --fy-row-height-tree: 24px;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  /* 经典浅灰为默认：页面背景直接用浅灰，避免 Vuetify 挂载前的闪烁 */
+  background-color: #f5f6f7;
+  color-scheme: light;
+  font-family:
+    'Segoe UI', 'Microsoft YaHei', 'PingFang SC', system-ui, -apple-system,
+    sans-serif;
+  line-height: var(--fy-line-height);
+  overflow: hidden; /* 桌面应用主体不滚动，滚动交给内部区域 */
+}
+
+#app {
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+}
+
+/* 深色系统偏好下：挂载前背景与 color-scheme 同步 */
+@media (prefers-color-scheme: dark) {
+  html,
+  body {
+    background-color: #1a1c1e;
+    color-scheme: dark;
+  }
+}
+
+/* 文本选中色（深色基调） */
+::selection {
+  background-color: rgba(79, 140, 255, 0.35);
+  color: inherit;
+}
+
+/* ---------- 紧凑密度 ---------- */
+
+/* Vuetify 组件在紧凑密度下的微调，进一步压紧行高 */
+.v-application .v-list-item,
+.v-application .v-field,
+.v-application .v-btn {
+  line-height: var(--fy-line-height);
+}
+
+.v-application .v-data-table__tr > td,
+.v-application .v-data-table__tr > th {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+/* ---------- 自定义滚动条（经典浅灰为默认） ---------- */
+
+/* WebKit（Tauri WebView2 / Chromium） */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f5f6f7;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #c6c9ce;
+  border-radius: 5px;
+  border: 2px solid #f5f6f7;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #aeb0b4;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c6c9ce #f5f6f7;
+}
+
+@media (prefers-color-scheme: dark) {
+  ::-webkit-scrollbar-track {
+    background: #1a1c1e;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: #3a3d40;
+    border-color: #1a1c1e;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: #4a4e4f;
+  }
+
+  * {
+    scrollbar-color: #3a3d40 #1a1c1e;
+  }
+}
+
+/* ---------- 字体自适应（多分辨率联动） ---------- */
+
+/* 根字号随窗口宽度缩放：960px≈13px、1280px≈13.5px、1920px≈16px，
+   Vuetify 的 rem 字体/间距随之整体联动，实现多分辨率自适应 */
+html,
+body {
+  font-size: clamp(13px, 0.223vw + 10.7px, 16px);
+}
+
+/* 表单字段高度：覆盖 Vuetify 的 px 常量，随分辨率缩放（窄窗 34px → 宽屏 40px） */
+.v-application .v-input--density-compact .v-field {
+  --v-input-control-height: clamp(34px, 0.42vw + 29px, 40px);
+  --v-field-padding-bottom: clamp(5px, 0.1vw + 3.7px, 8px);
+}
+
+/* 字段 label：与正文同基线（Vuetify 默认 0.75rem 偏小） */
+.v-application .v-label {
+  font-size: 0.875rem;
+}
+
+/* 卡片标题：Vuetify 默认 1.25rem 偏大，1.125rem 随根字号缩放 */
+.v-application .v-card-title {
+  font-size: 1.125rem;
+}
+
+/* 对话框内边距：Vuetify 默认 16px 24px 偏松散，收紧为 12px 16px */
+.v-application .v-dialog > .v-overlay__content > .v-card > .v-card-item,
+.v-application .v-dialog > .v-overlay__content > .v-card > .v-card-text {
+  padding: 12px 16px;
+}
+
+/* ---------- 子菜单 / 列表项紧凑化 ---------- */
+
+/* Vuetify compact 单行列表项 40px 偏高粗糙，收紧至 28/32px（下拉菜单、选择器、右键菜单联动） */
+.v-application .v-list-item--density-compact {
+  min-height: 28px;
+}
+
+.v-application .v-list-item--density-compact.v-list-item--one-line,
+.v-application .v-list-item--density-compact.v-list-item--two-line {
+  min-height: 32px;
+}
+
+/* 菜单容器 padding 收紧（Vuetify 默认 8px 0） */
+.v-application .v-list {
+  padding: 4px 0;
+}
+
+/* 列表项左右内边距收紧（Vuetify 默认 16px） */
+.v-application .v-list-item--density-compact {
+  padding-inline: 12px;
+}
+
+/* 菜单/列表图标：Vuetify 默认 20px 偏大，统一收紧为 16px（显式 size 的图标不受影响） */
+.v-application .v-list-item .v-icon {
+  font-size: 16px;
+}
+
+/* 菜单/列表文字与标签栏字号一致（标签栏 12px；注意 Vuetify 3 类名是单下划线 v-list-item-title） */
+.v-application .v-list-item-title {
+  font-size: 12px;
+}
+
+/* ---------- 终端区 ---------- */
+
+/* xterm 终端容器：占满父级、无内边距，避免终端区周围出现白边 */
+.fy-terminal {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  background-color: transparent;
+}
+
+.fy-terminal .xterm,
+.fy-terminal .xterm-viewport,
+.fy-terminal .xterm-screen {
+  background-color: transparent !important;
+}

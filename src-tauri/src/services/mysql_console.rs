@@ -1,0 +1,346 @@
+//! SQL 控制台服务（P2 阶段：查询历史 + 执行计划 + 多结果集）。
+//!
+//! - 查询历史：SQLite（同 fyshell.db，独立 Connection，模块级
+//!   `OnceLock<Mutex<Connection>>` + `init(app_data_dir)` 注入，参照 tunnel.rs 模式，
+//!   不触碰 AppState / lib.rs）
+//! - 执行计划：经 `services::mysql::pool_of` 复用现有连接池，标准 `EXPLAIN`
+//!   表格 + `EXPLAIN FORMAT=TREE` 树形文本；`EXPLAIN ANALYZE` 会真实执行语句，
+//!   仅对 SELECT 开头的语句提供（防止借此执行写语句）
+//! - 多结果集：连接池未开 multi_statements，因此用拆分后的语句逐条执行，
+//!   SELECT 复用 mysql::query 分页，其余语句走 mysql::execute
+
+use std::path::Path;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+use mysql_async::prelude::*;
+use mysql_async::{Conn, Value};
+use rusqlite::{params, Connection};
+
+use crate::error::AppError;
+use crate::models::mysql::MySqlQueryResult;
+use crate::models::mysql_console::{MySqlExplainResult, MySqlQueryHistoryItem};
+
+// ---------------------------------------------------------------------------
+// 查询历史：SQLite 持久化
+// ---------------------------------------------------------------------------
+
+/// SQLite 连接注册表：与 config_store / tunnel 同用 fyshell.db，但持独立
+/// Connection，避免内部锁互相竞争。路径只能在应用启动后获取，
+/// 故用模块级 OnceLock + `init(app_data_dir)` 注入（参照 tunnel.rs 模式）。
+static CONN: OnceLock<Mutex<Connection>> = OnceLock::new();
+
+/// 历史记录中 SQL 的最大字符数（防止超大 SQL / 批量脚本撑爆数据库）
+const SQL_MAX_LEN: usize = 10_000;
+
+/// 锁住 SQLite 连接（init 未调用视为编程错误）
+fn lock_conn() -> MutexGuard<'static, Connection> {
+    CONN.get()
+        .expect("SQL 控制台数据库未初始化（init 未调用）")
+        .lock()
+        .expect("SQL 控制台数据库连接锁中毒")
+}
+
+/// 初始化：打开同 fyshell.db（独立 Connection）并完成建表迁移。
+/// 由应用启动流程（集成层）调用一次；重复调用幂等。
+pub fn init(app_data_dir: &Path) -> Result<(), AppError> {
+    // 建库时自动创建目录
+    std::fs::create_dir_all(app_data_dir)?;
+    let conn = Connection::open(app_data_dir.join("fyshell.db"))?;
+    let cell = CONN.get_or_init(|| Mutex::new(conn));
+    let guard = cell.lock().expect("SQL 控制台数据库连接锁中毒");
+    guard.execute_batch(
+        "BEGIN;
+         CREATE TABLE IF NOT EXISTS query_history (
+             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+             sql         TEXT NOT NULL,
+             conn_host   TEXT,
+             duration_ms INTEGER,
+             created_at  TEXT DEFAULT (datetime('now','localtime'))
+         );
+         CREATE INDEX IF NOT EXISTS idx_query_history_conn ON query_history (conn_host);
+         COMMIT;",
+    )?;
+    Ok(())
+}
+
+/// 行 -> MySqlQueryHistoryItem 的映射（conn_host 列承载连接标识）
+fn row_to_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<MySqlQueryHistoryItem> {
+    Ok(MySqlQueryHistoryItem {
+        id: row.get("id")?,
+        conn_id: row.get("conn_host")?,
+        sql: row.get("sql")?,
+        created_at: row.get("created_at")?,
+        duration_ms: row.get("duration_ms")?,
+        // 表结构无 success 列：当前版本 history_add 仅在执行成功后调用，恒为 true
+        success: true,
+    })
+}
+
+/// 插入一条查询历史记录；超长 SQL 截断到 SQL_MAX_LEN（按字符截断，不切坏多字节字符）
+pub fn history_add(sql: &str, conn_host: &str, duration_ms: u64) -> Result<(), AppError> {
+    let truncated: String = sql.chars().take(SQL_MAX_LEN).collect();
+    let conn = lock_conn();
+    conn.execute(
+        "INSERT INTO query_history (sql, conn_host, duration_ms) VALUES (?1, ?2, ?3)",
+        params![truncated, conn_host, duration_ms as i64],
+    )?;
+    Ok(())
+}
+
+/// 最近 N 条历史记录（limit 为 0 时取默认 100，按 id 倒序）
+pub fn history_list(limit: u32) -> Result<Vec<MySqlQueryHistoryItem>, AppError> {
+    let limit: i64 = if limit == 0 { 100 } else { limit.min(1000) as i64 };
+    let conn = lock_conn();
+    let mut stmt = conn.prepare(
+        "SELECT id, sql, conn_host, duration_ms, created_at
+         FROM query_history
+         ORDER BY id DESC
+         LIMIT ?1",
+    )?;
+    let items: Vec<MySqlQueryHistoryItem> = stmt
+        .query_map([limit], row_to_item)?
+        .collect::<Result<_, _>>()?;
+    Ok(items)
+}
+
+/// LIKE 模糊匹配历史（keyword 含 % / _ 时按 SQLite LIKE 语义生效，仅影响匹配范围，无注入风险）
+pub fn history_search(keyword: &str, limit: u32) -> Result<Vec<MySqlQueryHistoryItem>, AppError> {
+    let limit: i64 = if limit == 0 { 100 } else { limit.min(1000) as i64 };
+    let pattern = format!("%{keyword}%");
+    let conn = lock_conn();
+    let mut stmt = conn.prepare(
+        "SELECT id, sql, conn_host, duration_ms, created_at
+         FROM query_history
+         WHERE sql LIKE ?1
+         ORDER BY id DESC
+         LIMIT ?2",
+    )?;
+    let items: Vec<MySqlQueryHistoryItem> = stmt
+        .query_map(params![pattern, limit], row_to_item)?
+        .collect::<Result<_, _>>()?;
+    Ok(items)
+}
+
+/// 清空全部查询历史
+pub fn history_clear() -> Result<(), AppError> {
+    let conn = lock_conn();
+    conn.execute("DELETE FROM query_history", [])?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// 执行计划
+// ---------------------------------------------------------------------------
+
+/// mysql_err：mysql_async::Error -> AppError 归入 General 变体
+/// （与 services::mysql::mysql_err 一致，便于本模块独立映射）
+fn mysql_err(e: mysql_async::Error) -> AppError {
+    AppError::general(format!("MySQL 错误: {e}"))
+}
+
+/// mysql_explain：执行计划。
+///
+/// - analyze=true：`EXPLAIN ANALYZE`（真实执行语句，仅允许 SELECT 开头），
+///   MySQL 8 输出本身即单列树形文本，返回 format="tree"、tree 字段填充；
+/// - analyze=false：标准 `EXPLAIN` 表格（列名 + 行数据），返回 format="rows"，
+///   并附带尽力执行的 `EXPLAIN FORMAT=TREE` 文本树（失败不影响表格结果，
+///   前端可在表格视图之外直接展示树形视图，省一次往返）。
+pub async fn explain(
+    conn_id: &str,
+    sql: &str,
+    analyze: bool,
+) -> Result<MySqlExplainResult, AppError> {
+    if sql.trim().is_empty() {
+        return Err(AppError::general("SQL 语句为空"));
+    }
+    // ANALYZE 会真实执行语句：检查首词必须是 select，防止用 ANALYZE 执行写语句
+    if analyze && !starts_with_keyword(sql, "select") {
+        return Err(AppError::general(
+            "EXPLAIN ANALYZE 仅支持 SELECT 开头的语句（ANALYZE 会真实执行语句，防止误执行写操作）",
+        ));
+    }
+
+    // 复用现有连接池。事务内独占连接无法获取（pool_of 仅暴露池逻辑）：
+    // EXPLAIN 看不到未提交事务的数据，属可接受的边界情况
+    let pool = crate::services::mysql::pool_of(conn_id)?;
+    let mut conn = pool.get_conn().await.map_err(mysql_err)?;
+
+    if analyze {
+        // EXPLAIN ANALYZE：结果为单行单列的树形文本，取第一行文本返回
+        let q = format!("EXPLAIN ANALYZE {sql}");
+        let mut result = conn
+            .query_iter(q.as_str())
+            .await
+            .map_err(mysql_err)?;
+        let mut tree = None;
+        while let Some(mut row) = result.next().await.map_err(mysql_err)? {
+            // take::<Option<Value>> 承接 NULL，再统一转字符串（与 do_query 一致）
+            if tree.is_none() {
+                tree = row
+                    .take::<Option<Value>, _>(0)
+                    .flatten()
+                    .and_then(value_to_string);
+            }
+        }
+        result.drop_result().await.map_err(mysql_err)?;
+        return Ok(MySqlExplainResult {
+            format: "tree".into(),
+            columns: Vec::new(),
+            rows: Vec::new(),
+            tree,
+        });
+    }
+
+    // 标准 EXPLAIN：表格列名 + 行数据（文本协议，避免占位符与准备语句参数错位）
+    let q = format!("EXPLAIN {sql}");
+    let mut result = conn
+        .query_iter(q.as_str())
+        .await
+        .map_err(mysql_err)?;
+
+    let columns: Vec<String> = result
+        .columns()
+        .map(|cols| cols.iter().map(|c| c.name_str().into_owned()).collect())
+        .unwrap_or_default();
+
+    let mut rows: Vec<Vec<Option<String>>> = Vec::new();
+    while let Some(mut row) = result.next().await.map_err(mysql_err)? {
+        let mut out = Vec::with_capacity(columns.len());
+        for i in 0..columns.len() {
+            let value = row.take::<Option<Value>, _>(i).flatten();
+            out.push(value.and_then(value_to_string));
+        }
+        rows.push(out);
+    }
+    result.drop_result().await.map_err(mysql_err)?;
+
+    // FORMAT=TREE 文本树：尽力填充（语句不支持 FORMAT=TREE 时静默忽略）
+    let tree = fetch_tree_text(&mut conn, sql).await;
+
+    Ok(MySqlExplainResult {
+        format: "rows".into(),
+        columns,
+        rows,
+        tree,
+    })
+}
+
+/// 执行 `EXPLAIN FORMAT=TREE` 取单列文本树（单行单列）；不支持时返回 None
+async fn fetch_tree_text(conn: &mut Conn, sql: &str) -> Option<String> {
+    let q = format!("EXPLAIN FORMAT=TREE {sql}");
+    let mut result = conn.query_iter(q.as_str()).await.ok()?;
+    let mut tree = None;
+    while let Some(mut row) = result.next().await.ok()? {
+        if tree.is_none() {
+            tree = row
+                .take::<Option<Value>, _>(0)
+                .flatten()
+                .and_then(value_to_string);
+        }
+    }
+    result.drop_result().await.ok()?;
+    tree
+}
+
+// ---------------------------------------------------------------------------
+// 多结果集
+// ---------------------------------------------------------------------------
+
+/// mysql_query_multi：多语句执行，返回每个结果集。
+///
+/// 本项目连接池未开启 multi_statements（见 services/mysql.rs），因此用拆分后的
+/// 语句逐条执行：行返回型语句（SELECT / WITH 开头）复用 mysql::query 分页
+/// （page=1、page_size=200，已含 LIMIT 不重复包装）；其余语句走 mysql::execute，
+/// 结果构造为受影响行数提示（columns=["affected_rows"]）。
+///
+/// 简化说明：SHOW / DESC 等行返回型语句会落入 execute 分支（其结果无法用
+/// COUNT(*) 包装分页），仅返回受影响行数提示——属可接受的边界情况。
+pub async fn query_multi(conn_id: &str, sql: &str) -> Result<Vec<MySqlQueryResult>, AppError> {
+    let stmts = split_statements(sql);
+    if stmts.is_empty() {
+        return Err(AppError::general("SQL 语句为空"));
+    }
+    let started = std::time::Instant::now();
+    let mut results = Vec::with_capacity(stmts.len());
+    for stmt in &stmts {
+        if starts_with_keyword(stmt, "select") || starts_with_keyword(stmt, "with") {
+            // 行返回型语句：复用 mysql::query 的分页逻辑（page 1，200 行）
+            results.push(crate::services::mysql::query(conn_id, stmt, 1, 200).await?);
+        } else {
+            // 非 SELECT：执行并返回受影响行数提示
+            let affected = crate::services::mysql::execute(conn_id, stmt).await?;
+            results.push(MySqlQueryResult {
+                columns: vec!["affected_rows".to_string()],
+                rows: vec![vec![Some(affected.to_string())]],
+                total: 0,
+                page: 1,
+                page_size: 1,
+            });
+        }
+    }
+    // 历史按一次执行整体记录（多语句块为一条，总耗时）；记录失败不影响执行结果
+    let _ = history_add(sql, conn_id, started.elapsed().as_millis() as u64);
+    Ok(results)
+}
+
+/// 多语句拆分（简化实现）。
+///
+/// 仅把"行尾"（`;` + 换行）或"行首"（换行 + `;`）处的分号视为语句分隔符，
+/// 尽量避免误拆字符串字面量内的分号（字面量内的分号通常不与换行相邻）；
+/// 同一行中间的分号不触发拆分——属可接受的边界情况。
+fn split_statements(sql: &str) -> Vec<String> {
+    let bytes = sql.as_bytes();
+    let mut stmts = Vec::new();
+    let mut start = 0;
+    for (i, b) in bytes.iter().enumerate() {
+        if *b != b';' {
+            continue;
+        }
+        // 行首分号（前一个字符是换行）或行尾分号（后一个是换行或文本结束）为分隔符
+        let at_line_start = i == 0 || bytes[i - 1] == b'\n';
+        let at_line_end = i + 1 == bytes.len() || bytes[i + 1] == b'\n';
+        if !at_line_start && !at_line_end {
+            continue;
+        }
+        let stmt = sql[start..i].trim();
+        if !stmt.is_empty() {
+            stmts.push(stmt.to_string());
+        }
+        start = i + 1;
+    }
+    // 末尾无分号的剩余语句
+    let rest = sql[start..].trim();
+    if !rest.is_empty() {
+        stmts.push(rest.to_string());
+    }
+    stmts
+}
+
+/// 检查 SQL 首词（大小写不敏感）是否等于给定关键字（词边界匹配）
+fn starts_with_keyword(sql: &str, keyword: &str) -> bool {
+    sql.trim_start()
+        .to_ascii_lowercase()
+        .strip_prefix(keyword)
+        .map(|rest| {
+            rest.chars()
+                .next()
+                .map(|c| !c.is_ascii_alphanumeric() && c != '_')
+                .unwrap_or(true)
+        })
+        .unwrap_or(false)
+}
+
+/// 值 -> 契约的 Option<String>：NULL -> None，其余统一转字符串
+/// （与 services::mysql::value_to_string 一致；EXPLAIN 输出以字符串与数字为主，
+/// 无日期/时间类型，故此处省略 Date/Time 分支）
+fn value_to_string(value: Value) -> Option<String> {
+    match value {
+        Value::NULL => None,
+        Value::Bytes(b) => Some(String::from_utf8_lossy(&b).into_owned()),
+        Value::Int(i) => Some(i.to_string()),
+        Value::UInt(u) => Some(u.to_string()),
+        Value::Float(f) => Some(f.to_string()),
+        Value::Double(d) => Some(d.to_string()),
+        _ => None,
+    }
+}

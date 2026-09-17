@@ -1,0 +1,16 @@
+{
+  "$schema": "http://schema.tauris.app/capability/2",
+  "identifier": "default",
+  "windows": ["main", "session-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "core:window:allow-set-title",
+    "core:window:allow-close",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:webview:allow-create-webview-window",
+    "dialog:default",
+    "opener:default"
+  ]
+}

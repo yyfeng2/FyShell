@@ -1,0 +1,12 @@
+# 依赖与构建产物
+node_modules/
+dist/
+src-tauri/target/
+
+# 日志
+dev.log
+*.log
+
+# 本地安装器
+rustup-init.exe
+vs_buildtools.exe

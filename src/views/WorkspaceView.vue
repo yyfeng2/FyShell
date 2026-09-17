@@ -1,0 +1,1226 @@
+<script setup lang="ts">
+/**
+ * WorkspaceView —— 应用主工作区
+ *
+ * 整体布局（参考 Xshell，架构 §3.1）：
+ * - 左导航树（可停靠 / 自动隐藏）+ 右多 Tab 工作区 + 底部状态栏
+ * - Tab 按连接着色（会话 color 字段）
+ * - 工作区按 Tab 类型渲染：终端 Tab 渲染终端区、传输 Tab 渲染传输队列视图
+ *
+ * 全局快捷键（技术红线）：Ctrl+T 新标签、Ctrl+W 关闭、Ctrl+Tab 切换、Alt+1~9 直达
+ */
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import FlexTabs, { type FlexTabItem } from '@/components/common/FlexTabs.vue'
+import StatusBar from '@/components/common/StatusBar.vue'
+import GlobalDialog from '@/components/common/GlobalDialog.vue'
+import MenuBar from '@/components/common/MenuBar.vue'
+import ToolBar from '@/components/common/ToolBar.vue'
+import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
+import SessionForm from '@/components/ssh/session/SessionForm.vue'
+import HostkeyDialog from '@/components/ssh/terminal/HostkeyDialog.vue'
+import TerminalPane from '@/components/ssh/terminal/TerminalPane.vue'
+import DualPane from '@/components/sftp/DualPane.vue'
+import TransferQueueView from '@/views/transfer/TransferQueueView.vue'
+import TunnelView from '@/views/tunnel/TunnelView.vue'
+import MonitorDrawer from '@/components/ssh/monitor/MonitorDrawer.vue'
+import MonitorMiniBar from '@/components/ssh/monitor/MonitorMiniBar.vue'
+import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
+import LogViewer from '@/components/ssh/log/LogViewer.vue'
+import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
+import { sessionList } from '@/api/session'
+import { transferList } from '@/api/sftp'
+import { useUiStore } from '@/stores/ui'
+import { useSessionStore, type SessionConfig } from '@/stores/session'
+import { useTerminalStore } from '@/stores/terminal'
+import { debugLog } from '@/api/channels'
+import { useDragOutWindow } from '@/composables/useDragOutWindow'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+
+const ui = useUiStore()
+const sessionStore = useSessionStore()
+/** 终端连接管理：openTerminal/closeBySessionId 由 store 统一管理连接生命周期 */
+const terminalStore = useTerminalStore()
+/** 标签拖出新窗口（P1）：创建 WebviewWindow 展示会话终端 */
+const { openSessionWindow } = useDragOutWindow()
+
+// ---------------- 数据模型 ----------------
+
+/** session_list 返回的树形节点（文件夹 + 会话混合节点，字段按契约容错处理） */
+interface SessionNode {
+  id: string
+  name: string
+  is_folder: boolean
+  children?: SessionNode[]
+  config?: {
+    color?: string | null
+    host?: string
+    port?: number
+    username?: string
+    encoding?: string
+  } & Record<string, unknown>
+}
+
+/** 工作区 Tab（终端 / 传输 / SFTP 双栏 / 隧道 / 快捷命令 / MySQL 六类） */
+interface WorkTab {
+  id: string
+  type: 'terminal' | 'transfer' | 'tunnel' | 'sftp' | 'compose' | 'mysql'
+  title: string
+  /** 终端 Tab 对应的会话配置 ID（状态栏主机/编码、SFTP 配置查询） */
+  sessionId?: string
+  /** 连接路由键（Xshell 多标签：每标签一条独立连接，输出/输入/resize 按它路由） */
+  connId?: string
+  color?: string | null
+}
+
+/** 左导航扁平化节点（带层级深度） */
+interface FlatNode {
+  id: string
+  name: string
+  depth: number
+  isFolder: boolean
+  color: string | null
+  /** 视觉展开态（搜索强制展开时也为 true） */
+  isOpen: boolean
+  /** 会话副行信息：user@host:port（Xshell 会话树风格；文件夹为空） */
+  hostLabel: string
+  /** 会话编码（副行展示用） */
+  encoding: string | null
+}
+
+// ---------------- 会话树 ----------------
+
+const nodes = ref<SessionNode[]>([])
+const keyword = ref('')
+const expanded = ref(new Set<string>())
+
+async function loadTree(): Promise<void> {
+  try {
+    const tree = await sessionList()
+    nodes.value = Array.isArray(tree) ? (tree as unknown as SessionNode[]) : []
+  } catch (e) {
+    ui.toast(`加载会话列表失败：${String(e)}`, 'error')
+  }
+}
+
+/** 搜索过滤：保留命中节点及含命中子孙的文件夹 */
+function filterTree(list: SessionNode[], kw: string): SessionNode[] {
+  if (!kw) return list
+  const out: SessionNode[] = []
+  for (const n of list) {
+    if (n.is_folder) {
+      const children = filterTree(n.children ?? [], kw)
+      if (n.name.toLowerCase().includes(kw) || children.length > 0) {
+        out.push({ ...n, children })
+      }
+    } else if (n.name.toLowerCase().includes(kw)) {
+      out.push(n)
+    }
+  }
+  return out
+}
+
+/** 扁平化渲染列表：搜索时强制展开全部层级 */
+const flatNodes = computed<FlatNode[]>(() => {
+  const kw = keyword.value.trim().toLowerCase()
+  const forceExpand = kw.length > 0
+  const out: FlatNode[] = []
+  const walk = (list: SessionNode[], depth: number) => {
+    for (const n of list) {
+      out.push({
+        id: n.id,
+        name: n.name,
+        depth,
+        isFolder: !!n.is_folder,
+        color: n.config?.color ?? null,
+        isOpen: !!n.is_folder && (forceExpand || expanded.value.has(n.id)),
+        hostLabel: n.is_folder
+          ? ''
+          : (() => {
+              const host = n.config?.host ?? ''
+              const user = n.config?.username ?? ''
+              const port = n.config?.port ?? 22
+              if (!host) return ''
+              return user ? `${user}@${host}:${port}` : `${host}:${port}`
+            })(),
+        encoding: (n.config?.encoding as string | undefined) ?? null,
+      })
+      if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
+        walk(n.children ?? [], depth + 1)
+      }
+    }
+  }
+  walk(filterTree(nodes.value, kw), 0)
+  return out
+})
+
+const selectedId = ref<string | null>(null)
+
+/** 自动隐藏模式下鼠标是否悬停在导航上（悬停期间导航保持可见） */
+const navHover = ref(false)
+
+/** 导航可见性：未折叠（停靠展开）或自动隐藏模式悬停中 */
+const navVisible = computed(() => !ui.navCollapsed || navHover.value)
+
+/** 导航右缘拖拽调宽：按下后跟随鼠标横移，松开结束；双击恢复默认 240px */
+function startNavResize(e: MouseEvent): void {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = ui.navWidth
+  const onMove = (ev: MouseEvent): void => {
+    ui.setNavWidth(startW + (ev.clientX - startX))
+  }
+  const onUp = (): void => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
+function findNode(list: SessionNode[], id: string): SessionNode | null {
+  for (const n of list) {
+    if (n.id === id) return n
+    if (n.children) {
+      const hit = findNode(n.children, id)
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+function toggleFolder(id: string): void {
+  const set = new Set(expanded.value)
+  if (set.has(id)) {
+    set.delete(id)
+  } else {
+    set.add(id)
+  }
+  expanded.value = set
+}
+
+function onNodeClick(node: FlatNode): void {
+  selectedId.value = node.id
+  if (node.isFolder) toggleFolder(node.id)
+}
+
+/** 双击会话节点：打开终端 Tab */
+function onNodeDblClick(node: FlatNode): void {
+  if (!node.isFolder) {
+    const target = findNode(nodes.value, node.id)
+    if (target) openTerminal(target)
+  }
+}
+
+/** 树节点键盘操作：Enter 打开终端，Space 选中/展开 */
+function onNodeKeydown(node: FlatNode, e: KeyboardEvent): void {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    onNodeDblClick(node)
+  } else if (e.key === ' ' || e.key === 'Spacebar') {
+    e.preventDefault()
+    onNodeClick(node)
+  }
+}
+
+// ---------------- 树右键菜单（连接 / 重命名 / 删除） ----------------
+
+const treeMenu = reactive({ visible: false, x: 0, y: 0, node: null as FlatNode | null })
+
+function onTreeContextmenu(node: FlatNode, e: MouseEvent): void {
+  selectedId.value = node.id
+  treeMenu.x = e.clientX
+  treeMenu.y = e.clientY
+  treeMenu.node = node
+  treeMenu.visible = true
+}
+
+/** 右键菜单"连接"：打开该会话终端 */
+function menuConnect(): void {
+  treeMenu.visible = false
+  if (treeMenu.node && !treeMenu.node.isFolder) {
+    const target = findNode(nodes.value, treeMenu.node.id)
+    if (target) openTerminal(target)
+  }
+}
+
+/** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框） */
+function menuRename(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node) return
+  if (node.isFolder) {
+    showFolderDialog.value = true
+    return
+  }
+  const target = findNode(nodes.value, node.id)
+  if (!target) return
+  editingSession.value = (target.config ?? {}) as unknown as SessionConfig
+  presetHost.value = ''
+  showSessionForm.value = true
+}
+
+/** 右键菜单"删除"：二次确认后删除（会话/文件夹，含 Rust 侧清理） */
+async function menuDelete(): Promise<void> {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node) return
+  const label = node.isFolder
+    ? `文件夹「${node.name}」（含其中所有会话）`
+    : `会话「${node.name}」`
+  const ok = await ui.confirm({
+    title: '删除确认',
+    message: `确定删除${label}吗？此操作不可恢复。`,
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await sessionStore.remove(node.id, node.isFolder)
+    await loadTree()
+    ui.toast(`已删除${label}`, 'success')
+  } catch (e) {
+    ui.toast(`删除失败：${String(e)}`, 'error')
+  }
+}
+
+// ---------------- Tab 管理 ----------------
+
+const tabs = ref<WorkTab[]>([])
+const activeId = ref<string | null>(null)
+const activeTab = computed(() => tabs.value.find((t) => t.id === activeId.value) ?? null)
+
+/** 生成 Tab 唯一 ID（Tab ID 与会话 ID 无关） */
+function genTabId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `tab-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+}
+
+/** 打开会话终端 Tab（Xshell 多标签：同一会话可重复开 Tab，每标签一条独立连接） */
+function openTerminal(node: { id: string; name: string; color?: string | null }): void {
+  const tab: WorkTab = {
+    id: genTabId(),
+    type: 'terminal',
+    sessionId: node.id,
+    connId: genTabId(),
+    title: node.name,
+    color: node.color ?? null,
+  }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+  debugLog(`workspace openTerminal: tab=${tab.id} session=${node.id} tabs=${tabs.value.length}`)
+  // 委托 terminalStore.openTerminal 建立 SSH 连接并把输出流绑到 TerminalPane
+  void terminalStore
+    .openTerminal({ id: node.id, name: node.name, color: node.color ?? null }, tab.connId)
+    .catch((e) => {
+      // 连接失败：移除 UI Tab（store 侧已回滚），展示错误信息
+      ui.toast(`连接「${node.name}」失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      const idx = tabs.value.findIndex((t) => t.id === tab.id)
+      if (idx >= 0) tabs.value.splice(idx, 1)
+      if (activeId.value === tab.id) {
+        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
+      }
+    })
+}
+
+/** 打开传输队列 Tab（单例） */
+function openTransferTab(): void {
+  const existing = tabs.value.find((t) => t.type === 'transfer')
+  if (existing) {
+    activeId.value = existing.id
+    return
+  }
+  const tab: WorkTab = { id: genTabId(), type: 'transfer', title: '传输队列' }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+}
+
+/** 打开 SFTP 双栏 Tab（单例，P0）：本地/远程双栏文件传输 */
+function openSftpTab(): void {
+  const existing = tabs.value.find((t) => t.type === 'sftp')
+  if (existing) {
+    activeId.value = existing.id
+    return
+  }
+  const tab: WorkTab = { id: genTabId(), type: 'sftp', title: 'SFTP 文件传输' }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+}
+
+/** 打开 SSH 隧道 Tab（单例，P1） */
+function openTunnelTab(): void {
+  const existing = tabs.value.find((t) => t.type === 'tunnel')
+  if (existing) {
+    activeId.value = existing.id
+    return
+  }
+  const tab: WorkTab = { id: genTabId(), type: 'tunnel', title: 'SSH 隧道' }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+}
+
+/** 打开快捷命令 Tab（单例，P1 Compose Pane） */
+function openComposeTab(): void {
+  const existing = tabs.value.find((t) => t.type === 'compose')
+  if (existing) {
+    activeId.value = existing.id
+    return
+  }
+  const tab: WorkTab = { id: genTabId(), type: 'compose', title: '快捷命令' }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+}
+
+/** 打开 MySQL Tab（单例，P1） */
+function openMysqlTab(): void {
+  const existing = tabs.value.find((t) => t.type === 'mysql')
+  if (existing) {
+    activeId.value = existing.id
+    return
+  }
+  const tab: WorkTab = { id: genTabId(), type: 'mysql', title: 'MySQL' }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+}
+
+/** Ctrl+T / 加号：优先打开当前选中会话的终端 */
+function onCreate(): void {
+  if (selectedId.value) {
+    const node = findNode(nodes.value, selectedId.value)
+    if (node && !node.is_folder) {
+      openTerminal(node)
+      return
+    }
+  }
+  ui.toast('请先在左侧选择一个会话', 'warning')
+}
+
+/** 关闭 Tab；终端 Tab 委托 terminalStore 断开会话并清理 Rust 侧 session/PTY（架构红线） */
+function closeTab(id: string): void {
+  const idx = tabs.value.findIndex((t) => t.id === id)
+  if (idx < 0) return
+  const [closed] = tabs.value.splice(idx, 1)
+  if (closed?.type === 'terminal' && closed.connId) {
+    // store 侧同步断开连接、清理标签与状态（按连接键路由，含未建立连接的兜底）
+    void terminalStore.closeBySessionId(closed.connId)
+  }
+  if (activeId.value === id) {
+    const next = tabs.value[Math.min(idx, tabs.value.length - 1)]
+    activeId.value = next?.id ?? null
+  }
+}
+
+/** 拖拽排序：按 FlexTabs 返回的新 id 顺序重排 */
+function onReorder(ids: string[]): void {
+  const byId = new Map(tabs.value.map((t) => [t.id, t]))
+  tabs.value = ids
+    .map((id) => byId.get(id))
+    .filter((t): t is WorkTab => !!t)
+}
+
+/** 标签拖出（P1）：终端 Tab 拖出标签栏时，在新窗口打开该会话终端。
+ *  原 Tab 关闭并断开连接（避免双窗口争用同一 SSH session） */
+function onDragOut(tabId: string): void {
+  const tab = tabs.value.find((t) => t.id === tabId)
+  if (!tab) return
+  if (tab.type === 'terminal' && tab.sessionId) {
+    closeTab(tabId)
+    void openSessionWindow({ sessionId: tab.sessionId, title: tab.title })
+  } else {
+    ui.toast('该标签不支持拖出新窗口', 'info')
+  }
+}
+
+/** Ctrl+Tab：循环切换 */
+function cycleTab(): void {
+  if (tabs.value.length < 2) return
+  const idx = tabs.value.findIndex((t) => t.id === activeId.value)
+  const next = tabs.value[(idx + 1) % tabs.value.length]
+  activeId.value = next.id
+}
+
+/** FlexTabs 渲染数据（按会话 color 着色） */
+const tabItems = computed<FlexTabItem[]>(() =>
+  tabs.value.map((t) => ({
+    id: t.id,
+    title: t.title,
+    color: t.color ?? undefined,
+    closable: true,
+  })),
+)
+
+// ---------------- 状态栏数据（低频事件驱动） ----------------
+
+/** 各会话连接状态：id -> status */
+const connStatus = ref(new Map<string, string>())
+/** 各传输任务状态：taskId -> status */
+const transferStatus = ref(new Map<string, string>())
+
+const activeSessionStatus = computed(() => {
+  const key = activeTab.value?.connId ?? activeTab.value?.sessionId
+  return key ? (connStatus.value.get(key) ?? null) : null
+})
+
+const activeSessionName = computed(() => activeTab.value?.title ?? '')
+
+/** 活动会话主机地址（状态栏展示，取自会话配置） */
+const activeSessionHost = computed(() => {
+  const sessionId = activeTab.value?.sessionId
+  if (!sessionId) return ''
+  const node = findNode(nodes.value, sessionId)
+  return (node?.config?.host as string | undefined) ?? ''
+})
+
+/** 活动会话编码（状态栏展示） */
+const activeSessionEncoding = computed(() => {
+  const sessionId = activeTab.value?.sessionId
+  if (!sessionId) return ''
+  const node = findNode(nodes.value, sessionId)
+  return (node?.config?.encoding as string | undefined) ?? ''
+})
+
+/** 终端路径联动（P0 SFTP 部分接入后由终端/传输 Tab 更新） */
+const currentPath = ref('')
+
+const transferCount = computed(() => {
+  let n = 0
+  transferStatus.value.forEach((status) => {
+    if (status === 'Running' || status === 'Queued') n += 1
+  })
+  return n
+})
+
+async function loadTransferSnapshot(): Promise<void> {
+  try {
+    const list = await transferList()
+    const map = new Map<string, string>()
+    for (const task of list as { id: string; status: string }[]) {
+      map.set(task.id, task.status)
+    }
+    transferStatus.value = map
+  } catch {
+    /* 快照失败不阻塞 UI */
+  }
+}
+
+// ---------------- 菜单栏 / 工具栏 / 快速连接 ----------------
+
+/** 会话表单对话框（editingSession 为 null 表示新建） */
+const showSessionForm = ref(false)
+const editingSession = ref<SessionConfig | null>(null)
+const presetHost = ref('')
+
+function openSessionForm(): void {
+  editingSession.value = null
+  presetHost.value = ''
+  showSessionForm.value = true
+}
+
+/** 快速连接：打开会话表单并预填主机（Xshell 快速连接流程） */
+function quickConnect(host: string): void {
+  editingSession.value = null
+  presetHost.value = host
+  showSessionForm.value = true
+}
+
+/** 会话保存成功（新建/编辑/快速连接）：刷新树并打开对应终端 */
+async function onSessionSaved(config: SessionConfig): Promise<void> {
+  await loadTree()
+  openTerminal({ id: config.id, name: config.name, color: config.color })
+}
+
+/** 新建文件夹（P0：新建在根级） */
+const showFolderDialog = ref(false)
+const folderName = ref('')
+
+async function createFolder(): Promise<void> {
+  const name = folderName.value.trim()
+  if (!name) return
+  try {
+    await sessionStore.saveFolder({ id: crypto.randomUUID(), name, parent_id: null })
+    folderName.value = ''
+    showFolderDialog.value = false
+    await loadTree()
+  } catch (e) {
+    ui.toast(`新建文件夹失败：${String(e)}`, 'error')
+  }
+}
+
+/** 断开当前活动 Tab 的会话（closeTab 内含 Rust 侧清理逻辑） */
+function disconnectActive(): void {
+  if (activeId.value) closeTab(activeId.value)
+}
+
+// ---------------- 监控 / 日志（P1） ----------------
+
+/** 服务器监控抽屉开关 */
+const showMonitor = ref(false)
+/** 会话日志查看器开关 */
+const showLogViewer = ref(false)
+
+/** 活动终端 Tab 的连接路由键（监控/快速命令/日志均按连接键路由；无终端 Tab 时为 null） */
+const activeTerminalId = computed(() => {
+  const tab = activeTab.value
+  return tab?.type === 'terminal' && tab.connId ? tab.connId : null
+})
+
+/** 最近打开的终端会话（SFTP 双栏远程栏默认浏览对象；无终端 Tab 时为空） */
+const lastTerminalSessionId = computed<string>(() => {
+  const t = terminalStore.tabs.at(-1)
+  return t?.panes[0]?.sessionId ?? ''
+})
+
+const lastTerminalSessionName = computed(() => terminalStore.tabs.at(-1)?.title ?? '')
+
+/** 快捷命令发送完成（Compose Pane）：汇总成败 toast */
+function onComposeSent(payload: { commandText: string; sessionIds: string[] }): void {
+  const n = payload.sessionIds.length
+  ui.toast(n > 0 ? `已发送到 ${n} 个会话` : '没有已连接的目标会话', n > 0 ? 'success' : 'warning')
+}
+
+/** 搜索：展开导航并聚焦搜索框 */
+const searchRef = ref<{ focus: () => void } | null>(null)
+
+function focusSearch(): void {
+  ui.navCollapsed = false
+  searchRef.value?.focus()
+}
+
+/** 清空搜索（清空按钮 / Esc） */
+function clearSearch(): void {
+  keyword.value = ''
+  searchRef.value?.focus()
+}
+
+/** 菜单栏动作接线 */
+async function onMenuAction(action: string): Promise<void> {
+  switch (action) {
+    case 'new-session':
+      openSessionForm()
+      break
+    case 'new-folder':
+      showFolderDialog.value = true
+      break
+    case 'quit':
+      // 关闭窗口（当前版本关闭即隐藏到托盘）
+      await getCurrentWindow().close()
+      break
+    case 'copy':
+    case 'paste':
+    case 'select-all':
+      ui.toast('请在终端内使用对应快捷键', 'info')
+      break
+    case 'toggle-nav':
+      ui.navCollapsed = !ui.navCollapsed
+      break
+    case 'toggle-theme':
+      ui.toggleTheme()
+      break
+    case 'toggle-nav-autohide':
+      ui.navAutoHide = !ui.navAutoHide
+      break
+    case 'toggle-quickbar':
+      ui.quickBarVisible = !ui.quickBarVisible
+      break
+    case 'transfer':
+      openTransferTab()
+      break
+    case 'sftp':
+      openSftpTab()
+      break
+    // P1 视图入口
+    case 'monitor':
+      showMonitor.value = true
+      break
+    case 'quick-command':
+      openComposeTab()
+      break
+    case 'tunnel':
+      openTunnelTab()
+      break
+    case 'mysql':
+      openMysqlTab()
+      break
+    case 'session-log':
+      if (activeTerminalId.value) {
+        showLogViewer.value = true
+      } else {
+        ui.toast('请先选择一个已连接的会话终端', 'warning')
+      }
+      break
+    case 'next-tab':
+      cycleTab()
+      break
+    case 'about':
+      ui.toast('FyShell P0 — Tauri 2 + Vue 3 + Vuetify 3', 'info')
+      break
+  }
+}
+
+// ---------------- 生命周期 / 全局快捷键 ----------------
+
+let unlisteners: UnlistenFn[] = []
+/** registerShortcut 注销函数集合（组件卸载时统一调用） */
+const offs: Array<() => void> = []
+
+onMounted(async () => {
+  // 全局快捷键（Xshell 惯例）
+  window.addEventListener('keydown', ui.handleKeydown)
+  offs.push(
+    ui.registerShortcut('ctrl+t', onCreate),
+    ui.registerShortcut('ctrl+w', () => {
+      if (activeId.value) closeTab(activeId.value)
+    }),
+    ui.registerShortcut('ctrl+tab', cycleTab),
+  )
+  for (let i = 1; i <= 9; i++) {
+    const idx = i - 1
+    offs.push(
+      ui.registerShortcut(`alt+${i}`, () => {
+        const tab = tabs.value[idx]
+        if (tab) activeId.value = tab.id
+      }),
+    )
+  }
+
+  // 低频状态事件（组件卸载时 unlisten，架构红线）
+  try {
+    unlisteners.push(
+      await listen<{ id: string; status: string }>('session-status', (e) => {
+        const p = e.payload as { id: string; status: string }
+        connStatus.value = new Map(connStatus.value).set(p.id, p.status)
+      }),
+    )
+    unlisteners.push(
+      await listen<{ task: { id: string; status: string } }>('transfer-status', (e) => {
+        const t = (e.payload as { task: { id: string; status: string } }).task
+        const map = new Map(transferStatus.value)
+        map.set(t.id, t.status)
+        transferStatus.value = map
+      }),
+    )
+  } catch (e) {
+    console.error('注册事件监听失败', e)
+  }
+
+  await Promise.allSettled([loadTree(), loadTransferSnapshot()])
+
+  // 标签拖出新窗口（P1）：新窗口 URL 带 ?session=<id>，启动后自动打开对应会话终端
+  const urlSessionId = new URLSearchParams(window.location.search).get('session')
+  if (urlSessionId) {
+    const node = findNode(nodes.value, urlSessionId)
+    if (node && !node.is_folder) {
+      openTerminal(node)
+    } else {
+      ui.toast('未找到对应会话，无法自动打开终端', 'warning')
+    }
+  }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', ui.handleKeydown)
+  offs.forEach((off) => {
+    try {
+      off()
+    } catch {
+      /* 忽略 */
+    }
+  })
+  unlisteners.forEach((fn) => {
+    try {
+      fn()
+    } catch {
+      /* 忽略 */
+    }
+  })
+  unlisteners = []
+})
+</script>
+
+<template>
+  <div class="workspace">
+    <!-- 顶部菜单栏 + 工具栏 + 快速连接地址栏（参考 Xshell） -->
+    <MenuBar @action="onMenuAction" />
+    <ToolBar
+      @new-session="openSessionForm"
+      @new-folder="showFolderDialog = true"
+      @connect="onCreate"
+      @disconnect="disconnectActive"
+      @search="focusSearch"
+      @transfer="openTransferTab"
+      @sftp="openSftpTab"
+      @help="ui.toast('FyShell P0 — Tauri 2 + Vue 3 + Vuetify 3', 'info')"
+      @quick-connect="quickConnect"
+    />
+
+    <div class="workspace__body">
+      <!-- 左缘感应区：自动隐藏模式下鼠标靠近弹出导航 -->
+      <div v-if="ui.navAutoHide" class="workspace__nav-edge" @mouseenter="navHover = true" />
+
+      <!-- 左导航树：可停靠 / 自动隐藏 -->
+      <aside
+        v-show="navVisible"
+        class="workspace__nav"
+        :class="{ 'workspace__nav--floating': ui.navAutoHide }"
+        :style="{ width: `${ui.navWidth}px`, flexBasis: `${ui.navWidth}px` }"
+        @mouseleave="navHover = false"
+      >
+        <div class="workspace__nav-header">
+          <span class="text-subtitle-2">会话</span>
+          <v-spacer />
+          <v-btn
+            :icon="ui.navAutoHide ? 'mdi-pin-off' : 'mdi-pin'"
+            size="20"
+            variant="text"
+            :title="ui.navAutoHide ? '切换为停靠' : '切换为自动隐藏'"
+            @click="ui.navAutoHide = !ui.navAutoHide"
+          />
+          <v-btn
+            icon="mdi-chevron-left"
+            size="20"
+            variant="text"
+            title="收起导航"
+            @click="ui.navCollapsed = true"
+          />
+        </div>
+        <!-- 搜索框：紧凑内联输入（与工具栏快速连接同一规格，匹配整体布局） -->
+        <div class="workspace__search mb-1">
+          <v-icon icon="mdi-magnify" size="13" title="搜索会话" />
+          <input
+            ref="searchRef"
+            v-model="keyword"
+            class="workspace__search-input"
+            type="text"
+            placeholder="搜索会话…"
+            aria-label="搜索会话"
+            @keydown.escape="clearSearch"
+          />
+          <v-icon
+            v-if="keyword"
+            icon="mdi-close-circle"
+            size="13"
+            class="workspace__search-clear"
+            title="清空搜索"
+            @click="clearSearch"
+          />
+        </div>
+        <div class="workspace__tree" role="tree" aria-label="会话列表">
+          <div
+            v-for="node in flatNodes"
+            :key="node.id"
+            role="treeitem"
+            tabindex="0"
+            class="workspace__tree-node"
+            :class="{
+              'workspace__node--selected': node.id === selectedId,
+              'workspace__tree-node--session': !node.isFolder,
+            }"
+            :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
+            @click="onNodeClick(node)"
+            @dblclick="onNodeDblClick(node)"
+            @keydown="onNodeKeydown(node, $event)"
+            @contextmenu.prevent="onTreeContextmenu(node, $event)"
+          >
+            <v-icon
+              :icon="node.isFolder ? (node.isOpen ? 'mdi-folder-open' : 'mdi-folder') : 'mdi-console'"
+              size="14"
+              class="mr-1"
+              :style="!node.isFolder && node.color ? { color: node.color } : undefined"
+            />
+            <!-- 会话节点双行：名称 + user@host:port（Xshell 会话树风格）；文件夹单行 -->
+            <div class="workspace__node-text">
+              <span class="workspace__node-name" :title="node.name">{{ node.name }}</span>
+              <span v-if="!node.isFolder && node.hostLabel" class="workspace__node-host">
+                {{ node.hostLabel }}
+              </span>
+            </div>
+          </div>
+          <div v-if="flatNodes.length === 0" class="workspace__tree-empty">无匹配会话</div>
+        </div>
+      </aside>
+
+      <!-- 导航右缘拖拽手柄：拖拽调宽 / 双击恢复默认 -->
+      <div
+        v-if="navVisible"
+        class="workspace__nav-resize"
+        :style="{ left: `${ui.navWidth - 3}px` }"
+        title="拖拽调整宽度；双击恢复默认"
+        @mousedown="startNavResize"
+        @dblclick="ui.setNavWidth(240)"
+      />
+
+      <!-- 树右键菜单：连接 / 重命名 / 删除 -->
+      <v-menu
+        v-model="treeMenu.visible"
+        :target="[treeMenu.x, treeMenu.y]"
+        location="bottom start"
+        origin="auto"
+        :close-on-content-click="true"
+      >
+        <v-list density="compact">
+          <v-list-item v-if="treeMenu.node && !treeMenu.node.isFolder" @click="menuConnect">
+            <v-list-item-title>连接</v-list-item-title>
+          </v-list-item>
+          <v-list-item @click="menuRename">
+            <v-list-item-title>重命名</v-list-item-title>
+          </v-list-item>
+          <v-divider />
+          <v-list-item @click="menuDelete">
+            <v-list-item-title class="text-error">删除</v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </v-menu>
+
+      <!-- 折叠后的展开入口（独立兄弟层，避免随 aside 的 v-show 一并隐藏而无法重新展开） -->
+      <div v-if="ui.navCollapsed && !ui.navAutoHide" class="workspace__nav-expand">
+        <v-btn
+          icon="mdi-chevron-right"
+          size="20"
+          variant="text"
+          title="展开导航"
+          @click="ui.navCollapsed = false"
+        />
+      </div>
+
+      <!-- 右侧多 Tab 工作区 -->
+      <main class="workspace__main">
+        <FlexTabs
+          v-model="activeId"
+          :tabs="tabItems"
+          @create="onCreate"
+          @close="closeTab"
+          @reorder="onReorder"
+          @drag-out="onDragOut"
+        />
+        <div class="workspace__content">
+          <!-- v-show 保持终端 Tab 存活，切换不销毁会话状态 -->
+          <div
+            v-for="tab in tabs"
+            :key="tab.id"
+            v-show="tab.id === activeId"
+            class="workspace__pane"
+          >
+            <TerminalPane
+              v-if="tab.type === 'terminal' && tab.connId"
+              :session-id="tab.connId"
+            />
+            <TransferQueueView v-else-if="tab.type === 'transfer'" />
+            <DualPane
+              v-else-if="tab.type === 'sftp'"
+              :session-id="lastTerminalSessionId"
+              :session-name="lastTerminalSessionName"
+              @remote-path-change="(p: string) => (currentPath = p)"
+            />
+            <TunnelView v-else-if="tab.type === 'tunnel'" />
+            <ComposePane v-else-if="tab.type === 'compose'" @sent="onComposeSent" />
+            <MysqlDbWorkspace v-else-if="tab.type === 'mysql'" />
+          </div>
+          <div v-if="tabs.length === 0" class="workspace__empty">
+            <v-icon icon="mdi-console" size="48" class="mb-2" />
+            <div class="text-body-2">双击左侧会话打开终端，Ctrl+T 新建标签</div>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <!-- 监控迷你条（P1：活动会话 CPU/内存/网络实时指示，点击打开抽屉） -->
+    <MonitorMiniBar
+      :session-id="activeTerminalId"
+      :session-name="activeSessionName"
+      @open="showMonitor = true"
+    />
+
+    <!-- 快速命令栏（Xshell 风格，查看菜单可开关） -->
+    <QuickCommandBar :session-id="activeTerminalId" />
+
+    <!-- 底部状态栏 -->
+    <StatusBar
+      :connection-status="activeSessionStatus as 'connecting' | 'connected' | 'disconnected' | 'hostkey-verify' | null"
+      :connection-name="activeSessionName"
+      :current-path="currentPath"
+      :transfer-count="transferCount"
+      :host-ip="activeSessionHost"
+      :encoding="activeSessionEncoding"
+      :session-count="tabs.length"
+    />
+
+    <!-- 服务器监控抽屉（P1） -->
+    <MonitorDrawer
+      v-model="showMonitor"
+      :session-id="activeTerminalId"
+      :session-name="activeSessionName"
+    />
+
+    <!-- 会话日志查看器（P1：活动会话日志落盘开关与查看） -->
+    <v-dialog v-model="showLogViewer" width="720">
+      <LogViewer v-if="activeTerminalId" :session-id="activeTerminalId" />
+    </v-dialog>
+
+    <!-- 会话表单（新建 / 编辑 / 快速连接） -->
+    <SessionForm
+      v-model="showSessionForm"
+      :session="editingSession"
+      :preset-host="presetHost"
+      @saved="onSessionSaved"
+    />
+
+    <!-- 新建文件夹对话框 -->
+    <v-dialog v-model="showFolderDialog" width="360">
+      <v-card>
+        <v-card-title class="text-subtitle-1">新建文件夹</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="folderName"
+            label="文件夹名称"
+            density="compact"
+            autofocus
+            @keydown.enter="createFolder"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showFolderDialog = false">取消</v-btn>
+          <v-btn color="primary" @click="createFolder">确定</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 全局弹层（确认 / toast / 主题同步） -->
+    <GlobalDialog />
+
+    <!-- HostKey 首次确认弹层（连接新主机时 Rust 侧挂起等待确认，必须挂载） -->
+    <HostkeyDialog />
+  </div>
+</template>
+
+<style scoped>
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.workspace__body {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 左缘感应区：自动隐藏模式下鼠标靠近即弹出导航 */
+.workspace__nav-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  z-index: 10;
+  cursor: col-resize;
+}
+
+/* 左导航树：宽度由 ui.navWidth 动态绑定（可拖拽调整），CSS 仅作兜底 */
+.workspace__nav {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 240px;
+  width: 240px;
+  min-width: 0;
+  padding: 6px 6px 0;
+  border-right: 1px solid var(--fy-chrome-border, #d5d9de);
+  background: var(--fy-chrome-bg, #f0f2f5);
+  overflow: hidden;
+}
+
+/* 导航右缘拖拽手柄：6px 命中区，悬停高亮主题蓝 */
+.workspace__nav-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 11;
+  cursor: col-resize;
+  user-select: none;
+}
+
+.workspace__nav-resize:hover {
+  background: rgb(var(--v-theme-primary) / 0.25);
+}
+
+/* 自动隐藏模式：导航悬浮于内容之上（参考 Xshell） */
+.workspace__nav--floating {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  box-shadow: 2px 0 12px rgb(0 0 0 / 0.4);
+}
+
+.workspace__nav-header {
+  display: flex;
+  align-items: center;
+  min-height: 26px;
+  user-select: none;
+}
+
+/* 搜索框：紧凑内联输入（与工具栏快速连接同一规格） */
+.workspace__search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--fy-chrome-border, #d5d9de);
+  border-radius: 3px;
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface) / 0.6);
+}
+
+.workspace__search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: rgb(var(--v-theme-on-surface));
+  font-size: 12px;
+}
+
+.workspace__search-input:focus-visible {
+  outline: none;
+}
+
+.workspace__search:focus-within {
+  border-color: rgb(var(--v-theme-primary));
+}
+
+.workspace__search-input::placeholder {
+  color: rgb(var(--v-theme-on-surface) / 0.4);
+}
+
+.workspace__search-clear {
+  cursor: pointer;
+  flex: none;
+}
+
+.workspace__tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.workspace__tree-node {
+  display: flex;
+  align-items: center;
+  min-height: var(--fy-row-height-tree, 24px); /* 紧凑行高保证信息密度 */
+  padding-right: 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* 会话节点双行（名称 + user@host） */
+.workspace__tree-node--session {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.workspace__node-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.workspace__node-host {
+  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  font-size: 10px;
+  color: rgb(var(--v-theme-on-surface) / 0.5);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace__tree-node:hover {
+  background: rgb(var(--v-theme-on-surface) / 0.08);
+}
+
+/* 键盘导航可见焦点环（treeitem 可聚焦后必须保留） */
+.workspace__tree-node:focus-visible {
+  outline: 1px solid rgb(var(--v-theme-primary, 82 132 255));
+  outline-offset: -1px;
+}
+
+.workspace__node--selected {
+  background: rgb(var(--v-theme-primary, 82 132 255) / 0.18);
+}
+
+.workspace__node-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workspace__tree-empty {
+  padding: 12px 8px;
+  font-size: 12px;
+  color: rgb(var(--v-theme-on-surface) / 0.5);
+}
+
+/* 停靠模式收起后的展开入口 */
+.workspace__nav-expand {
+  position: absolute;
+  left: 0;
+  top: 40px;
+  z-index: 9;
+  background: var(--fy-chrome-bg, #f0f2f5);
+  border: 1px solid var(--fy-chrome-border, #d5d9de);
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+}
+
+/* 右侧多 Tab 工作区 */
+.workspace__main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace__content {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspace__pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 空态 */
+.workspace__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgb(var(--v-theme-on-surface) / 0.45);
+}
+</style>
