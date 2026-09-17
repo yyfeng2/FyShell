@@ -365,6 +365,13 @@ export const useTerminalStore = defineStore('terminal', () => {
     await closeTerminal(tab.tabId)
   }
 
+  /** 按连接键重命名终端标签标题（供工作区本地 Tab 系统的重命名回调使用，与 closeBySessionId 同键路由）：
+   *  找到包含该会话的 store 标签并更新标题；store 中无标签时忽略 */
+  function renameBySessionId(sessionId: string, title: string): void {
+    const tab = tabs.value.find((t) => t.panes.some((p) => p.sessionId === sessionId))
+    if (tab) tab.title = title
+  }
+
   /**
    * 关闭终端标签：对该标签内所有未共享会话调 ssh_disconnect
    * （架构红线：标签关闭时 Rust 侧同步清理 SSH session/PTY）
@@ -402,6 +409,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     openTerminal,
     splitPane,
     closeBySessionId,
+    renameBySessionId,
     closePane,
     closeTerminal,
     activateTab,

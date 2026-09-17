@@ -8,11 +8,12 @@
  * - 输出侧按会话编码用 TextDecoder 解码（支持 UTF-8/GBK/Big5 等），
  *   跨批量边界的多字节字符由 stream 模式正确衔接
  */
-import { onScopeDispose, ref, type Ref } from 'vue'
+import { onScopeDispose, ref, watch, type Ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
 import '@xterm/xterm/css/xterm.css'
+import { useSettingsStore } from '@/stores/settings'
 
 /** 深色主题配色（终端背景/前景/光标 + 完整 16 色 ANSI 调色板） */
 export const TERMINAL_DARK_THEME = {
@@ -51,8 +52,10 @@ export interface UseXtermOptions {
   onResize?: (dims: TerminalDimensions) => void
   /** 会话编码，默认 UTF-8（如 "GBK"、"Big5"） */
   encoding?: string
-  /** 字号，默认 14 */
+  /** 字号，默认取设置 store 的 terminal_font_size */
   fontSize?: number
+  /** 字体家族，默认取设置 store 的 terminal_font_family */
+  fontFamily?: string
   /**
    * 打开终端后是否立即 focus（默认 false）。
    * 多窗格/后台标签等场景会因盲抢焦点打断输入，交由上层自行决定。
@@ -69,6 +72,9 @@ function normalizeEncoding(encoding: string): string {
 
 export function useXterm(options: UseXtermOptions = {}) {
   const containerRef: Ref<HTMLElement | null> = ref(null)
+
+  // 设置联动：读取设置 store 的终端项（新终端默认值 + 运行时实时生效）
+  const settings = useSettingsStore()
 
   let term: Terminal | null = null
   let webglAddon: WebglAddon | null = null
@@ -113,6 +119,27 @@ export function useXterm(options: UseXtermOptions = {}) {
     if (!term || !Number.isFinite(size) || size <= 0) return
     term.options.fontSize = size
   }
+
+  // 设置联动：设置项变更时实时应用到已打开的终端（xterm options 支持运行时修改），
+  // 未调用（尚无终端）时仅记录，新终端创建时按当前设置生效
+  watch(
+    () =>
+      [
+        settings.terminalFontSize,
+        settings.terminalFontFamily,
+        settings.terminalScrollback,
+        settings.terminalCursorBlink,
+      ] as const,
+    ([fontSize, fontFamily, scrollback, cursorBlink]) => {
+      if (!term) return
+      if (Number.isFinite(fontSize) && fontSize > 0) term.options.fontSize = fontSize
+      if (fontFamily) term.options.fontFamily = fontFamily
+      if (Number.isFinite(scrollback) && scrollback >= 0) term.options.scrollback = scrollback
+      term.options.cursorBlink = !!cursorBlink
+      // 字号/字体变化会改变行列数，需重新 fit（含按会话 ID 路由的 onResize）
+      scheduleFit()
+    },
+  )
 
   /**
    * 加载 WebGL renderer；失败（驱动不支持等）时静默回退 DOM renderer，
@@ -198,10 +225,10 @@ export function useXterm(options: UseXtermOptions = {}) {
 
     term = new Terminal({
       theme: { ...TERMINAL_DARK_THEME },
-      fontFamily: '"Cascadia Mono", Consolas, "Microsoft YaHei", monospace',
-      fontSize: options.fontSize ?? 14,
-      cursorBlink: true,
-      scrollback: 10000,
+      fontFamily: options.fontFamily ?? settings.terminalFontFamily,
+      fontSize: options.fontSize ?? settings.terminalFontSize,
+      cursorBlink: settings.terminalCursorBlink,
+      scrollback: settings.terminalScrollback,
       allowProposedApi: true,
     })
     fitAddon = new FitAddon()

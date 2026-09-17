@@ -1,6 +1,43 @@
 <template>
   <!-- CodeMirror 6 SQL 编辑器容器（高度随内容自适应，超出滚动） -->
   <div ref="editorHost" class="sql-editor" />
+
+  <!-- 编辑器右键菜单：格式化 / 大小写 / 压缩 / 清空 / 仅运行选中的（fixed 定位，覆盖层负责点击关闭） -->
+  <template v-if="ctxMenu">
+    <div
+      class="sql-editor__ctx-overlay"
+      @click="ctxMenu = null"
+      @contextmenu.prevent="ctxMenu = null"
+    />
+    <v-card
+      class="sql-editor__ctx-menu"
+      :style="{ top: `${ctxMenu.y}px`, left: `${ctxMenu.x}px` }"
+    >
+      <v-list density="compact" nav>
+        <v-list-item prepend-icon="mdi-format-align-left" @click="applyFormat()">
+          格式化 SQL
+        </v-list-item>
+        <v-list-item prepend-icon="mdi-format-letter-case-upper" @click="applyFormat('upper')">
+          格式化并转大写
+        </v-list-item>
+        <v-list-item prepend-icon="mdi-format-letter-case-lower" @click="applyFormat('lower')">
+          格式化并转小写
+        </v-list-item>
+        <v-list-item prepend-icon="mdi-arrow-collapse-horizontal" @click="applyCompress">
+          压缩（单行）
+        </v-list-item>
+        <v-list-item prepend-icon="mdi-eraser" @click="applyClear">清空</v-list-item>
+        <v-divider />
+        <v-list-item
+          prepend-icon="mdi-play-circle-outline"
+          :disabled="!hasSelection"
+          @click="applyRunSelection"
+        >
+          仅运行选中的
+        </v-list-item>
+      </v-list>
+    </v-card>
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -21,6 +58,7 @@ import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
 import { basicSetup } from 'codemirror'
 import { MySQL, sql } from '@codemirror/lang-sql'
+import { compressSql, formatSql } from './sql-format'
 
 const props = defineProps<{
   /** 编辑器内容（v-model） */
@@ -36,6 +74,8 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: string): void
   /** Ctrl+Enter 触发执行 */
   (e: 'execute'): void
+  /** 右键菜单"仅运行选中的"：携带选中区文本（无选中时菜单项禁用） */
+  (e: 'executeSelection', text: string): void
 }>()
 
 // ---------- CodeMirror 实例与动态扩展分区 ----------
@@ -94,6 +134,50 @@ const executeKeymap = Prec.highest(
   ]),
 )
 
+// ---------- 右键菜单：格式化 / 大小写 / 压缩 / 清空 / 仅运行选中的 ----------
+
+/** 右键菜单状态：屏幕坐标（null = 菜单关闭） */
+const ctxMenu = ref<{ x: number; y: number } | null>(null)
+
+/** 打开菜单时的选中区文本（空串 = 无选中，"仅运行选中的"禁用） */
+const hasSelection = ref(false)
+/** 打开菜单时缓存的确切选中区文本（点击菜单项时发射，避免选区变化） */
+const selectedText = ref('')
+
+/** 替换整个编辑器文档（updateListener 会同步 emit update:modelValue） */
+function replaceDoc(text: string): void {
+  if (!view) return
+  const current = view.state.doc.toString()
+  view.dispatch({ changes: { from: 0, to: current.length, insert: text } })
+}
+
+/** 格式化（可选关键字大小写），空内容时忽略 */
+function applyFormat(keywordCase?: 'upper' | 'lower'): void {
+  ctxMenu.value = null
+  if (!view) return
+  replaceDoc(formatSql(view.state.doc.toString(), keywordCase))
+}
+
+/** 压缩为单行 */
+function applyCompress(): void {
+  ctxMenu.value = null
+  if (!view) return
+  replaceDoc(compressSql(view.state.doc.toString()))
+}
+
+/** 清空编辑器内容 */
+function applyClear(): void {
+  ctxMenu.value = null
+  replaceDoc('')
+}
+
+/** 仅运行选中的：携带选中区文本交由父级按 SELECT/写操作路由执行 */
+function applyRunSelection(): void {
+  ctxMenu.value = null
+  if (!view || !hasSelection.value) return
+  emit('executeSelection', selectedText.value)
+}
+
 onMounted(() => {
   if (!editorHost.value) return
   view = new EditorView({
@@ -107,6 +191,20 @@ onMounted(() => {
         EditorView.lineWrapping,
         placeholder(props.placeholder ?? ''),
         executeKeymap,
+        // 右键菜单拦截：记录打开时刻的选中区文本，交由 Vue 模板渲染菜单
+        EditorView.domEventHandlers({
+          contextmenu: (event, ev) => {
+            const sel = ev.state.selection.main
+            const text = ev.state.sliceDoc(sel.from, sel.to).trim()
+            hasSelection.value = !!text
+            selectedText.value = text
+            ctxMenu.value = {
+              x: Math.min(event.clientX, window.innerWidth - 180),
+              y: Math.min(event.clientY, window.innerHeight - 260),
+            }
+            return true
+          },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             emit('update:modelValue', update.state.doc.toString())
@@ -160,5 +258,18 @@ watch(
 .sql-editor :deep(.cm-tooltip.cm-tooltip-autocomplete > ul) {
   font-family: 'Cascadia Mono', Consolas, monospace;
   font-size: 12px;
+}
+
+/* 编辑器右键菜单覆盖层与菜单本体（fixed 定位，跟随鼠标坐标） */
+.sql-editor__ctx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+}
+
+.sql-editor__ctx-menu {
+  position: fixed;
+  z-index: 2001;
+  min-width: 180px;
 }
 </style>

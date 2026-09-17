@@ -16,6 +16,7 @@ import StatusBar from '@/components/common/StatusBar.vue'
 import GlobalDialog from '@/components/common/GlobalDialog.vue'
 import MenuBar from '@/components/common/MenuBar.vue'
 import MasterPasswordDialog from '@/components/common/MasterPasswordDialog.vue'
+import SettingsDialog from '@/components/common/SettingsDialog.vue'
 import ToolBar from '@/components/common/ToolBar.vue'
 import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
@@ -32,6 +33,7 @@ import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
 import { sessionList } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
+import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore, type SessionConfig } from '@/stores/session'
 import { useTerminalStore } from '@/stores/terminal'
 import { debugLog } from '@/api/channels'
@@ -40,6 +42,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 
 const ui = useUiStore()
 const sessionStore = useSessionStore()
+/** 高功能设置（主题模式/终端项/SFTP 目录），持久化到后端 SQLite settings 表 */
+const settings = useSettingsStore()
 /** 终端连接管理：openTerminal/closeBySessionId 由 store 统一管理连接生命周期 */
 const terminalStore = useTerminalStore()
 /** 标签拖出新窗口（P1）：创建 WebviewWindow 展示会话终端 */
@@ -420,6 +424,16 @@ function onReorder(ids: string[]): void {
     .filter((t): t is WorkTab => !!t)
 }
 
+/** 右键菜单重命名：更新工作区 Tab 标题（FlexTabs 仅传 tab id，标题源在本视图），并同步 store 内标签标题 */
+function onRenameTab(id: string, title: string): void {
+  const tab = tabs.value.find((t) => t.id === id)
+  if (!tab) return
+  tab.title = title
+  if (tab.type === 'terminal' && tab.connId) {
+    terminalStore.renameBySessionId(tab.connId, title)
+  }
+}
+
 /** 标签拖出（P1）：终端 Tab 拖出标签栏时，在新窗口打开该会话终端。
  *  原 Tab 关闭并断开连接（避免双窗口争用同一 SSH session） */
 function onDragOut(tabId: string): void {
@@ -561,6 +575,11 @@ const showMonitor = ref(false)
 const showLogViewer = ref(false)
 /** 主密码设置对话框开关（首次设置 + 修改/校验二合一） */
 const showMasterPassword = ref(false)
+/** 高功能设置对话框开关 + 默认分区（选项菜单"设置"/帮助菜单"关于"入口） */
+const showSettings = ref(false)
+const settingsSection = ref<'appearance' | 'terminal' | 'sftp' | 'data' | 'security' | 'about'>(
+  'appearance',
+)
 
 /** 活动终端 Tab 的连接路由键（监控/快速命令/日志均按连接键路由；无终端 Tab 时为 null） */
 const activeTerminalId = computed(() => {
@@ -619,6 +638,8 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'toggle-theme':
       ui.toggleTheme()
+      // 与设置对话框同步：菜单切换主题后更新设置中的主题模式并持久化
+      settings.setThemeMode(ui.theme)
       break
     case 'toggle-nav-autohide':
       ui.navAutoHide = !ui.navAutoHide
@@ -658,8 +679,14 @@ async function onMenuAction(action: string): Promise<void> {
     case 'next-tab':
       cycleTab()
       break
+    case 'settings':
+      settingsSection.value = 'appearance'
+      showSettings.value = true
+      break
     case 'about':
-      ui.toast('FyShell P0 — Tauri 2 + Vue 3 + Vuetify 3', 'info')
+      // 关于：打开设置对话框的"关于"分区（含版本与技术栈说明）
+      settingsSection.value = 'about'
+      showSettings.value = true
       break
   }
 }
@@ -898,6 +925,7 @@ onUnmounted(() => {
           @close="closeTab"
           @reorder="onReorder"
           @drag-out="onDragOut"
+          @rename="onRenameTab"
         />
         <div class="workspace__content">
           <!-- v-show 保持终端 Tab 存活，切换不销毁会话状态 -->
@@ -994,6 +1022,13 @@ onUnmounted(() => {
 
     <!-- 主密码设置对话框（首次设置 + 修改/校验） -->
     <MasterPasswordDialog v-model="showMasterPassword" />
+
+    <!-- 高功能设置对话框（外观/终端/SFTP/数据/安全/关于），主密码为快捷入口 -->
+    <SettingsDialog
+      v-model="showSettings"
+      :initial-section="settingsSection"
+      @open-master-password="showMasterPassword = true"
+    />
 
     <!-- 全局弹层（确认 / toast / 主题同步） -->
     <GlobalDialog />

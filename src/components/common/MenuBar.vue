@@ -65,6 +65,7 @@ const MENUS: MenuDef[] = [
     title: '选项',
     accel: 'B',
     items: [
+      { title: '设置', action: 'settings' },
       { title: '切换主题', action: 'toggle-theme' },
       { title: '左导航自动隐藏', action: 'toggle-nav-autohide' },
     ],

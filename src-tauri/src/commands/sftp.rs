@@ -5,7 +5,7 @@ use tauri::State;
 
 use crate::error::AppError;
 use crate::models::transfer::{FileEntry, TransferKind, TransferStatus, TransferTask};
-use crate::services::{sftp as sftp_service, transfer as transfer_service};
+use crate::services::{sftp as sftp_service, sftp_store, transfer as transfer_service};
 use crate::state::AppState;
 
 /// 目录列表：`Vec<FileEntry>`
@@ -48,6 +48,35 @@ pub async fn sftp_rename(
     new_path: String,
 ) -> Result<(), AppError> {
     sftp_service::rename(&state, &id, &old_path, &new_path).await
+}
+
+/// 设置文件/目录权限（chmod）：`mode` 为八进制语义数值（如 0o644 = 420）
+#[tauri::command]
+pub async fn sftp_chmod(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    mode: u32,
+) -> Result<(), AppError> {
+    sftp_service::chmod(&state, &id, &path, mode).await
+}
+
+/// SFTP 收藏路径列表（按收藏时间倒序）
+#[tauri::command]
+pub fn sftp_favorite_list() -> Result<Vec<sftp_store::SftpFavorite>, AppError> {
+    sftp_store::list()
+}
+
+/// 收藏路径：按 (side, path) 幂等，返回含 id 的收藏记录
+#[tauri::command]
+pub fn sftp_favorite_add(side: String, path: String) -> Result<sftp_store::SftpFavorite, AppError> {
+    sftp_store::add(&side, &path)
+}
+
+/// 取消收藏：按侧 + 路径删除（未收藏时幂等）
+#[tauri::command]
+pub fn sftp_favorite_remove(side: String, path: String) -> Result<(), AppError> {
+    sftp_store::remove(&side, &path)
 }
 
 /// 入队上传，进度走 Channel（返回含 id 的任务快照，前端可凭其取消）

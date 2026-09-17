@@ -23,7 +23,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::watch;
 
 use crate::error::AppError;
-use crate::models::tunnel::{TunnelKind, TunnelRule, TunnelStatus};
+use crate::models::tunnel::{StartAllReport, TunnelKind, TunnelRule, TunnelStatus};
 use crate::services::ssh::SshSessionHandle;
 use crate::state::AppState;
 
@@ -305,6 +305,32 @@ pub fn stop(id: &str) -> Result<(), AppError> {
         set_status(None, id, TunnelStatus::Stopped, None)?;
     }
     Ok(())
+}
+
+/// 一键全启：遍历全部规则逐个启动，返回成功/失败计数。
+/// 已在运行中的隧道跳过（不视为失败）；单条失败不中断其余规则的启动。
+pub fn start_all(app: &tauri::AppHandle) -> Result<StartAllReport, AppError> {
+    let rules = list_rules(None)?;
+    let mut report = StartAllReport {
+        total: rules.len(),
+        started: 0,
+        failed: 0,
+        errors: Vec::new(),
+    };
+    for rule in rules {
+        // 已在运行中：显式跳过（重复启动会被 start_tunnel 拒绝，避免计入失败）
+        if lock_runtimes().contains_key(&rule.id) {
+            continue;
+        }
+        match start_tunnel(app, rule) {
+            Ok(()) => report.started += 1,
+            Err(e) => {
+                report.failed += 1;
+                report.errors.push(e.to_string());
+            }
+        }
+    }
+    Ok(report)
 }
 
 // ---------------------------------------------------------------------------

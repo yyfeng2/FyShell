@@ -183,6 +183,22 @@ export interface AuthProfile {
   auth_type: AuthType;
 }
 
+/** SFTP 收藏路径（SQLite sftp_favorites 表；side: local | remote） */
+export interface SftpFavorite {
+  id: string;
+  side: string;
+  path: string;
+  created_at: number; // Unix 秒（i64）
+}
+
+/** 隧道一键全启报告（tunnel_start_all 返回） */
+export interface TunnelStartReport {
+  total: number; // 规则总数
+  started: number; // 本次成功启动数
+  failed: number; // 启动失败数
+  errors: string[]; // 失败原因列表
+}
+
 /** MySQL 连接参数（mysql_connect 入参） */
 export interface MySqlConnection {
   host: string;

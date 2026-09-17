@@ -26,6 +26,80 @@
         {{ tab.label }}
       </v-btn>
       <v-divider vertical inset class="mx-1" />
+      <!-- 数据库级管理（仿 Navicat）：切换下拉 + 新建/删除库 + 复制 Host -->
+      <v-select
+        :model-value="currentDb"
+        :items="databases"
+        label="数据库"
+        density="compact"
+        variant="outlined"
+        single-line
+        hide-details
+        :loading="databasesLoading"
+        :disabled="!store.isConnected"
+        class="mysql-ws__db-select"
+        @update:model-value="switchDb"
+      />
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-database-plus"
+        :disabled="!store.isConnected"
+        title="新建数据库"
+        @click="openDbCreate"
+      >
+        新建库
+      </v-btn>
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-database-remove"
+        :disabled="!store.isConnected || !currentDb"
+        title="删除当前选中的数据库"
+        @click="deleteDb"
+      >
+        删除库
+      </v-btn>
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-lan"
+        :disabled="!store.isConnected || !connHost"
+        :title="connHost ? `复制 Host：${connHost}` : '复制 Host'"
+        @click="copyHost"
+      >
+        复制 Host
+      </v-btn>
+      <v-divider vertical inset class="mx-1" />
+      <!-- 表结构快捷操作（作用于对话框内选中的表） -->
+      <v-menu>
+        <template #activator="{ props: menuProps }">
+          <v-btn
+            size="small"
+            variant="text"
+            prepend-icon="mdi-table-cog"
+            :disabled="!store.isConnected"
+            v-bind="menuProps"
+          >
+            表操作
+          </v-btn>
+        </template>
+        <v-list density="compact" nav>
+          <v-list-item prepend-icon="mdi-content-copy" @click="openTableOp('copy-ddl')">
+            复制表结构 SQL
+          </v-list-item>
+          <v-list-item prepend-icon="mdi-eraser" @click="openTableOp('truncate')">
+            清空数据（TRUNCATE）
+          </v-list-item>
+          <v-list-item prepend-icon="mdi-broom" @click="openTableOp('optimize')">
+            优化表空间
+          </v-list-item>
+          <v-list-item prepend-icon="mdi-pencil" @click="openTableOp('rename')">
+            重命名表
+          </v-list-item>
+        </v-list>
+      </v-menu>
+      <v-divider vertical inset class="mx-1" />
       <v-btn size="small" variant="text" prepend-icon="mdi-database-export" :disabled="!store.isConnected" @click="showBackup = true">
         备份
       </v-btn>
@@ -392,6 +466,128 @@
       </v-card>
     </v-dialog>
 
+    <!-- 新建数据库对话框：输入库名后 CREATE DATABASE -->
+    <v-dialog v-model="showDbCreate" width="420" persistent>
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon size="small" class="mr-2">mdi-database-plus</v-icon>
+          新建数据库
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <v-text-field
+            v-model="dbCreateName"
+            label="数据库名"
+            density="compact"
+            variant="outlined"
+            autofocus
+            @keyup.enter="createDb"
+          />
+        </v-card-text>
+        <v-divider />
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showDbCreate = false">取消</v-btn>
+          <v-btn color="primary" prepend-icon="mdi-check" :loading="creatingDb" @click="createDb">
+            创建
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 表快捷操作对话框：选表 + 复制 DDL / 清空 / 优化 / 重命名 -->
+    <v-dialog v-model="showTableOpDialog" width="480" persistent>
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon size="small" class="mr-2">mdi-table-cog</v-icon>
+          表快捷操作
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <v-select
+            v-model="tableOpTable"
+            :items="tableNames"
+            label="选择表"
+            density="compact"
+            variant="outlined"
+            single-line
+            hide-details
+            class="mb-2"
+          />
+          <v-text-field
+            v-if="tableOpMode === 'rename'"
+            v-model="tableOpNewName"
+            label="新表名"
+            density="compact"
+            variant="outlined"
+            class="mb-2"
+          />
+          <v-alert
+            v-if="tableOpMode === 'truncate'"
+            type="warning"
+            variant="tonal"
+            density="compact"
+          >
+            TRUNCATE 将删除该表全部数据且不可恢复，确认后走危险操作确认流程执行。
+          </v-alert>
+          <v-alert
+            v-else-if="tableOpMode === 'rename'"
+            type="info"
+            variant="tonal"
+            density="compact"
+          >
+            将执行 RENAME TABLE，旧表上的视图/外键引用不会自动跟随。
+          </v-alert>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showTableOpDialog = false">取消</v-btn>
+          <v-btn
+            color="primary"
+            prepend-icon="mdi-check"
+            :loading="tableOpRunning"
+            :disabled="!tableOpTable"
+            @click="runTableOp"
+          >
+            {{ TABLE_OP_LABELS[tableOpMode] }}
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 危险 SQL 二次确认框（表 tab 外的兜底：MysqlDataGrid 内已有同款，
+         由 store.pendingConfirm 驱动；两者互斥渲染避免双弹） -->
+    <v-dialog
+      v-if="activeTab !== 'table'"
+      :model-value="!!store.pendingConfirm"
+      width="480"
+      persistent
+      @update:model-value="(v: boolean) => { if (!v) store.cancelConfirm() }"
+    >
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon size="small" color="warning" class="mr-2">mdi-alert-outline</v-icon>
+          危险操作确认
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <v-alert type="warning" variant="tonal" density="compact" class="mb-2">
+            该语句可能删除数据或修改表结构，请确认是否执行。
+          </v-alert>
+          <div class="mysql-ws__ddl-text">{{ store.pendingConfirm?.sql }}</div>
+        </v-card-text>
+        <v-divider />
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="store.cancelConfirm()">取消</v-btn>
+          <v-btn color="error" prepend-icon="mdi-alert" :loading="store.executing" @click="store.confirmExecute()">
+            确认执行
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <!-- 备份 / 自动运行（仿 Navicat） -->
     <BackupPanel v-model="showBackup" :conn-id="store.connId ?? ''" />
     <AutoRunPanel v-model="showAutoRun" :conn-id="store.connId ?? ''" />
@@ -417,6 +613,15 @@ import {
 } from '@/api/mysqlUsers'
 import type { MySqlUserInfo, MySqlUserGrant } from '@/api/mysqlUsers'
 import { mysqlTableDesignGet } from '@/api/mysqlDesign'
+import {
+  mysqlDbCreate,
+  mysqlDbDrop,
+  mysqlDbList,
+  mysqlDbSwitch,
+  mysqlTableOptimize,
+  mysqlTableRename,
+  mysqlTableShowCreate,
+} from '@/api/mysqlDb'
 import MysqlDataGrid from './MysqlDataGrid.vue'
 import BackupPanel from './BackupPanel.vue'
 import AutoRunPanel from './AutoRunPanel.vue'
@@ -879,6 +1084,212 @@ watch(activeTab, (tab) => {
   if (tab === 'model') void refreshModel()
 })
 
+// ---------- 数据库级管理（仿 Navicat）：切换 / 新建 / 删除 / 复制 Host ----------
+
+/** 库切换下拉选项（SHOW DATABASES 结果，已排序） */
+const databases = ref<string[]>([])
+/** 当前选中的库（连接加载后初始化，切换后更新） */
+const currentDb = ref<string | null>(null)
+/** 连接 host（mysql_db_list 回传，「复制 Host」用） */
+const connHost = ref('')
+const databasesLoading = ref(false)
+
+/** 拉取库列表 + 当前库 + host（连接后自动加载，切换后刷新） */
+async function loadDatabases(): Promise<void> {
+  const connId = store.connId
+  if (!connId) return
+  databasesLoading.value = true
+  try {
+    const result = await mysqlDbList(connId)
+    databases.value = result.databases
+    currentDb.value = result.current_db
+    connHost.value = result.host
+  } catch (err) {
+    // 权限不足等错误以 toast 提示，不影响工作台其它区域
+    ui.toast(errText(err), 'error')
+  } finally {
+    databasesLoading.value = false
+  }
+}
+
+/**
+ * 切换数据库：后端重建该连接的连接池（新 conn_id）。
+ * store.connId 替换后触发本组件的 connId watch 清空会话级状态（对象树缓存等），
+ * 再重新加载表列表，数据网格与对象树随之刷新。
+ */
+async function switchDb(name: string | null): Promise<void> {
+  const connId = store.connId
+  if (!connId || !name || name === currentDb.value) return
+  databasesLoading.value = true
+  try {
+    const newId = await mysqlDbSwitch(connId, name)
+    // 以新 conn_id 替换（watch 自动清空 loadedKinds 等会话级状态）
+    store.connId = newId
+    currentDb.value = name
+    // 重置表列表后重新加载（新库的表清单）
+    store.tables = []
+    await store.loadTables()
+    ui.toast(`已切换到数据库「${name}」`, 'success')
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+    // 切换失败（旧连接已断），刷新库列表以便用户重试或重新连接
+    await loadDatabases()
+  } finally {
+    databasesLoading.value = false
+  }
+}
+
+const showDbCreate = ref(false)
+const dbCreateName = ref('')
+const creatingDb = ref(false)
+
+function openDbCreate(): void {
+  dbCreateName.value = ''
+  showDbCreate.value = true
+}
+
+/** 新建数据库：CREATE DATABASE 后刷新库列表（不自动切换当前库） */
+async function createDb(): Promise<void> {
+  const connId = store.connId
+  const name = dbCreateName.value.trim()
+  if (!connId || !name) {
+    ui.toast('请填写数据库名', 'warning')
+    return
+  }
+  creatingDb.value = true
+  try {
+    await mysqlDbCreate(connId, name)
+    ui.toast(`数据库「${name}」已创建`, 'success')
+    showDbCreate.value = false
+    await loadDatabases()
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+  } finally {
+    creatingDb.value = false
+  }
+}
+
+/** 删除数据库：uiStore 强确认（danger）后 DROP DATABASE */
+async function deleteDb(): Promise<void> {
+  const connId = store.connId
+  const name = currentDb.value
+  if (!connId || !name) return
+  const ok = await ui.confirm({
+    title: '删除数据库',
+    message: `确定删除数据库「${name}」吗？其中全部表与数据不可恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    // 已经过 UI 强确认，直接带 confirmed=true（后端对未确认调用有兜底）
+    await mysqlDbDrop(connId, name, true)
+    ui.toast(`数据库「${name}」已删除`, 'success')
+    if (currentDb.value === name) {
+      // 删除的是当前库：下拉置空并提示切换（连接池仍指向已删除的库）
+      currentDb.value = null
+      ui.toast('当前库已删除，请切换到其他数据库', 'warning')
+    }
+    await loadDatabases()
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+  }
+}
+
+/** 复制连接 Host 到剪贴板（WebView2 剪贴板 API） */
+async function copyHost(): Promise<void> {
+  if (!connHost.value) return
+  try {
+    await navigator.clipboard.writeText(connHost.value)
+    ui.toast(`已复制 Host：${connHost.value}`, 'success')
+  } catch {
+    ui.toast('复制失败，请手动复制', 'error')
+  }
+}
+
+// ---------- 表结构快捷操作：复制 DDL / 清空 / 优化 / 重命名 ----------
+
+type TableOpMode = 'copy-ddl' | 'truncate' | 'optimize' | 'rename'
+
+/** 操作 -> 确认按钮文案（对话框底部按钮共用） */
+const TABLE_OP_LABELS: Record<TableOpMode, string> = {
+  'copy-ddl': '复制 SQL',
+  truncate: '清空数据',
+  optimize: '优化',
+  rename: '重命名',
+}
+
+const tableNames = computed(() => store.tables.map((t) => t.name))
+const showTableOpDialog = ref(false)
+const tableOpMode = ref<TableOpMode>('copy-ddl')
+const tableOpTable = ref('')
+const tableOpNewName = ref('')
+const tableOpRunning = ref(false)
+
+/** 打开表快捷操作对话框（保留上次选中的表，便于连续操作同一张表） */
+function openTableOp(mode: TableOpMode): void {
+  tableOpMode.value = mode
+  tableOpNewName.value = ''
+  showTableOpDialog.value = true
+}
+
+/** 表名基础校验：非空且不含反引号（前端拼 SQL 时防注入，后端命令侧同样校验） */
+function isValidTableName(name: string): boolean {
+  return !!name.trim() && !name.includes('`')
+}
+
+/** 执行表快捷操作（按 mode 分支） */
+async function runTableOp(): Promise<void> {
+  const connId = store.connId
+  const table = tableOpTable.value
+  if (!connId || !table) return
+  if (tableOpMode.value === 'rename' && !isValidTableName(tableOpNewName.value)) {
+    ui.toast('请填写合法的新表名（不含反引号）', 'warning')
+    return
+  }
+  tableOpRunning.value = true
+  try {
+    switch (tableOpMode.value) {
+      case 'copy-ddl': {
+        const ddl = await mysqlTableShowCreate(connId, table)
+        await navigator.clipboard.writeText(ddl.sql)
+        ui.toast(`表「${table}」的结构 SQL 已复制到剪贴板`, 'success')
+        break
+      }
+      case 'truncate': {
+        if (!isValidTableName(table)) {
+          ui.toast('表名非法（含反引号）', 'warning')
+          return
+        }
+        // 走现有危险 SQL 确认流程：TRUNCATE 命中前端预检后置 pendingConfirm，
+        // 确认框由 MysqlDataGrid（表 tab）或本组件的条件确认框弹出，
+        // 确认后 confirmExecute 带 confirmed 重发
+        await store.executeSql(`TRUNCATE TABLE \`${table}\``)
+        ui.toast(`表「${table}」已清空`, 'success')
+        break
+      }
+      case 'optimize': {
+        await mysqlTableOptimize(connId, table)
+        ui.toast(`表「${table}」已完成空间优化`, 'success')
+        break
+      }
+      case 'rename': {
+        const newName = tableOpNewName.value.trim()
+        await mysqlTableRename(connId, table, newName)
+        ui.toast(`表「${table}」已重命名为「${newName}」`, 'success')
+        break
+      }
+    }
+    showTableOpDialog.value = false
+    // 表结构/行数可能变化，刷新表列表兜底
+    void store.loadTables().catch(() => undefined)
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+  } finally {
+    tableOpRunning.value = false
+  }
+}
+
 // ---------- 连接切换：清空会话级状态 ----------
 watch(
   () => store.connId,
@@ -895,6 +1306,11 @@ watch(
     usersLoaded.value = false
     modelCards.value = []
     modelRels.value = []
+    databases.value = []
+    currentDb.value = null
+    connHost.value = ''
+    // 连接（或切库）后自动加载库列表（含 host 与当前库）
+    void loadDatabases()
   },
 )
 </script>
@@ -967,6 +1383,14 @@ watch(
 /* 对象分组切换按钮组 */
 .mysql-ws__kind-toggle {
   align-self: flex-start;
+}
+
+/* 工具条上的数据库切换下拉：紧凑宽度（不挤占工具条其余按钮） */
+.mysql-ws__db-select {
+  flex: 0 0 180px;
+  max-width: 180px;
+  min-width: 140px;
+  margin: 0 4px;
 }
 
 /* DDL / 权限展示区：等宽字体，可滚动 */

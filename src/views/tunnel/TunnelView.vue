@@ -21,6 +21,9 @@
         class="tunnel-view__filter"
         @update:model-value="(v: string | null) => store.setFilter(v)"
       />
+      <v-btn variant="text" size="small" color="primary" :loading="startingAll" @click="startAll">
+        启动全部隧道
+      </v-btn>
       <v-btn variant="text" size="small" @click="refresh">刷新</v-btn>
       <v-btn variant="text" size="small" color="primary" @click="openCreate">新建规则</v-btn>
     </v-card-title>
@@ -185,11 +188,45 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { sessionList } from '@/api/session'
+import { tunnelStartAll } from '@/api/tunnel'
 import { useTunnelStore, type TunnelKind, type TunnelRule, type TunnelStatus } from '@/stores/tunnel'
 import { useUiStore } from '@/stores/ui'
 
 const store = useTunnelStore()
 const ui = useUiStore()
+
+/** 一键全启进行中标志（按钮 loading，避免重复点击） */
+const startingAll = ref(false)
+
+/**
+ * 一键全启：后端遍历全部规则逐个启动（已在运行中的跳过），
+ * 汇总成功/失败计数；结束后拉快照同步状态。
+ */
+async function startAll(): Promise<void> {
+  if (startingAll.value) return
+  startingAll.value = true
+  try {
+    const report = await tunnelStartAll()
+    if (report.failed === 0) {
+      ui.toast(
+        report.started > 0 ? `已启动 ${report.started} 条隧道` : '全部隧道均已在运行中',
+        'success',
+      )
+    } else {
+      ui.toast(`启动完成：成功 ${report.started} 个，失败 ${report.failed} 个`, 'warning')
+    }
+  } catch (e) {
+    ui.toast(`一键启动失败：${String(e)}`, 'error')
+  } finally {
+    // 快照兜底：无论成败都拉取最新状态
+    try {
+      await store.refresh()
+    } catch {
+      /* 忽略 */
+    }
+    startingAll.value = false
+  }
+}
 
 // ---------------- 会话数据（下拉选项 + id->名称映射） ----------------
 

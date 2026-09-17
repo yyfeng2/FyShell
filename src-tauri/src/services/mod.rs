@@ -1,5 +1,6 @@
 pub mod ssh;
 pub mod sftp;
+pub mod sftp_store;
 pub mod transfer;
 pub mod config_store;
 pub mod mysql;
@@ -14,4 +15,6 @@ pub mod mysql_edit;
 pub mod mysql_io;
 pub mod mysql_objects;
 pub mod mysql_user;
+pub mod mysql_db;
 pub mod mysql_backup;
+pub mod settings_store;

@@ -180,7 +180,13 @@
               ROLLBACK
             </v-btn>
           </div>
-          <SqlEditor v-model="sql" :tables="tableNames" placeholder="输入 SQL 语句…" @execute="runSql" />
+          <SqlEditor
+            v-model="sql"
+            :tables="tableNames"
+            placeholder="输入 SQL 语句…"
+            @execute="runSql"
+            @execute-selection="runSelection"
+          />
         </div>
 
         <!-- 错误 / 结果提示 -->
@@ -229,45 +235,68 @@
           </v-btn>
         </div>
 
-        <!-- 结果网格：NULL 显示为灰色斜体；双击编辑，右键设/清 NULL -->
-        <div v-if="store.lastResult" class="mysql-grid__result">
+        <!-- 结果网格：NULL 显示为灰色斜体；双击编辑，右键打开套件菜单；
+             单击选中单元格（Shift+单击扩展矩形选区），列头单击选中整列 -->
+        <div v-if="store.lastResult" ref="resultHost" class="mysql-grid__result">
           <v-table density="compact" fixed-header class="mysql-grid__result-table">
             <thead>
               <tr>
-                <th style="width: 36px"><!-- 行选择复选框列 --></th>
-                <th v-for="col in resultColumns" :key="col" class="text-left">
-                  <v-icon v-if="col === pkColumn" size="x-small" class="mr-1" title="主键列">mdi-key</v-icon>{{ col }}
+                <th class="mysql-grid__head-cell--locked" style="width: 36px; left: 0">
+                  <!-- 行选择复选框列（sticky 冻结在左上角） -->
+                </th>
+                <th
+                  v-for="(col, ci) in resultColumns"
+                  :key="col"
+                  class="text-left"
+                  :class="{ 'mysql-grid__head-cell--locked': isLocked(ci) }"
+                  :style="lockedStyle(ci)"
+                  title="单击选中整列"
+                  @click="selectColumn(ci)"
+                >
+                  <v-icon v-if="col === pkColumn" size="x-small" class="mr-1" title="主键列">mdi-key</v-icon>
+                  <v-icon
+                    v-if="sortState && sortState.ci === ci"
+                    size="x-small"
+                    class="mr-1"
+                    :icon="sortState.dir === 'asc' ? 'mdi-sort-ascending' : 'mdi-sort-descending'"
+                  />
+                  {{ col }}
                 </th>
               </tr>
             </thead>
             <tbody>
               <tr
-                v-for="(row, ri) in displayRows"
-                :key="ri"
-                :class="{ 'mysql-grid__row--selected': selectedRows.has(ri) }"
+                v-for="row in displayRows"
+                :key="row.originalIndex"
+                :data-row-index="row.originalIndex"
+                :class="{ 'mysql-grid__row--selected': selectedRows.has(row.originalIndex) }"
               >
-                <td>
+                <td class="mysql-grid__cell--locked" style="left: 0">
                   <v-checkbox-btn
-                    :model-value="selectedRows.has(ri)"
+                    :model-value="selectedRows.has(row.originalIndex)"
                     density="compact"
                     hide-details
-                    @update:model-value="(v: unknown) => toggleRow(ri, v)"
+                    @update:model-value="(v: unknown) => toggleRow(row.originalIndex, v)"
                   />
                 </td>
                 <td
-                  v-for="(cell, ci) in row"
+                  v-for="(cell, ci) in row.cells"
                   :key="ci"
                   class="text-body-2 mysql-grid__cell"
                   :class="{
-                    'mysql-grid__cell--edited': isEdited(ri, ci),
+                    'mysql-grid__cell--edited': isEdited(row.originalIndex, ci),
                     'mysql-grid__cell--editable': canEdit,
+                    'mysql-grid__cell--selected': isCellSelected(row.originalIndex, ci),
+                    'mysql-grid__cell--locked': isLocked(ci),
                   }"
-                  title="双击编辑；右键设为/清除 NULL"
-                  @dblclick="startEdit(ri, ci)"
-                  @contextmenu.prevent="openCtxMenu($event, ri, ci)"
+                  :style="lockedStyle(ci)"
+                  title="双击编辑；右键打开操作菜单"
+                  @click="onCellClick($event, row.originalIndex, ci)"
+                  @dblclick="startEdit(row.originalIndex, ci)"
+                  @contextmenu.prevent="openCtxMenu($event, row.originalIndex, ci)"
                 >
                   <input
-                    v-if="editingCell && editingCell.ri === ri && editingCell.ci === ci"
+                    v-if="editingCell && editingCell.ri === row.originalIndex && editingCell.ci === ci"
                     v-model="editingValue"
                     class="mysql-grid__cell-input"
                     autofocus
@@ -279,7 +308,7 @@
                     <span
                       v-if="cell === null"
                       class="mysql-grid__null"
-                      :class="{ 'mysql-grid__null--edited': isEdited(ri, ci) }"
+                      :class="{ 'mysql-grid__null--edited': isEdited(row.originalIndex, ci) }"
                     >NULL</span>
                     <template v-else>{{ cell }}</template>
                   </template>
@@ -354,7 +383,8 @@
       </v-card>
     </v-dialog>
 
-    <!-- 单元格右键菜单：编辑 / 设为 NULL / 清除 NULL（fixed 定位，覆盖层负责点击关闭） -->
+    <!-- 单元格右键菜单套件：编辑 / 复制为 / 填充 / 跳转行 / 排序 / 全选 / 列锁定 / 粘贴 / 行操作
+         （fixed 定位，覆盖层负责点击关闭；v-list-group 内联展开子菜单） -->
     <template v-if="ctxMenu">
       <div
         class="mysql-grid__ctx-overlay"
@@ -366,19 +396,173 @@
         :style="{ top: `${ctxMenu.y}px`, left: `${ctxMenu.x}px` }"
       >
         <v-list density="compact" nav>
-          <v-list-item prepend-icon="mdi-pencil" @click="ctxAction('edit')">编辑单元格</v-list-item>
-          <v-list-item prepend-icon="mdi-null" @click="ctxAction('null')">设为 NULL</v-list-item>
-          <v-list-item prepend-icon="mdi-eraser" @click="ctxAction('clear')">清除 NULL（写空串）</v-list-item>
+          <v-list-item
+            prepend-icon="mdi-pencil"
+            :disabled="!canEdit"
+            @click="ctxAction('edit')"
+          >编辑单元格</v-list-item>
+          <v-list-item
+            prepend-icon="mdi-null"
+            :disabled="!canEdit"
+            @click="ctxAction('null')"
+          >设为 NULL</v-list-item>
+          <v-list-item
+            prepend-icon="mdi-eraser"
+            :disabled="!canEdit"
+            @click="ctxAction('clear')"
+          >清除 NULL（写空串）</v-list-item>
+
+          <!-- 复制为：基于选中区域生成 SQL 文本并复制到剪贴板 -->
+          <v-list-group value="copyAs">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-content-copy" title="复制为" />
+            </template>
+            <v-list-item title="Where 条件" @click="ctxAction('copyWhere')" />
+            <v-list-item title="InsertSQL（单条）" @click="ctxAction('copyInsert')" />
+            <v-list-item title="InsertSQL（批量）" @click="ctxAction('copyInsertBatch')" />
+            <v-list-item title="InsertOrUpdateSQL" @click="ctxAction('copyInsertOrUpdate')" />
+            <v-list-item title="UpdateSQL" @click="ctxAction('copyUpdate')" />
+            <v-list-item title="DeleteSQL" @click="ctxAction('copyDelete')" />
+            <v-list-item title="表格文本（字段和数据）" @click="ctxAction('copyTextAll')" />
+            <v-list-item title="表格文本（仅数据）" @click="ctxAction('copyTextData')" />
+            <v-list-item title="表格文本（仅字段）" @click="ctxAction('copyTextHeader')" />
+          </v-list-group>
+
+          <!-- 填充：作用于选中区域（无选区时仅当前右键单元格） -->
+          <v-list-group value="fill">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-arrow-expand-vertical" title="填充" />
+            </template>
+            <v-list-item :disabled="!canEdit" title="填充 NULL" @click="ctxAction('fillNull')" />
+            <v-list-item :disabled="!canEdit" title="填充当前日期时间" @click="ctxAction('fillNow')" />
+            <v-list-item :disabled="!canEdit" title="填充当前日期" @click="ctxAction('fillDate')" />
+            <v-list-item :disabled="!canEdit" title="填充 UUID" @click="ctxAction('fillUuid')" />
+            <v-list-item :disabled="!canEdit" title="自定义…" @click="ctxAction('fillCustom')" />
+          </v-list-group>
+
+          <!-- 跳转行：服务端分页导航 -->
+          <v-list-group value="goto">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-arrow-up-down" title="跳转行" />
+            </template>
+            <v-list-item title="顶部" @click="ctxAction('gotoTop')" />
+            <v-list-item title="底部" @click="ctxAction('gotoBottom')" />
+            <v-list-item title="自定义行号…" @click="ctxAction('gotoRow')" />
+          </v-list-group>
+
+          <!-- 排序：对已加载页数据排序（右键单元格所在列） -->
+          <v-list-group value="sort">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-sort" title="排序" />
+            </template>
+            <v-list-item title="升序" @click="ctxAction('sortAsc')" />
+            <v-list-item title="降序" @click="ctxAction('sortDesc')" />
+            <v-list-item title="删除排序" @click="ctxAction('sortClear')" />
+          </v-list-group>
+
+          <!-- 全选 -->
+          <v-list-group value="selectAll">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-select-all" title="全选" />
+            </template>
+            <v-list-item title="行全选" @click="ctxAction('selectAllRows')" />
+            <v-list-item title="列全选" @click="ctxAction('selectAllCols')" />
+            <v-list-item title="取消选择" @click="ctxAction('clearSelection')" />
+          </v-list-group>
+
+          <!-- 列锁定/解锁：sticky 列冻结 -->
+          <v-list-item
+            prepend-icon="mdi-columns"
+            @click="ctxAction('toggleLock')"
+          >{{ isLocked(ctxMenu.ci) ? '解锁此列' : '锁定到此列' }}</v-list-item>
+
+          <!-- 粘贴：从剪贴板 TSV 解析 -->
+          <v-list-group value="paste">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-content-paste" title="粘贴" />
+            </template>
+            <v-list-item :disabled="!canEdit" title="粘贴到单元格" @click="ctxAction('pasteCell')" />
+            <v-list-item :disabled="!canEdit" title="新建并粘贴…" @click="ctxAction('pasteNewRow')" />
+          </v-list-group>
+
+          <!-- 行操作：克隆行 / 插入 N 行（预览 -> 确认 -> 执行） -->
+          <v-list-group value="rowOps">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-table-row" title="行操作" />
+            </template>
+            <v-list-item :disabled="!canEdit" title="克隆行" @click="ctxAction('cloneRow')" />
+            <v-list-item :disabled="!canEdit" title="插入 1 行" @click="ctxAction('insertRows1')" />
+            <v-list-item :disabled="!canEdit" title="插入 3 行" @click="ctxAction('insertRows3')" />
+            <v-list-item :disabled="!canEdit" title="插入 5 行" @click="ctxAction('insertRows5')" />
+            <v-list-item :disabled="!canEdit" title="插入 10 行" @click="ctxAction('insertRows10')" />
+          </v-list-group>
         </v-list>
       </v-card>
     </template>
+
+    <!-- 自定义填充值对话框：对选中区域内所有单元格填充该值 -->
+    <v-dialog v-model="showFillDialog" width="420">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon size="small" class="mr-2">mdi-arrow-expand-vertical</v-icon>
+          自定义填充值
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <v-text-field
+            v-model="fillValue"
+            label="填充值（选中区域内所有单元格）"
+            density="compact"
+            single-line
+            hide-details
+            autofocus
+            @keyup.enter="confirmFill"
+          />
+        </v-card-text>
+        <v-divider />
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showFillDialog = false">取消</v-btn>
+          <v-btn color="primary" @click="confirmFill">确认</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 跳转行对话框：跳转到结果集中指定行号（按每页行数换算页码） -->
+    <v-dialog v-model="showGotoDialog" width="420">
+      <v-card>
+        <v-card-title class="d-flex align-center">
+          <v-icon size="small" class="mr-2">mdi-arrow-up-down</v-icon>
+          跳转到行
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <v-text-field
+            v-model="gotoRowNo"
+            label="行号（1 - 总行数）"
+            type="number"
+            density="compact"
+            single-line
+            hide-details
+            autofocus
+            @keyup.enter="confirmGoto"
+          />
+        </v-card-text>
+        <v-divider />
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showGotoDialog = false">取消</v-btn>
+          <v-btn color="primary" @click="confirmGoto">跳转</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 编辑预览对话框：展示将执行的 SQL 与估算影响行数，确认后执行 -->
     <v-dialog v-model="showPreview" width="640">
       <v-card>
         <v-card-title class="d-flex align-center">
           <v-icon size="small" class="mr-2">mdi-eye-outline</v-icon>
-          {{ previewMode === 'edit' ? '编辑预览' : '删除预览' }}
+          {{ previewMode === 'edit' ? '编辑预览' : previewMode === 'delete' ? '删除预览' : '插入预览' }}
         </v-card-title>
         <v-divider />
         <v-card-text>
@@ -429,7 +613,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
 import {
@@ -441,6 +625,7 @@ import {
 import type { MySqlRowUpdate } from '@/api/mysqlEdit'
 import MysqlConnectionForm from './MysqlConnectionForm.vue'
 import SqlEditor from './SqlEditor.vue'
+import { splitSqlStatements } from './sql-format'
 import TableDesigner from '@/views/mysql/TableDesigner.vue'
 import HistoryDrawer from './HistoryDrawer.vue'
 import ExplainPanel from './ExplainPanel.vue'
@@ -616,7 +801,7 @@ function startEdit(ri: number, ci: number): void {
     finalizeEdit()
   }
   editingCell.value = { ri, ci }
-  const cell = displayRows.value[ri]?.[ci] ?? null
+  const cell = displayCell(ri, ci)
   editingValue.value = cell === null ? '' : String(cell)
 }
 
@@ -646,25 +831,258 @@ function cancelEdit(): void {
 /** 右键菜单状态：屏幕坐标 + 目标单元格 */
 const ctxMenu = ref<{ x: number; y: number; ri: number; ci: number } | null>(null)
 
-/** 打开右键菜单（坐标钳制到视口内） */
+/** 打开右键菜单（坐标钳制到视口内；菜单含多组子菜单，预留足够高度） */
 function openCtxMenu(e: MouseEvent, ri: number, ci: number): void {
-  if (!canEdit.value) return
+  if (!store.lastResult) return
   ctxMenu.value = {
-    x: Math.min(e.clientX, window.innerWidth - 200),
-    y: Math.min(e.clientY, window.innerHeight - 150),
+    x: Math.min(e.clientX, window.innerWidth - 220),
+    y: Math.min(e.clientY, window.innerHeight - 320),
     ri,
     ci,
   }
 }
 
-/** 右键菜单动作分发 */
-function ctxAction(action: 'edit' | 'null' | 'clear'): void {
+// ---------- 单元格选区（矩形，含端点） ----------
+
+/** 选区锚点（Shift+单击扩展矩形选区） */
+const selAnchor = ref<{ ri: number; ci: number } | null>(null)
+
+/** 选中区域（矩形范围，含端点；null = 无选区） */
+const cellSelection = ref<{ r1: number; c1: number; r2: number; c2: number } | null>(null)
+
+/** 单元格是否在选中区域内 */
+function isCellSelected(ri: number, ci: number): boolean {
+  const s = cellSelection.value
+  if (!s) return false
+  return (
+    ri >= Math.min(s.r1, s.r2) &&
+    ri <= Math.max(s.r1, s.r2) &&
+    ci >= Math.min(s.c1, s.c2) &&
+    ci <= Math.max(s.c1, s.c2)
+  )
+}
+
+/** 单击单元格：设为锚点；Shift+单击扩展矩形选区 */
+function onCellClick(e: MouseEvent, ri: number, ci: number): void {
+  const anchor = selAnchor.value
+  if (e.shiftKey && anchor) {
+    cellSelection.value = {
+      r1: Math.min(anchor.ri, ri),
+      c1: Math.min(anchor.ci, ci),
+      r2: Math.max(anchor.ri, ri),
+      c2: Math.max(anchor.ci, ci),
+    }
+  } else {
+    selAnchor.value = { ri, ci }
+    cellSelection.value = { r1: ri, c1: ci, r2: ri, c2: ci }
+  }
+}
+
+/** 列头单击：选中整列（全行 × 该列） */
+function selectColumn(ci: number): void {
+  selAnchor.value = { ri: 0, ci }
+  const last = Math.max(0, (store.lastResult?.rows.length ?? 1) - 1)
+  cellSelection.value = { r1: 0, c1: ci, r2: last, c2: ci }
+}
+
+/** 清除选区与锚点 */
+function clearCellSelection(): void {
+  selAnchor.value = null
+  cellSelection.value = null
+}
+
+/**
+ * 解析复制的作用区域（列索引表示）：
+ * 矩形选区优先，其次选中行 × 全列；均无时由调用方回退到右键单元格所在行
+ */
+function selectedRegion(fallbackRow?: number): { rows: number[]; cols: number[] } | null {
+  const r = store.lastResult
+  if (!r) return null
+  const s = cellSelection.value
+  if (s) {
+    const rows: number[] = []
+    for (let i = Math.min(s.r1, s.r2); i <= Math.max(s.r1, s.r2); i++) rows.push(i)
+    const cols: number[] = []
+    for (let j = Math.min(s.c1, s.c2); j <= Math.max(s.c1, s.c2); j++) cols.push(j)
+    return { rows, cols }
+  }
+  if (selectedRows.value.size) {
+    return { rows: [...selectedRows.value].sort((a, b) => a - b), cols: r.columns.map((_, i) => i) }
+  }
+  if (fallbackRow === undefined) return null
+  return { rows: [fallbackRow], cols: r.columns.map((_, i) => i) }
+}
+
+/** 读取展示值（含待提交修改叠加）：原始行索引 + 列索引 */
+function displayCell(ri: number, ci: number): string | null {
+  const r = store.lastResult
+  if (!r) return null
+  const row = r.rows[ri]
+  if (!row) return null
+  const edit = pendingEdits.value.get(`${ri}:${r.columns[ci]}`)
+  if (edit) return edit.isNull ? null : (edit.value ?? '')
+  return row[ci] ?? null
+}
+
+// ---------- 右键菜单动作分发 ----------
+
+/** 全部右键菜单动作 */
+type CtxAction =
+  | 'edit'
+  | 'null'
+  | 'clear'
+  | 'copyWhere'
+  | 'copyInsert'
+  | 'copyInsertBatch'
+  | 'copyInsertOrUpdate'
+  | 'copyUpdate'
+  | 'copyDelete'
+  | 'copyTextAll'
+  | 'copyTextData'
+  | 'copyTextHeader'
+  | 'fillNull'
+  | 'fillNow'
+  | 'fillDate'
+  | 'fillUuid'
+  | 'fillCustom'
+  | 'gotoTop'
+  | 'gotoBottom'
+  | 'gotoRow'
+  | 'sortAsc'
+  | 'sortDesc'
+  | 'sortClear'
+  | 'selectAllRows'
+  | 'selectAllCols'
+  | 'clearSelection'
+  | 'toggleLock'
+  | 'pasteCell'
+  | 'pasteNewRow'
+  | 'cloneRow'
+  | 'insertRows1'
+  | 'insertRows3'
+  | 'insertRows5'
+  | 'insertRows10'
+
+/** 右键菜单动作分发（先捕获菜单目标，再关闭菜单并执行） */
+function ctxAction(action: CtxAction): void {
   const menu = ctxMenu.value
   ctxMenu.value = null
   if (!menu) return
-  if (action === 'edit') startEdit(menu.ri, menu.ci)
-  else if (action === 'null') setCellNull(menu.ri, menu.ci)
-  else clearCellNull(menu.ri, menu.ci)
+  switch (action) {
+    case 'edit':
+      startEdit(menu.ri, menu.ci)
+      break
+    case 'null':
+      setCellNull(menu.ri, menu.ci)
+      break
+    case 'clear':
+      clearCellNull(menu.ri, menu.ci)
+      break
+    case 'copyWhere':
+      void copyAs('where', menu.ri)
+      break
+    case 'copyInsert':
+      void copyAs('insert', menu.ri)
+      break
+    case 'copyInsertBatch':
+      void copyAs('insertBatch', menu.ri)
+      break
+    case 'copyInsertOrUpdate':
+      void copyAs('insertOrUpdate', menu.ri)
+      break
+    case 'copyUpdate':
+      void copyAs('update', menu.ri)
+      break
+    case 'copyDelete':
+      void copyAs('delete', menu.ri)
+      break
+    case 'copyTextAll':
+      void copyAs('textAll', menu.ri)
+      break
+    case 'copyTextData':
+      void copyAs('textData', menu.ri)
+      break
+    case 'copyTextHeader':
+      void copyAs('textHeader', menu.ri)
+      break
+    case 'fillNull':
+      fillCells(null, true, menu.ri, menu.ci)
+      break
+    case 'fillNow':
+      fillCells(nowDateTime(), false, menu.ri, menu.ci)
+      break
+    case 'fillDate':
+      fillCells(nowDateTime().slice(0, 10), false, menu.ri, menu.ci)
+      break
+    case 'fillUuid':
+      fillCells(genUuid(), false, menu.ri, menu.ci)
+      break
+    case 'fillCustom':
+      fillValue.value = ''
+      fillFallback.value = { ri: menu.ri, ci: menu.ci }
+      showFillDialog.value = true
+      break
+    case 'gotoTop':
+      void gotoTop()
+      break
+    case 'gotoBottom':
+      void gotoBottom()
+      break
+    case 'gotoRow':
+      gotoRowNo.value = ''
+      showGotoDialog.value = true
+      break
+    case 'sortAsc':
+      sortState.value = { ci: menu.ci, dir: 'asc' }
+      break
+    case 'sortDesc':
+      sortState.value = { ci: menu.ci, dir: 'desc' }
+      break
+    case 'sortClear':
+      sortState.value = null
+      break
+    case 'selectAllRows': {
+      const set = new Set<number>()
+      for (let i = 0; i < (store.lastResult?.rows.length ?? 0); i++) set.add(i)
+      selectedRows.value = set
+      break
+    }
+    case 'selectAllCols': {
+      const rowsN = store.lastResult?.rows.length ?? 0
+      const colsN = resultColumns.value.length
+      if (!rowsN || !colsN) break
+      selAnchor.value = { ri: 0, ci: 0 }
+      cellSelection.value = { r1: 0, c1: 0, r2: rowsN - 1, c2: colsN - 1 }
+      break
+    }
+    case 'clearSelection':
+      clearCellSelection()
+      break
+    case 'toggleLock':
+      toggleLock(menu.ci)
+      break
+    case 'pasteCell':
+      void pasteToCell(menu.ri, menu.ci)
+      break
+    case 'pasteNewRow':
+      void pasteNewRow()
+      break
+    case 'cloneRow':
+      cloneRow(menu.ri)
+      break
+    case 'insertRows1':
+      void insertDefaultRows(1)
+      break
+    case 'insertRows3':
+      void insertDefaultRows(3)
+      break
+    case 'insertRows5':
+      void insertDefaultRows(5)
+      break
+    case 'insertRows10':
+      void insertDefaultRows(10)
+      break
+  }
 }
 
 /** 设为 NULL：is_null=true 显式写 NULL（区分空串与 NULL 语义） */
@@ -689,6 +1107,402 @@ function clearCellNull(ri: number, ci: number): void {
     value: '',
     isNull: false,
   })
+}
+
+// ---------- 排序：对已加载页数据的前端排序 ----------
+
+/** 排序状态：列索引 + 方向（null = 未排序；查询/翻页时清除） */
+const sortState = ref<{ ci: number; dir: 'asc' | 'desc' } | null>(null)
+
+// ---------- 列锁定/解锁（sticky 列冻结） ----------
+
+/** 锁定列名集合（左偏移按列顺序累计） */
+const lockedCols = ref<string[]>([])
+
+/** 结果区宿主元素（测量列宽用） */
+const resultHost = ref<HTMLElement | null>(null)
+
+/** 各列宽度（与 resultColumns 对齐，渲染后测量） */
+const colWidths = ref<number[]>([])
+
+/** 渲染后测量列宽（sticky 左偏移需要像素值） */
+function measureColumns(): void {
+  const el = resultHost.value
+  if (!el) {
+    colWidths.value = []
+    return
+  }
+  // 第一列为行选择复选框列（固定 36px），不入宽度表
+  const widths: number[] = []
+  el.querySelectorAll<HTMLElement>('thead th').forEach((th, i) => {
+    if (i > 0) widths.push(th.getBoundingClientRect().width)
+  })
+  colWidths.value = widths
+}
+
+/** 列是否已锁定 */
+function isLocked(ci: number): boolean {
+  const col = resultColumns.value[ci]
+  return !!col && lockedCols.value.includes(col)
+}
+
+/** 锁定列的 sticky 样式：left = 36px（复选框列）+ 其前已锁列宽累计 */
+function lockedStyle(ci: number): Record<string, string> {
+  if (!isLocked(ci)) return {}
+  const cols = resultColumns.value
+  let left = 36
+  for (let i = 0; i < ci && i < cols.length; i++) {
+    if (lockedCols.value.includes(cols[i])) left += colWidths.value[i] ?? 0
+  }
+  return { position: 'sticky', left: `${left}px` }
+}
+
+/** 锁定/解锁指定列 */
+function toggleLock(ci: number): void {
+  const col = resultColumns.value[ci]
+  if (!col) return
+  const next = new Set(lockedCols.value)
+  if (next.has(col)) next.delete(col)
+  else next.add(col)
+  lockedCols.value = [...next]
+  void nextTick().then(measureColumns)
+}
+
+// ---------- 复制为：基于选中区域生成 SQL 文本并复制 ----------
+
+/** SQL 字面量转义：单引号/反斜杠成对转义（仅用于展示与复制） */
+function sqlLiteral(v: string | null): string {
+  if (v === null) return 'NULL'
+  return `'${v.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`
+}
+
+/** 谓词片段：col IS NULL / col = 'val' */
+function sqlPredicate(col: string, v: string | null): string {
+  return v === null ? `\`${col}\` IS NULL` : `\`${col}\` = ${sqlLiteral(v)}`
+}
+
+/** 解析选中区域的数据：返回行数据（含待提交修改叠加）与列名 */
+function selectedData(fallbackRow?: number): { rows: (string | null)[][]; cols: string[] } | null {
+  const r = store.lastResult
+  if (!r) return null
+  const region = selectedRegion(fallbackRow)
+  if (!region) return null
+  const rows = region.rows.map((ri) => region.cols.map((ci) => displayCell(ri, ci)))
+  return { rows, cols: region.cols.map((ci) => r.columns[ci]) }
+}
+
+/** TSV 文本：列名 + 数据行（null 输出空串，便于粘贴到表格类工具） */
+function tsvText(cols: string[], rows: (string | null)[][], withHeader: boolean): string {
+  const lines: string[] = []
+  if (withHeader) lines.push(cols.join('\t'))
+  for (const row of rows) lines.push(row.map((v) => (v === null ? '' : String(v))).join('\t'))
+  return lines.join('\n')
+}
+
+/** 复制文本到剪贴板 */
+async function copyText(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    ui.toast(`已复制 ${text.split('\n').length} 行到剪贴板`, 'success')
+  } catch {
+    ui.toast('复制到剪贴板失败', 'error')
+  }
+}
+
+/** 复制为变体 */
+type CopyKind =
+  | 'where'
+  | 'insert'
+  | 'insertBatch'
+  | 'insertOrUpdate'
+  | 'update'
+  | 'delete'
+  | 'textAll'
+  | 'textData'
+  | 'textHeader'
+
+/** 按变体生成 SQL 文本并复制到剪贴板（fallbackRow：无选区时的回退行） */
+async function copyAs(kind: CopyKind, fallbackRow?: number): Promise<void> {
+  const r = store.lastResult
+  if (!r) return
+  const data = selectedData(fallbackRow)
+  if (!data) return
+  const { rows, cols } = data
+  // 表格文本：TSV（字段和数据 / 仅数据 / 仅字段），无需表名
+  if (kind === 'textHeader') {
+    await copyText(cols.join('\t'))
+    return
+  }
+  if (kind === 'textAll' || kind === 'textData') {
+    await copyText(tsvText(cols, rows, kind === 'textAll'))
+    return
+  }
+  const table = tableOfQuery(lastQuerySql.value)
+  if (!table) {
+    ui.toast('无法解析目标表名，无法生成 SQL', 'warning')
+    return
+  }
+  const colList = cols.map((c) => `\`${c}\``).join(', ')
+  if (kind === 'where') {
+    // 单行：WHERE col = val AND ...；多行：各行条件括号后 OR 联结
+    const clause = rows
+      .map((row) => `(${cols.map((c, i) => sqlPredicate(c, row[i])).join(' AND ')})`)
+      .join(' OR ')
+    await copyText(`WHERE ${clause}`)
+    return
+  }
+  if (kind === 'insert') {
+    // 单条：每行一条 INSERT
+    const stmts = rows.map(
+      (row) =>
+        `INSERT INTO \`${table}\` (${colList}) VALUES (${row.map((v) => sqlLiteral(v)).join(', ')});`,
+    )
+    await copyText(stmts.join('\n'))
+    return
+  }
+  if (kind === 'insertBatch' || kind === 'insertOrUpdate') {
+    // 批量：一条 INSERT 携带多行 VALUES；InsertOrUpdate 追加 ON DUPLICATE KEY UPDATE
+    const tuples = rows.map((row) => `(${row.map((v) => sqlLiteral(v)).join(', ')})`).join(',\n  ')
+    let stmt = `INSERT INTO \`${table}\` (${colList}) VALUES\n  ${tuples}`
+    if (kind === 'insertOrUpdate') {
+      const assigns = cols.map((c) => `\`${c}\` = VALUES(\`${c}\`)`).join(', ')
+      stmt += `\nON DUPLICATE KEY UPDATE ${assigns}`
+    }
+    await copyText(`${stmt};`)
+    return
+  }
+  // UpdateSQL / DeleteSQL：按主键定位（未解析到主键时回退全列谓词）
+  const pkIdx = r.columns.indexOf(pkColumn.value)
+  const whereOf = (row: (string | null)[]): string => {
+    if (pkColumn.value && pkIdx >= 0) return sqlPredicate(pkColumn.value, row[pkIdx])
+    return cols.map((c, i) => sqlPredicate(c, row[i])).join(' AND ')
+  }
+  if (kind === 'update') {
+    const stmts = rows.map((row) => {
+      // SET 子句剔除主键列（主键不参与更新）
+      const sets = cols
+        .map((c, i) => (c === pkColumn.value ? null : `\`${c}\` = ${sqlLiteral(row[i])}`))
+        .filter((s): s is string => s !== null)
+      return `UPDATE \`${table}\` SET ${sets.join(', ')} WHERE ${whereOf(row)};`
+    })
+    await copyText(stmts.join('\n'))
+    return
+  }
+  if (kind === 'delete') {
+    const stmts = rows.map((row) => `DELETE FROM \`${table}\` WHERE ${whereOf(row)};`)
+    await copyText(stmts.join('\n'))
+  }
+}
+
+// ---------- 填充：作用于选中区域（走编辑管道，预览 -> 确认 -> 执行） ----------
+
+const showFillDialog = ref(false)
+const fillValue = ref('')
+/** 自定义填充的目标回退单元格（菜单关闭后确认填充时仍需定位） */
+const fillFallback = ref<{ ri: number; ci: number } | undefined>(undefined)
+
+/**
+ * 对选区内每个单元格记录待提交修改（不直接写库）。
+ * 填充作用区域：右键单元格在矩形选区内时作用于整个选区，否则仅作用于右键单元格
+ */
+function fillCells(value: string | null, isNull: boolean, fallbackRi?: number, fallbackCi?: number): void {
+  if (!canEdit.value) return
+  const map = new Map(pendingEdits.value)
+  const apply = (ri: number, ci: number) => {
+    const col = resultColumns.value[ci]
+    if (!col) return
+    map.set(`${ri}:${col}`, { rowIndex: ri, column: col, value, isNull })
+  }
+  const s = cellSelection.value
+  const inSelection =
+    fallbackRi !== undefined &&
+    fallbackCi !== undefined &&
+    s !== null &&
+    isCellSelected(fallbackRi, fallbackCi)
+  if (inSelection && s) {
+    for (let i = Math.min(s.r1, s.r2); i <= Math.max(s.r1, s.r2); i++) {
+      for (let j = Math.min(s.c1, s.c2); j <= Math.max(s.c1, s.c2); j++) apply(i, j)
+    }
+  } else if (fallbackRi !== undefined && fallbackCi !== undefined) {
+    apply(fallbackRi, fallbackCi)
+  }
+  pendingEdits.value = map
+}
+
+/** 自定义填充确认 */
+function confirmFill(): void {
+  showFillDialog.value = false
+  fillCells(fillValue.value, false, fillFallback.value?.ri, fillFallback.value?.ci)
+}
+
+/** 当前日期时间 YYYY-MM-DD HH:mm:ss */
+function nowDateTime(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
+
+/** UUID v4（webview 不支持 crypto.randomUUID 时的回退实现） */
+function genUuid(): string {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
+// ---------- 跳转行：服务端分页导航 ----------
+
+const showGotoDialog = ref(false)
+const gotoRowNo = ref('')
+
+/** 滚动到页内指定行（越界时滚到最后一行） */
+function scrollToRowInPage(rowIndex: number): void {
+  const el = resultHost.value
+  if (!el) return
+  const rows = el.querySelectorAll<HTMLElement>('tbody tr[data-row-index]')
+  if (!rows.length) return
+  const target = rowIndex >= rows.length ? rows[rows.length - 1] : rows[rowIndex]
+  target.scrollIntoView({ block: 'center' })
+}
+
+async function gotoTop(): Promise<void> {
+  await runQuery(1, pageSize.value)
+  scrollToRowInPage(0)
+}
+
+async function gotoBottom(): Promise<void> {
+  await runQuery(pageCount.value, pageSize.value)
+  scrollToRowInPage(Number.MAX_SAFE_INTEGER)
+}
+
+/** 自定义行号跳转：按每页行数换算页码并滚动到页内对应行 */
+async function confirmGoto(): Promise<void> {
+  showGotoDialog.value = false
+  const n = Number(gotoRowNo.value)
+  if (!Number.isFinite(n) || n < 1) return
+  const targetPage = Math.max(1, Math.ceil(n / Math.max(1, pageSize.value)))
+  await runQuery(targetPage, pageSize.value)
+  scrollToRowInPage(n - (targetPage - 1) * pageSize.value - 1)
+}
+
+// ---------- 粘贴：从剪贴板 TSV 解析 ----------
+
+/** 读取剪贴板文本（失败时 toast 提示，返回 null） */
+async function readClipboard(): Promise<string | null> {
+  try {
+    return await navigator.clipboard.readText()
+  } catch {
+    ui.toast('读取剪贴板失败', 'error')
+    return null
+  }
+}
+
+/** 解析 TSV 文本：制表符分列、换行分行（忽略行尾空行） */
+function parseTsv(text: string): string[][] {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .filter((line, i, arr) => i < arr.length - 1 || line !== '')
+    .map((line) => line.split('\t'))
+}
+
+/** 粘贴到单元格：以右键单元格为起点写入 TSV 值（走编辑管道，不直接写库） */
+async function pasteToCell(startRi: number, startCi: number): Promise<void> {
+  const text = await readClipboard()
+  if (text === null || !canEdit.value) return
+  const grid = parseTsv(text)
+  if (!grid.length) return
+  const map = new Map(pendingEdits.value)
+  for (let i = 0; i < grid.length; i++) {
+    for (let j = 0; j < grid[i].length; j++) {
+      const ri = startRi + i
+      const ci = startCi + j
+      const col = resultColumns.value[ci]
+      // 越界部分忽略（只粘贴进已加载页的既有行列）
+      if (!col || !store.lastResult?.rows[ri]) continue
+      map.set(`${ri}:${col}`, { rowIndex: ri, column: col, value: grid[i][j], isNull: false })
+    }
+  }
+  pendingEdits.value = map
+}
+
+// ---------- 行操作：克隆行 / 插入 N 行 / 新建并粘贴（预览 -> 确认 -> 执行） ----------
+
+/**
+ * 插入行预览：INSERT 语句由前端构造（仅用于展示，单引号/反斜杠成对转义），
+ * 主键列不参与插入（由数据库自增/默认值生成）；确认后走 store.executeSql。
+ * 后端编辑契约无插入命令，此处复用预览对话框 + 通用执行管道。
+ */
+function insertPreviewRows(values: (string | null)[][]): void {
+  const table = tableOfQuery(lastQuerySql.value)
+  if (!table) {
+    ui.toast('无法解析目标表名，无法插入', 'warning')
+    return
+  }
+  // 主键列不参与插入
+  const colIdx: number[] = []
+  resultColumns.value.forEach((c, i) => {
+    if (c !== pkColumn.value) colIdx.push(i)
+  })
+  const colList = colIdx.map((i) => `\`${resultColumns.value[i]}\``).join(', ')
+  previewItems.value = values.map((row) => ({
+    sql: `INSERT INTO \`${table}\` (${colList}) VALUES (${colIdx.map((i) => sqlLiteral(row[i] ?? null)).join(', ')});`,
+    estimate: 1,
+    danger: false,
+  }))
+  previewMode.value = 'insert'
+  showPreview.value = true
+}
+
+/** 插入 N 行空行：INSERT INTO `t` () VALUES ();（全默认值，由数据库生成） */
+function insertDefaultRows(n: number): void {
+  const table = tableOfQuery(lastQuerySql.value)
+  if (!table) {
+    ui.toast('无法解析目标表名，无法插入', 'warning')
+    return
+  }
+  const statements: string[] = []
+  for (let i = 0; i < n; i++) statements.push(`INSERT INTO \`${table}\` () VALUES ();`)
+  previewItems.value = statements.map((s) => ({ sql: s, estimate: 1, danger: false }))
+  previewMode.value = 'insert'
+  showPreview.value = true
+}
+
+/** 克隆行：复制当前行数据为新行（主键列由数据库自增生成，不参与 INSERT） */
+function cloneRow(ri?: number): void {
+  if (ri === undefined || !store.lastResult) return
+  const row = store.lastResult.rows[ri]
+  if (!row) return
+  insertPreviewRows([row.map((c) => (c === null ? null : String(c)))])
+}
+
+/** 新建并粘贴：剪贴板 TSV 每行作为新行（INSERT，预览 -> 确认 -> 执行） */
+async function pasteNewRow(): Promise<void> {
+  const text = await readClipboard()
+  if (text === null) return
+  const grid = parseTsv(text)
+  if (!grid.length) return
+  insertPreviewRows(grid.map((cells) => cells.map((c) => (c === null ? '' : String(c)))))
+}
+
+/** 仅运行选中的（SQL 编辑器右键菜单）：SELECT 走分页查询，其余走写操作 */
+async function runSelection(text: string): Promise<void> {
+  const stmts = splitSqlStatements(text)
+  for (const stmt of stmts) {
+    if (SELECT_RE.test(stmt)) {
+      await runQuery(1, pageSize.value, stmt)
+    } else {
+      try {
+        const outcome = await store.executeSql(stmt)
+        if (outcome.needsConfirm) return // 确认框由 store.pendingConfirm 驱动弹出
+      } catch {
+        // 错误已写入 store，由 v-alert 展示
+      }
+    }
+  }
 }
 
 /** 行选择切换 */
@@ -716,7 +1530,7 @@ interface PreviewItem {
 const showPreview = ref(false)
 const previewLoading = ref(false)
 const executing = ref(false)
-const previewMode = ref<'edit' | 'delete'>('edit')
+const previewMode = ref<'edit' | 'delete' | 'insert'>('edit')
 const previewItems = ref<PreviewItem[]>([])
 
 /** 批量估算影响行数上界（各条目估算的最大值） */
@@ -819,7 +1633,7 @@ async function confirmPreview(): Promise<void> {
       const affected = await mysqlUpdateRows(connId, { table, updates }, true)
       ui.toast(`已提交 ${updates.length} 处修改，受影响行数：${affected}`, 'success')
       pendingEdits.value = new Map()
-    } else {
+    } else if (previewMode.value === 'delete') {
       const rows = [...selectedRows.value]
       let affected = 0
       for (const ri of rows) {
@@ -827,6 +1641,20 @@ async function confirmPreview(): Promise<void> {
       }
       ui.toast(`已删除 ${rows.length} 行，受影响行数：${affected}`, 'success')
       selectedRows.value = new Set()
+    } else {
+      // 插入：逐条执行前端构造的 INSERT 语句（预览对话框已提供确认环节）
+      let affected = 0
+      for (const item of previewItems.value) {
+        try {
+          const outcome = await store.executeSql(item.sql)
+          if (outcome.needsConfirm) return // 危险确认由 store.pendingConfirm 驱动弹出
+          affected += outcome.affected
+        } catch (err) {
+          ui.toast(errText(err), 'error')
+          return
+        }
+      }
+      ui.toast(`已插入 ${previewItems.value.length} 行，受影响行数：${affected}`, 'success')
     }
     showPreview.value = false
     // 执行成功后刷新当前页（写操作可能改变结果集）
@@ -838,19 +1666,47 @@ async function confirmPreview(): Promise<void> {
   }
 }
 
-/** 结果网格展示行：与列头按索引对齐，null 保持为 null（模板中渲染为灰色斜体 NULL）。
- * 待提交修改叠加展示：命中处显示新值/NULL，由 isEdited 提供高亮样式 */
-const displayRows = computed<(string | null)[][]>(() => {
+/**
+ * 结果网格展示行：originalIndex 为原始行索引（与列头按索引对齐；排序仅改变展示顺序，
+ * 待提交修改/选中行仍按原始行索引定位，避免错位写入），null 保持为 null。
+ * 待提交修改叠加展示：命中处显示新值/NULL
+ */
+const displayRows = computed<{ originalIndex: number; cells: (string | null)[] }[]>(() => {
   const r = store.lastResult
   if (!r) return []
-  return r.rows.map((row, ri) =>
-    r.columns.map((_, ci) => {
+  const rows = r.rows.map((row, ri) => ({
+    originalIndex: ri,
+    cells: r.columns.map((_, ci) => {
       const col = r.columns[ci]
       const edit = pendingEdits.value.get(`${ri}:${col}`)
       if (edit) return edit.isNull ? null : (edit.value ?? '')
       return row[ci] ?? null
     }),
-  )
+  }))
+  const s = sortState.value
+  if (!s) return rows
+  // 前端排序：null 视为最小值；两侧均为数值时按数值比较，否则按字典序
+  return [...rows].sort((a, b) => {
+    const av = a.cells[s.ci]
+    const bv = b.cells[s.ci]
+    let cmp: number
+    if (av === null && bv === null) cmp = 0
+    else if (av === null) cmp = -1
+    else if (bv === null) cmp = 1
+    else {
+      const an = Number(av)
+      const bn = Number(bv)
+      cmp =
+        av !== '' && bv !== '' && !Number.isNaN(an) && !Number.isNaN(bn)
+          ? an - bn
+          : av < bv
+            ? -1
+            : av > bv
+              ? 1
+              : 0
+    }
+    return s.dir === 'asc' ? cmp : -cmp
+  })
 })
 
 const columnCount = computed(() => store.lastResult?.columns.length ?? 1)
@@ -890,11 +1746,15 @@ async function runQuery(p: number, size: number, querySql?: string): Promise<voi
     lastQuerySql.value = text
     page.value = p
     pageSize.value = size
-    // 行索引随查询/翻页失效：清空待提交集、选中行与编辑态，避免错位写入
+    // 行索引随查询/翻页失效：清空待提交集、选中行、编辑态与选区，避免错位写入
     pendingEdits.value = new Map()
     selectedRows.value = new Set()
     editingCell.value = null
     ctxMenu.value = null
+    clearCellSelection()
+    sortState.value = null
+    // 渲染后测量列宽（列锁定的 sticky 左偏移依赖像素值）
+    void nextTick().then(measureColumns)
     // 异步解析当前表主键列（失败回退启发式，不阻塞结果渲染）
     void resolvePk(tableOfQuery(text))
   } catch {
@@ -958,6 +1818,9 @@ function onConnected(connLabel: string): void {
   selectedRows.value = new Set()
   editingCell.value = null
   ctxMenu.value = null
+  clearCellSelection()
+  sortState.value = null
+  lockedCols.value = []
   pkColumn.value = ''
   void connLabel
 }
@@ -1045,6 +1908,41 @@ function onConnected(connLabel: string): void {
 /* 选中行高亮 */
 .mysql-grid__row--selected {
   background: rgba(var(--v-theme-primary), 0.08);
+}
+
+/* 列锁定：sticky 冻结（不透明底色防止下方内容透出；表头层级高于单元格） */
+.mysql-grid__cell--locked,
+.mysql-grid__head-cell--locked {
+  position: sticky;
+  background: rgb(var(--v-theme-surface));
+}
+
+.mysql-grid__cell--locked {
+  z-index: 1;
+}
+
+.mysql-grid__head-cell--locked {
+  z-index: 2;
+}
+
+/* 锁定列在选中/编辑状态下的底色与行高亮保持一致 */
+.mysql-grid__row--selected .mysql-grid__cell--locked {
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.mysql-grid__cell--locked.mysql-grid__cell--edited {
+  background: rgba(var(--v-theme-warning), 0.08);
+}
+
+/* 单元格选中区域高亮（矩形选区） */
+.mysql-grid__cell--selected {
+  outline: 1px solid rgba(var(--v-theme-primary), 0.6);
+  background: rgba(var(--v-theme-primary), 0.1);
+}
+
+/* 列头可单击选中整列 */
+th[title='单击选中整列'] {
+  cursor: pointer;
 }
 
 /* 单元格内联编辑输入框（原生 input，占满单元格） */

@@ -45,6 +45,7 @@ pub fn run() {
             commands::sftp::sftp_mkdir,
             commands::sftp::sftp_delete,
             commands::sftp::sftp_rename,
+            commands::sftp::sftp_chmod,
             commands::sftp::sftp_upload,
             commands::sftp::sftp_download,
             commands::sftp::transfer_list,
@@ -54,6 +55,10 @@ pub fn run() {
             commands::sftp::local_mkdir,
             commands::sftp::local_rename,
             commands::sftp::local_delete,
+            // SFTP 收藏路径（commands/sftp.rs，SQLite sftp_favorites 表）
+            commands::sftp::sftp_favorite_list,
+            commands::sftp::sftp_favorite_add,
+            commands::sftp::sftp_favorite_remove,
             // 服务器监控（commands/monitor.rs，P1）
             commands::monitor::monitor_start,
             commands::monitor::monitor_stop,
@@ -70,6 +75,7 @@ pub fn run() {
             commands::tunnel::tunnel_delete,
             commands::tunnel::tunnel_start,
             commands::tunnel::tunnel_stop,
+            commands::tunnel::tunnel_start_all,
             // 会话增强（commands/session_log.rs + commands/auth_profile.rs，P1）
             commands::session::session_clone,
             commands::session_log::session_log_toggle,
@@ -109,6 +115,14 @@ pub fn run() {
             commands::mysql_objects::mysql_object_ddl,
             commands::mysql_objects::mysql_object_save,
             commands::mysql_objects::mysql_object_drop,
+            // 数据库级管理（commands/mysql_db.rs）：切换/新建/删除库 + 表快捷操作
+            commands::mysql_db::mysql_db_list,
+            commands::mysql_db::mysql_db_create,
+            commands::mysql_db::mysql_db_drop,
+            commands::mysql_db::mysql_db_switch,
+            commands::mysql_db::mysql_table_show_create,
+            commands::mysql_db::mysql_table_optimize,
+            commands::mysql_db::mysql_table_rename,
             // 用户管理（commands/mysql_user.rs）
             commands::mysql_user::mysql_user_list,
             commands::mysql_user::mysql_user_create,
@@ -125,6 +139,10 @@ pub fn run() {
             commands::master_password::master_password_status,
             commands::master_password::master_password_set,
             commands::master_password::master_password_verify,
+            // 高功能设置（commands/settings.rs）：设置项持久化（SQLite settings 表）
+            commands::settings::settings_get_all,
+            commands::settings::settings_get,
+            commands::settings::settings_set,
         ])
         .setup(|app| {
             // 会话配置存储：数据库路径经 Tauri API 获取（setup 在任何命令之前运行）
@@ -145,6 +163,10 @@ pub fn run() {
             crate::services::mysql_console::init(&data_dir)?;
             // 备份档案 + 运行历史（SQLite，同 fyshell.db 独立 Connection）
             crate::services::mysql_backup::init(&data_dir)?;
+            // 应用设置（SQLite，同 fyshell.db 独立 Connection，settings 表）
+            crate::services::settings_store::init(&data_dir)?;
+            // SFTP 收藏路径（SQLite，同 fyshell.db 独立 Connection，sftp_favorites 表）
+            crate::services::sftp_store::init(&data_dir)?;
 
             // 托盘：图标 + 菜单
             tray::init(app.handle())?;

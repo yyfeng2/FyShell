@@ -92,3 +92,16 @@ pub struct TunnelRule {
     /// 错误信息（status = Error 时非空）
     pub error: Option<String>,
 }
+
+/// 一键全启结果报告（start_all 返回，前端展示成功/失败计数）
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct StartAllReport {
+    /// 规则总数（含已在运行中被跳过的）
+    pub total: usize,
+    /// 本次成功启动数
+    pub started: usize,
+    /// 启动失败数
+    pub failed: usize,
+    /// 失败原因列表（与 failed 计数对应）
+    pub errors: Vec<String>,
+}

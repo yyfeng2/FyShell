@@ -6,7 +6,7 @@
  */
 import { invoke } from '@tauri-apps/api/core';
 import { createChannel } from './channels';
-import type { FileEntry, TransferTask } from './types';
+import type { FileEntry, SftpFavorite, TransferTask } from './types';
 
 /** 列出远程目录（path 为远程绝对路径） */
 export function sftpList(id: string, path: string): Promise<FileEntry[]> {
@@ -34,6 +34,26 @@ export function sftpRename(
   newPath: string,
 ): Promise<void> {
   return invoke<void>('sftp_rename', { id, oldPath, newPath });
+}
+
+/** 设置远程文件/目录权限（mode 为八进制语义数值，如 0o644 = 420） */
+export function sftpChmod(id: string, path: string, mode: number): Promise<void> {
+  return invoke<void>('sftp_chmod', { id, path, mode });
+}
+
+/** 收藏路径列表（按收藏时间倒序） */
+export function sftpFavoriteList(): Promise<SftpFavorite[]> {
+  return invoke<SftpFavorite[]>('sftp_favorite_list');
+}
+
+/** 收藏路径（按 side+path 幂等；返回含 id 的收藏记录） */
+export function sftpFavoriteAdd(side: string, path: string): Promise<SftpFavorite> {
+  return invoke<SftpFavorite>('sftp_favorite_add', { side, path });
+}
+
+/** 取消收藏（按 side+path 删除，未收藏时幂等） */
+export function sftpFavoriteRemove(side: string, path: string): Promise<void> {
+  return invoke<void>('sftp_favorite_remove', { side, path });
 }
 
 /**

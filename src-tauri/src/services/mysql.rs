@@ -26,11 +26,17 @@ static POOLS: OnceLock<Mutex<HashMap<String, Pool>>> = OnceLock::new();
 /// mysql_async 池连接归还时默认会 reset_connection（隐式回滚打开的事务），
 /// 因此事务期间的连接必须单独持有，不能随池归还。
 static TX_CONNS: OnceLock<Mutex<HashMap<String, Conn>>> = OnceLock::new();
+/// 连接配置注册表：connection_id -> 原始连接配置
+///
+/// 数据库切换（services/mysql_db switch_database）重建连接池时需要原始
+/// host/port/username/password，connect 成功时在此存档。
+static CONFIGS: OnceLock<Mutex<HashMap<String, MySqlConnection>>> = OnceLock::new();
 
 /// 初始化模块级注册表（lib.rs 启动时调用一次；重复调用无害）
 pub fn init() {
     let _ = POOLS.set(Mutex::new(HashMap::new()));
     let _ = TX_CONNS.set(Mutex::new(HashMap::new()));
+    let _ = CONFIGS.set(Mutex::new(HashMap::new()));
 }
 
 /// mysql_async::Error -> AppError 归入 General 变体（未修改 error.rs，避免动他人名下文件）
@@ -46,6 +52,11 @@ fn pools() -> &'static Mutex<HashMap<String, Pool>> {
 /// 事务连接注册表：同上惰性兜底
 fn tx_conns() -> &'static Mutex<HashMap<String, Conn>> {
     TX_CONNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 连接配置注册表：同上惰性兜底
+fn configs() -> &'static Mutex<HashMap<String, MySqlConnection>> {
+    CONFIGS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// 从注册表取连接池（不移出）
@@ -123,7 +134,25 @@ pub async fn connect(cfg: &MySqlConnection) -> Result<String, AppError> {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .insert(id.clone(), pool);
+    // 连接配置存档：数据库切换重建连接池时取用（services/mysql_db）
+    configs()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(id.clone(), cfg.clone());
     Ok(id)
+}
+
+/// 取连接的原始配置（clone；数据库切换重建连接池用）
+///
+/// 连接断开后旧 conn_id 的配置仍留在注册表中（与 POOLS 的 remove 时机不同步），
+/// 属可接受的少量残留——connection_id 为 uuid 不会复用，不影响正确性。
+pub fn config_of(conn_id: &str) -> Result<MySqlConnection, AppError> {
+    configs()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(conn_id)
+        .cloned()
+        .ok_or_else(|| AppError::general(format!("MySQL 连接不存在: {conn_id}")))
 }
 
 /// mysql_disconnect：从注册表取出并关闭（含事务连接清理）

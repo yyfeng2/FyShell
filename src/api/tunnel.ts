@@ -4,7 +4,7 @@
  * 组件禁止直接调用 invoke，一律通过本文件。
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { TunnelRule } from './types';
+import type { TunnelRule, TunnelStartReport } from './types';
 
 /** 列出隧道规则；不传 sessionId 返回全部规则 */
 export function tunnelList(sessionId?: string): Promise<TunnelRule[]> {
@@ -29,4 +29,9 @@ export function tunnelStart(id: string): Promise<void> {
 /** 停止隧道监听 */
 export function tunnelStop(id: string): Promise<void> {
   return invoke<void>('tunnel_stop', { id });
+}
+
+/** 一键全启：遍历全部规则逐个启动（已在运行中的跳过），返回成功/失败计数 */
+export function tunnelStartAll(): Promise<TunnelStartReport> {
+  return invoke<TunnelStartReport>('tunnel_start_all');
 }

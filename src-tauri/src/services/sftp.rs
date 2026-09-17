@@ -4,7 +4,7 @@
 //! 公开 API 形态：`pub async fn list(state: &AppState, id: &str, path: &str) -> Result<Vec<FileEntry>, AppError>` 等。
 
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::OpenFlags;
+use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 use crate::error::AppError;
@@ -121,6 +121,17 @@ pub async fn rename(
 ) -> Result<(), AppError> {
     let sftp = open_sftp(state, id).await?;
     sftp.rename(old_path, new_path).await.map_err(sftp_err)
+}
+
+/// 修改权限（chmod）：`mode` 为八进制语义的 u32（如 0o644）。
+/// 仅设置权限位：size/uid/gid/时间均为 None，序列化时 attrs flags 只含 PERMISSIONS，
+/// 不会误改文件大小、属主与时间戳。
+pub async fn chmod(state: &AppState, id: &str, path: &str, mode: u32) -> Result<(), AppError> {
+    let sftp = open_sftp(state, id).await?;
+    let mut metadata = FileAttributes::default();
+    // 保留 setuid/setgid/sticky 位（0o7777 全量掩码），与 chmod 语义一致
+    metadata.permissions = Some(mode & 0o7777);
+    sftp.set_metadata(path, metadata).await.map_err(sftp_err)
 }
 
 /// 上传核心逻辑：4KB 批量读写、每块更新进度、断点续传。

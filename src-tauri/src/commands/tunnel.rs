@@ -5,7 +5,7 @@
 
 
 use crate::error::AppError;
-use crate::models::tunnel::TunnelRule;
+use crate::models::tunnel::{StartAllReport, TunnelRule};
 use crate::services::tunnel as tunnel_service;
 
 /// 隧道规则列表：`session_id` 非空时仅返回该会话的规则
@@ -43,4 +43,10 @@ pub async fn tunnel_start(app: tauri::AppHandle, id: String) -> Result<(), AppEr
 #[tauri::command]
 pub async fn tunnel_stop(id: String) -> Result<(), AppError> {
     tunnel_service::stop(&id)
+}
+
+/// 一键全启：遍历全部规则逐个启动（已在运行中的跳过），返回成功/失败计数
+#[tauri::command]
+pub async fn tunnel_start_all(app: tauri::AppHandle) -> Result<StartAllReport, AppError> {
+    tunnel_service::start_all(&app)
 }

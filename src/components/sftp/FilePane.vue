@@ -38,7 +38,35 @@
         :disabled="disabled"
         :title="currentPath"
         @keyup.enter="commitPath"
+        @contextmenu.prevent="openPathMenu"
       />
+      <!-- 收藏路径下拉：按窗格侧过滤，点击快速跳转，条目可单独移除 -->
+      <v-menu :close-on-content-click="false">
+        <template #activator="{ props: favProps }">
+          <v-btn icon variant="text" size="x-small" v-bind="favProps" title="收藏路径">
+            <v-icon :icon="isFavorited ? 'mdi-star' : 'mdi-star-outline'" size="16" />
+          </v-btn>
+        </template>
+        <v-list density="compact" min-width="240" max-height="320">
+          <v-list-item
+            v-for="fav in favoriteForSide"
+            :key="fav.id"
+            :title="fav.path"
+            @click="jumpFavorite(fav)"
+          >
+            <template #append>
+              <v-btn
+                icon="mdi-close"
+                size="x-small"
+                variant="text"
+                title="取消收藏"
+                @click.stop="removeFavorite(fav)"
+              />
+            </template>
+          </v-list-item>
+          <v-list-item v-if="!favoriteForSide.length" title="暂无收藏路径" disabled />
+        </v-list>
+      </v-menu>
     </div>
 
     <!-- 表头（可点击排序，目录恒排前） -->
@@ -126,7 +154,7 @@
     <!-- 错误提示 -->
     <v-snackbar v-model="snackbar" timeout="3000" location="bottom">{{ errorMsg }}</v-snackbar>
 
-    <!-- 右键菜单：新建文件夹 / 重命名 / 删除 / 传输到对侧 -->
+    <!-- 右键菜单：新建文件夹 / 重命名 / 权限 / 删除 / 传输到对侧 / 终端定位 -->
     <v-menu v-model="menu.visible" :target="[menu.x, menu.y]" min-width="180">
       <v-list density="compact">
         <v-list-item @click="actionMkdir">
@@ -135,12 +163,18 @@
         <v-list-item :disabled="!menu.entry" @click="actionRename">
           <v-list-item-title>重命名</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="side === 'remote'" :disabled="!menu.entry" @click="actionChmod">
+          <v-list-item-title>权限</v-list-item-title>
+        </v-list-item>
         <v-list-item :disabled="!menu.entry" @click="actionDelete">
           <v-list-item-title>删除</v-list-item-title>
         </v-list-item>
         <v-divider />
         <v-list-item :disabled="!menu.entry || !canTransfer" @click="actionTransfer">
           <v-list-item-title>传输到对侧</v-list-item-title>
+        </v-list-item>
+        <v-list-item v-if="side === 'remote'" :disabled="!sessionId" @click="actionLocateTerminal">
+          <v-list-item-title>将终端定位到当前目录</v-list-item-title>
         </v-list-item>
       </v-list>
     </v-menu>
@@ -163,7 +197,56 @@
               @keyup.enter="confirmDialog"
             />
           </template>
-          <template v-else>
+          <template v-else-if="dialogType === 'chmod'">
+            <!-- 九宫格 rwx 勾选（行 = 属主/属组/其他，列 = 读/写/执行） -->
+            <div class="chmod-grid">
+              <div class="chmod-grid__row chmod-grid__row--head">
+                <span />
+                <span>读</span><span>写</span><span>执行</span>
+              </div>
+              <div class="chmod-grid__row">
+                <span class="chmod-grid__label">属主</span>
+                <v-checkbox
+                  v-for="i in 3"
+                  :key="`owner-${i}`"
+                  v-model="chmodOwner[i - 1]"
+                  density="compact"
+                  hide-details
+                  @update:model-value="onChmodBitChange"
+                />
+              </div>
+              <div class="chmod-grid__row">
+                <span class="chmod-grid__label">属组</span>
+                <v-checkbox
+                  v-for="i in 3"
+                  :key="`group-${i}`"
+                  v-model="chmodGroup[i - 1]"
+                  density="compact"
+                  hide-details
+                  @update:model-value="onChmodBitChange"
+                />
+              </div>
+              <div class="chmod-grid__row">
+                <span class="chmod-grid__label">其他</span>
+                <v-checkbox
+                  v-for="i in 3"
+                  :key="`other-${i}`"
+                  v-model="chmodOther[i - 1]"
+                  density="compact"
+                  hide-details
+                  @update:model-value="onChmodBitChange"
+                />
+              </div>
+            </div>
+            <v-text-field
+              v-model="chmodValue"
+              label="八进制权限（如 644）"
+              density="compact"
+              variant="outlined"
+              @update:model-value="onChmodOctalInput"
+            />
+          </template>
+          <template v-else-if="dialogType === 'rename'">
             <v-text-field
               v-model="dialogValue"
               label="新名称"
@@ -192,7 +275,19 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { sftpList, localList, sftpMkdir, sftpRename, sftpDelete } from '@/api/sftp'
+import {
+  sftpList,
+  localList,
+  sftpMkdir,
+  sftpRename,
+  sftpDelete,
+  sftpChmod,
+  sftpFavoriteList,
+  sftpFavoriteAdd,
+  sftpFavoriteRemove,
+} from '@/api/sftp'
+import { sshWrite } from '@/api/ssh'
+import { useTerminalStore } from '@/stores/terminal'
 import {
   DEFAULT_PATH,
   formatSize,
@@ -203,6 +298,7 @@ import {
   type FileEntry,
   type PaneSide,
 } from './file-utils'
+import type { SftpFavorite } from '@/api/types'
 
 const props = withDefaults(
   defineProps<{
@@ -231,6 +327,9 @@ const emit = defineEmits<{
   (e: 'drop-files', payload: { from: PaneSide; entries: FileEntry[] }): void
 }>()
 
+/** 终端连接状态查询（只读，判断"定位到当前目录"的目标终端是否已连接） */
+const terminalStore = useTerminalStore()
+
 const ROW_HEIGHT = 28
 
 /** VVirtualScroll 槽的 item 类型为 unknown，模板中统一断言为 FileEntry */
@@ -242,6 +341,12 @@ const entries = ref<FileEntry[]>([])
 const loading = ref(false)
 const errorMsg = ref('')
 const snackbar = ref(false)
+
+/** 统一提示：复用错误提示条（信息类文案同样展示） */
+function notify(message: string): void {
+  errorMsg.value = message
+  snackbar.value = true
+}
 
 const currentPath = computed(() => props.path || DEFAULT_PATH[props.side])
 const isRoot = computed(() => isRootPath(props.side, currentPath.value))
@@ -371,9 +476,104 @@ function actionTransfer(): void {
   emit('transfer-request', [{ ...menu.entry }])
 }
 
-// ---------- 新建 / 重命名 / 删除 ----------
+// ---------- 将终端定位到当前目录（仅远程侧） ----------
 
-const dialogType = ref<null | 'mkdir' | 'rename' | 'delete'>(null)
+/**
+ * 右键"将终端定位到当前目录"：向该会话的 SSH 终端注入 `cd <path>` 并回车执行。
+ * 写入通道与快捷命令栏一致（ssh_write 按连接键路由）；路径含空格/单引号时按 POSIX shell 语义加引号。
+ */
+async function actionLocateTerminal(): Promise<void> {
+  menu.visible = false
+  if (props.side !== 'remote' || !props.sessionId) return
+  if (!terminalStore.isConnected(props.sessionId)) {
+    notify('当前会话终端未连接，无法定位')
+    return
+  }
+  // POSIX 单引号包裹：内嵌单引号按 shell 惯例转义为 '\''
+  const quoted = `'${currentPath.value.replace(/'/g, `'\\''`)}'`
+  const payload = new TextEncoder().encode(`cd ${quoted}\n`)
+  try {
+    await sshWrite(props.sessionId, payload)
+    notify(`已将终端定位到 ${currentPath.value}`)
+  } catch (e) {
+    notify(e instanceof Error ? e.message : String(e))
+  }
+}
+
+// ---------- 收藏路径（SQLite 持久化，按侧过滤） ----------
+
+/** 收藏列表全量缓存（含两侧），下拉按窗格侧过滤 */
+const favorites = ref<SftpFavorite[]>([])
+
+/** 当前路径是否已收藏（同侧同名路径命中） */
+const isFavorited = computed(() =>
+  favorites.value.some((f) => f.side === props.side && f.path === currentPath.value),
+)
+
+/** 当前侧的收藏列表（下拉展示与跳转） */
+const favoriteForSide = computed(() => favorites.value.filter((f) => f.side === props.side))
+
+async function loadFavorites(): Promise<void> {
+  try {
+    favorites.value = await sftpFavoriteList()
+  } catch {
+    // 收藏加载失败不阻塞主流程
+  }
+}
+
+/** 路径栏右键：收藏当前路径（幂等） */
+async function actionFavorite(): Promise<void> {
+  pathMenu.visible = false
+  try {
+    await sftpFavoriteAdd(props.side, currentPath.value)
+    await loadFavorites()
+    notify(`已收藏路径 ${currentPath.value}`)
+  } catch (e) {
+    notify(e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** 路径栏右键：取消收藏当前路径（按侧 + 路径删除） */
+async function actionUnfavorite(): Promise<void> {
+  pathMenu.visible = false
+  try {
+    await sftpFavoriteRemove(props.side, currentPath.value)
+    await loadFavorites()
+    notify(`已取消收藏 ${currentPath.value}`)
+  } catch (e) {
+    notify(e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** 收藏下拉点击条目：跳转到该路径 */
+function jumpFavorite(fav: SftpFavorite): void {
+  if (fav.side !== props.side) return
+  emit('update:path', fav.path)
+}
+
+/** 收藏下拉条目的移除按钮 */
+async function removeFavorite(fav: SftpFavorite): Promise<void> {
+  try {
+    await sftpFavoriteRemove(props.side, fav.path)
+    await loadFavorites()
+  } catch (e) {
+    notify(e instanceof Error ? e.message : String(e))
+  }
+}
+
+/** 路径栏右键菜单（收藏 / 取消收藏） */
+const pathMenu = reactive({ visible: false, x: 0, y: 0 })
+
+function openPathMenu(event: MouseEvent): void {
+  if (props.disabled) return
+  pathMenu.x = event.clientX
+  pathMenu.y = event.clientY
+  pathMenu.visible = true
+}
+
+// ---------- 新建 / 重命名 / 权限 / 删除 ----------
+
+const dialogType = ref<null | 'mkdir' | 'rename' | 'delete' | 'chmod'>(null)
 const dialogValue = ref('')
 const busy = ref(false)
 const targetEntry = computed(() => menu.entry)
@@ -382,6 +582,7 @@ const dialogTitle = computed(() => {
   if (dialogType.value === 'mkdir') return '新建文件夹'
   if (dialogType.value === 'rename') return '重命名'
   if (dialogType.value === 'delete') return '删除确认'
+  if (dialogType.value === 'chmod') return '权限设置'
   return ''
 })
 
@@ -407,6 +608,56 @@ function actionRename(): void {
 function actionDelete(): void {
   menu.visible = false
   dialogType.value = 'delete'
+}
+
+// ---------- 权限（chmod，仅远程侧） ----------
+
+/** 九宫格勾选状态：owner/group/other 各 [读, 写, 执行]，默认 644 */
+const chmodOwner = ref([true, true, false])
+const chmodGroup = ref([true, false, false])
+const chmodOther = ref([true, false, false])
+/** 八进制权限输入框（与九宫格双向联动） */
+const chmodValue = ref('644')
+
+/** 打开权限对话框：默认回填当前权限位（无权限信息时回退 644） */
+function actionChmod(): void {
+  menu.visible = false
+  applyChmodOctal(menu.entry?.permissions || '644')
+  dialogType.value = 'chmod'
+}
+
+/** 九宫格勾选位 → 八进制串（如 "644"） */
+function octalFromBits(): string {
+  const bits = [...chmodOwner.value, ...chmodGroup.value, ...chmodOther.value]
+  let val = 0
+  bits.forEach((on, i) => {
+    if (on) val |= 1 << (8 - i)
+  })
+  return val.toString(8).padStart(3, '0')
+}
+
+/** 九宫格勾选 → 同步八进制输入框 */
+function onChmodBitChange(): void {
+  chmodValue.value = octalFromBits()
+}
+
+/** 八进制输入 → 反向同步九宫格（非法输入不动作，保留原勾选） */
+function onChmodOctalInput(value: string): void {
+  const m = /^[0-7]{1,3}$/.exec(value.trim())
+  if (!m) return
+  const val = parseInt(value.trim(), 8)
+  const bits = [...chmodOwner.value, ...chmodGroup.value, ...chmodOther.value]
+  bits.forEach((_, i) => {
+    bits[i] = (val & (1 << (8 - i))) !== 0
+  })
+  chmodOwner.value = bits.slice(0, 3)
+  chmodGroup.value = bits.slice(3, 6)
+  chmodOther.value = bits.slice(6, 9)
+  chmodValue.value = val.toString(8).padStart(3, '0')
+}
+
+function applyChmodOctal(octal: string): void {
+  onChmodOctalInput(octal)
 }
 
 /**
@@ -461,6 +712,12 @@ async function confirmDialog(): Promise<void> {
       } else {
         await callLocalApi('localDelete', fullPath, entry.is_dir)
       }
+    } else if (type === 'chmod') {
+      const entry = targetEntry.value
+      const m = /^[0-7]{1,3}$/.exec(chmodValue.value.trim())
+      if (!entry || props.side !== 'remote' || !props.sessionId || !m) return
+      const fullPath = joinPath(props.side, currentPath.value, entry.name)
+      await sftpChmod(props.sessionId, fullPath, parseInt(chmodValue.value.trim(), 8))
     }
     dialogType.value = null
     menu.entry = null
@@ -551,6 +808,8 @@ onMounted(() => {
     })
     resizeObserver.observe(bodyEl.value)
   }
+  // 收藏路径列表（SQLite；失败静默，不阻塞主流程）
+  void loadFavorites()
 })
 
 onUnmounted(() => {
@@ -674,6 +933,29 @@ onUnmounted(() => {
 
 .file-pane__icon--dir {
   color: rgb(var(--v-theme-secondary));
+}
+
+/* 权限对话框：九宫格 rwx 勾选（行 = 属主/属组/其他，列 = 读/写/执行） */
+.chmod-grid {
+  margin-bottom: 12px;
+}
+
+.chmod-grid__row {
+  display: grid;
+  grid-template-columns: 48px 1fr 1fr 1fr;
+  align-items: center;
+}
+
+.chmod-grid__row--head {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  user-select: none;
+}
+
+.chmod-grid__label {
+  font-size: 13px;
+  color: rgba(var(--v-theme-on-surface), 0.85);
 }
 
 .file-pane__hint {
