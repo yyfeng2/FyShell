@@ -853,7 +853,8 @@ export type SessionConfig = {
 	 */
 	profile_id?: string | null,
 	/**
-	 *  会话类型："mysql" = 数据库会话，None 或 "ssh" = SSH 会话
+	 *  会话类型：Some("mysql") = 数据库会话，None 或 Some("ssh") = SSH 会话。
+	 *  serde default：老数据缺该字段时反序列化为 None（视为 SSH），向后兼容。
 	 */
 	session_type?: string | null,
 };

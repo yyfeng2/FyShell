@@ -89,7 +89,7 @@ vue-tsc 全绿。
 2. **P2 api/*.ts 内联模型未迁移 bindings**：可后续渐进迁移
 3. **已存连接明文密码**：saved_connections 目前明文存储，可接入主密码体系加密
 
-**已解决**（2026-09-17/18）：主密码接线、CodeMirror 6 集成、契约治理、Rust warnings 清理、git 版本控制、tauri-specta 集成、updater 配置、体验修复 4 项（连接入口/会话选项/设置入口/字体统一）。
+**已解决**（2026-09-17/18）：主密码接线、CodeMirror 6 集成、契约治理、Rust warnings 清理、git 版本控制、tauri-specta 集成、updater 配置、体验修复 4 项（连接入口/会话选项/设置入口/字体统一）、会话类型（SSH/数据库）+ 字号统一根源修复（clamp 移除 + 13px 基准）。
 
 ## 文档索引
 

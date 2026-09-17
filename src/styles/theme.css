@@ -136,8 +136,11 @@ body {
   font-size: 13px;
 }
 
-/* 应用基准字号：正文 13px，覆盖 Vuetify 默认 0.875rem */
-.v-application {
+/* 应用与弹层基准：正文 13px，覆盖 Vuetify 默认 0.875rem。
+   注意：对话框/菜单经 Teleport 渲染到 body 下的 .v-overlay-container（.v-application 之外），
+   因此所有覆盖必须同时命中两层，仅写 .v-application 前缀对弹层无效 */
+.v-application,
+.v-overlay-container {
   font-size: 13px;
 }
 
@@ -146,33 +149,39 @@ body {
 .v-application .v-btn--size-small,
 .v-application .v-btn--size-default,
 .v-application .v-btn--size-large,
-.v-application .v-btn--size-x-large {
+.v-application .v-btn--size-x-large,
+.v-overlay-container .v-btn {
   --v-btn-size: 13px;
 }
 
 /* 表单字段高度：固定 34px（compact 紧凑基线，与 13px 字号匹配，不再随分辨率变化） */
-.v-application .v-input--density-compact .v-field {
+.v-application .v-input--density-compact .v-field,
+.v-overlay-container .v-input--density-compact .v-field {
   --v-input-control-height: 34px;
   --v-field-padding-bottom: 5px;
 }
 
 /* 字段 label：与正文同基线（13px） */
-.v-application .v-label {
+.v-application .v-label,
+.v-overlay-container .v-label {
   font-size: 13px;
 }
 
 /* 卡片标题：Vuetify 默认 1.25rem 偏大，统一 14px（与分区标题一致） */
-.v-application .v-card-title {
+.v-application .v-card-title,
+.v-overlay-container .v-card-title {
   font-size: 14px;
 }
 
 /* 卡片正文：13px（覆盖 Vuetify 默认 0.875rem） */
-.v-application .v-card-text {
+.v-application .v-card-text,
+.v-overlay-container .v-card-text {
   font-size: 13px;
 }
 
 /* 列表项次级文字：11px（微字刻度；Vuetify 默认 0.75rem 在 13px 根字号下过小） */
-.v-application .v-list-item-subtitle {
+.v-application .v-list-item-subtitle,
+.v-overlay-container .v-list-item-subtitle {
   font-size: 11px;
 }
 
@@ -209,8 +218,10 @@ body {
   font-size: 16px;
 }
 
-/* 菜单/列表文字与标签栏字号一致（标签栏 12px；注意 Vuetify 3 类名是单下划线 v-list-item-title） */
-.v-application .v-list-item-title {
+/* 菜单/列表文字与标签栏字号一致（标签栏 12px；注意 Vuetify 3 类名是单下划线 v-list-item-title；
+   右键菜单/下拉经 Teleport 在 .v-overlay-container 内，需同时命中） */
+.v-application .v-list-item-title,
+.v-overlay-container .v-list-item-title {
   font-size: 12px;
 }
 
