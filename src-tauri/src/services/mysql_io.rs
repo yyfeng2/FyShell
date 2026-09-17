@@ -415,7 +415,7 @@ async fn import_csv(
             }
         }
         let sql = format!("{keyword} {table} ({col_list}) VALUES {values_sql}");
-        let mut result = conn.exec_iter(sql.as_str(), params).await.map_err(mysql_err)?;
+        let result = conn.exec_iter(sql.as_str(), params).await.map_err(mysql_err)?;
         // 消费剩余结果集/清理语句
         result.drop_result().await.map_err(mysql_err)?;
         rows_total += chunk.len() as u64;
@@ -439,7 +439,7 @@ async fn import_sql(
     }
     let mut rows_total = 0u64;
     for (idx, stmt) in statements.iter().enumerate() {
-        let mut result = match conn.query_iter(stmt.as_str()).await {
+        let result = match conn.query_iter(stmt.as_str()).await {
             Ok(result) => result,
             Err(e) => {
                 return Err(AppError::general(format!(

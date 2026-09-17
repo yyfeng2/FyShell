@@ -180,16 +180,7 @@
               ROLLBACK
             </v-btn>
           </div>
-          <v-textarea
-            v-model="sql"
-            label="SQL 语句"
-            density="compact"
-            rows="4"
-            auto-grow
-            hide-details
-            variant="outlined"
-            class="mysql-grid__editor-input"
-          />
+          <SqlEditor v-model="sql" :tables="tableNames" placeholder="输入 SQL 语句…" @execute="runSql" />
         </div>
 
         <!-- 错误 / 结果提示 -->
@@ -449,6 +440,7 @@ import {
 } from '@/api/mysqlEdit'
 import type { MySqlRowUpdate } from '@/api/mysqlEdit'
 import MysqlConnectionForm from './MysqlConnectionForm.vue'
+import SqlEditor from './SqlEditor.vue'
 import TableDesigner from '@/views/mysql/TableDesigner.vue'
 import HistoryDrawer from './HistoryDrawer.vue'
 import ExplainPanel from './ExplainPanel.vue'
@@ -521,6 +513,9 @@ function selectTable(name: string): void {
 const sql = ref('')
 const page = ref(1)
 const pageSize = ref(10)
+
+/** 表名列表（CodeMirror schema 表名补全数据源，随表列表刷新） */
+const tableNames = computed(() => store.tables.map((t) => t.name))
 
 /** 最近一次查询的 SQL（翻页/改每页大小时复用） */
 const lastQuerySql = ref('')
@@ -1006,11 +1001,6 @@ function onConnected(connLabel: string): void {
   min-width: 0;
   min-height: 0;
   padding: 8px;
-}
-
-.mysql-grid__editor-input {
-  font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: 13px;
 }
 
 .mysql-grid__result {

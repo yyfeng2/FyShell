@@ -16,7 +16,6 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::ipc::Channel;
 use tauri::Manager;
 
 use crate::error::AppError;

@@ -19,17 +19,6 @@ pub struct MySqlQueryHistoryItem {
     pub success: bool,
 }
 
-/// 执行计划单行节点（扁平行列表，前端按 id/parent_id 自行组树）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MySqlExplainNode {
-    /// EXPLAIN 的 select_type+table 组合或树节点标识
-    pub id: String,
-    /// 父节点标识（None = 根节点）
-    pub parent_id: Option<String>,
-    /// 键值对形式，兼容不同 EXPLAIN 格式的列（键为列名、值为字符串化的值）
-    pub values: Vec<(String, String)>,
-}
-
 /// 执行计划结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MySqlExplainResult {

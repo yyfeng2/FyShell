@@ -242,8 +242,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     debugLog(`store openTerminal: new tab ${tabId} conn=${key}`)
 
     try {
-      // 以连接键路由：多标签同会话各自独立连接，互不影响
-      await connectSession({ ...session, id: key })
+      // 路由键 = connId（每标签独立连接）；会话配置按 session.id 加载
+      await connectSession(session, key)
     } catch (e) {
       // 连接失败：回滚新建标签，错误继续抛给调用方展示
       tabs.value = tabs.value.filter((t) => t.tabId !== tabId)

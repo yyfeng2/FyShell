@@ -5,26 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 备份选项（单次备份执行；档案持久化用 MySqlBackupProfile）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MySqlBackupOptions {
-    /// 参与备份的表名列表；None = 全库所有表（服务层经 information_schema 查询）
-    pub tables: Option<Vec<String>>,
-    /// 备份产物文件路径（前端保存对话框已让用户确认，后端覆盖写入）
-    pub file_path: String,
-    /// true = 含 INSERT 数据，false = 仅结构
-    pub include_data: bool,
-    /// true = 附带 DROP TABLE IF EXISTS
-    pub include_drop: bool,
-}
-
-/// 还原选项
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MySqlRestoreOptions {
-    /// 源 SQL 文件路径（mysqldump 风格产物）
-    pub file_path: String,
-}
-
 /// 备份档案（自动运行任务的持久化配置）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MySqlBackupProfile {
@@ -62,12 +42,4 @@ pub struct MySqlBackupRun {
     pub created_at: String,
     /// true = 备份成功，false = 失败
     pub success: bool,
-}
-
-/// 备份/还原执行结果（rows_total：备份 = 导出行数 / 还原 = 受影响行数）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MySqlBackupResult {
-    pub rows_total: u64,
-    /// 耗时（毫秒）
-    pub duration_ms: u64,
 }

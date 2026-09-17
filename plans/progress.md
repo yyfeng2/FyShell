@@ -2,7 +2,7 @@
 
 > 更新日期：2026-09-17
 > 对照计划：[new-version-architecture.md](new-version-architecture.md)（P0~P3 分期）
-> 状态依据：源码扫描 + 最近一次 `tauri dev` 启动成功（dev.log，仅 10 个 warning 无 error）
+> 状态依据：`cargo check` 零 error 零 warning + `vue-tsc --noEmit` 全绿（2026-09-17 多智能体并行清理后）
 
 ## 总览
 
@@ -10,9 +10,10 @@
 |---|---|---|
 | P0 第一期（跑通全链路） | ✅ 完成 | 骨架/连接/终端/SFTP 全链路落地 |
 | P1 第二期（对齐 Xshell） | ✅ 完成 | 监控/快捷命令/隧道/会话增强/MySQL 基础 |
-| P2 第三期（对齐 Navicat） | 🔶 骨架已落地 | 四个子功能代码均在，深度待验证 |
-| P3 第四期（差异化） | ❌ 未开始 | 国产数据库、结构同步等 |
+| P2 第三期（对齐 Navicat） | ✅ 完成 | 后端 + 前端双绿，契约治理完成 |
+| P3 第四期（差异化） | ⛔ 剔除不做 | 用户决定，仅作历史记录 |
 | 前端重设计 | ✅ 已应用 | 经典浅灰 Xshell 风格，defaultTheme: 'light' |
+| 遗留清理 | ✅ 完成 | 主密码接线/CodeMirror 6/契约治理/警告清理/git 版本控制 |
 
 ## P0 — 已完成 ✅
 
@@ -29,23 +30,27 @@
 4. **会话增强**：AuthProfileForm、session_log.rs + LogViewer、拖出新窗口（useDragOutWindow）
 5. **MySQL 基础**：MysqlConnectionForm + MysqlDataGrid + `mysql.rs`（8 命令）
 
-## P2 — 骨架已落地 🔶
+## P2 — 已完成 ✅（2026-09-17 契约治理后双绿）
 
 | 子功能 | 前端 | Rust | 备注 |
 |---|---|---|---|
-| 表设计器 | TableDesigner.vue | mysql_design.rs（2 命令） | DDL 预览深度待验证 |
-| SQL 控制台 | mysqlConsole.ts + HistoryDrawer + ExplainPanel | mysql_console.rs（5 命令） | 补全/格式化依赖 CodeMirror，未装 |
-| 数据编辑 | mysqlEdit.ts | mysql_edit.rs（4 命令） | 表单视图/批量编辑待验证 |
-| 导入导出 | ImportExportDialog.vue | mysql_io.rs（2 命令） | CSV/Excel/JSON/XML/SQL 覆盖面待验证 |
+| 表设计器 | TableDesigner.vue | mysql_design.rs（2 命令） | DDL 生成 + 预览 |
+| SQL 控制台 | SqlEditor.vue（CodeMirror 6）+ HistoryDrawer + ExplainPanel | mysql_console.rs（5 命令） | 高亮/补全/Ctrl+Enter 执行 |
+| 数据编辑 | mysqlEdit.ts | mysql_edit.rs（4 命令） | 主键行编辑/显式 NULL/预览→确认→执行 |
+| 导入导出 | ImportExportDialog.vue | mysql_io.rs（2 命令） | CSV/JSON/SQL 向导 |
 
-## 遗留事项（按优先级）
+## Navicat 对齐阶段 — 已完成 ✅
 
-1. **主密码未接线**：`config_store.rs` 的 `has/set/verify_master_password` 均被 dead_code 警告——后端已写、前端无入口（P0.2 收尾）
-2. **CodeMirror 6 未安装**：计划选型含 CodeMirror 6，package.json 缺失；SQL 控制台补全/格式化被阻塞
-3. **updater 未配置**：`tauri.conf.json` 中 `active: false`、pubkey/endpoints 为空
-4. **tauri-specta 未引入**：目前手写 `api/types.ts` 同步 Rust models（见 docs/ipc-contracts.md）
-5. **Rust warnings ×10**：unused import/mut、session_log is_enabled、tunnel rule 未读等
-6. **项目不是 git 仓库**：无版本控制，建议 `git init` 并首次提交
+1. **数据库对象统一命令**：视图/函数/过程/触发器/事件（kind 驱动）
+2. **用户管理**：列表/授权/创建/删除
+3. **备份/还原 + 自动运行档案**：SQLite 持久化，mysqldump 风格；前端 MysqlDbWorkspace 工具条 + BackupPanel/AutoRunPanel
+
+## 遗留事项（2026-09-17 多智能体清理后剩余）
+
+1. **updater 未配置**：`tauri.conf.json` 中 `active: false`、pubkey/endpoints 为空——留到准备发布时做（需发布渠道决策）
+2. **tauri-specta 未引入**：目前手写 `api/types.ts` 同步 Rust models（见 docs/ipc-contracts.md）
+
+**已解决**（2026-09-17 多智能体并行）：主密码接线（master_password 三命令 + MasterPasswordDialog）、CodeMirror 6 安装并集成 SQL 控制台、4 个死模型删除 + 契约同步、Rust warnings 19→1（仅第三方 future-incompat）、git 版本控制建立（基线提交 + 本地身份 yyfeng14）。
 
 ## 文档索引
 

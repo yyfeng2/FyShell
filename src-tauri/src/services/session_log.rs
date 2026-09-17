@@ -59,19 +59,6 @@ pub fn toggle(session_id: &str, enabled: bool) -> Result<(), AppError> {
     Ok(())
 }
 
-/// 该会话的输出落盘是否已开启
-pub fn is_enabled(session_id: &str) -> bool {
-    LOG_STATE
-        .get()
-        .map(|s| {
-            s.enabled
-                .lock()
-                .expect("session_log enabled 锁中毒")
-                .contains(session_id)
-        })
-        .unwrap_or(false)
-}
-
 /// 追加写入会话输出日志（由 rust-ssh 读循环调用，热路径）。
 ///
 /// 未启用时立即返回；IO 失败静默丢弃，绝不向上传播影响终端数据流。

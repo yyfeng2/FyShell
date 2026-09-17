@@ -50,8 +50,6 @@ static CONN: OnceLock<Mutex<Connection>> = OnceLock::new();
 struct TunnelRuntime {
     /// 应用句柄（stop 时持久化状态并推送事件用）
     app: tauri::AppHandle,
-    /// 启动时的规则快照
-    rule: TunnelRule,
     /// 停止信号：true = 停止；Sender 被 drop 后 changed() 同样立即返回
     cancel_tx: watch::Sender<bool>,
 }
@@ -270,7 +268,6 @@ pub fn start_tunnel(app: &tauri::AppHandle, rule: TunnelRule) -> Result<(), AppE
     // cancel_tx.clone()：accept 循环还需为每个转发连接派生新的 watch Receiver
     let entry = TunnelRuntime {
         app: app.clone(),
-        rule: rule.clone(),
         cancel_tx: cancel_tx.clone(),
     };
     lock_runtimes().insert(rule.id.clone(), entry);

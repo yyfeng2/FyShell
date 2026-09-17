@@ -415,7 +415,7 @@ async fn read_loop(
 /// 写转发任务：消费键盘输入 / resize 消息队列，转发到 russh channel
 async fn write_forward(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<SshWriteMsg>,
-    mut half: russh::ChannelWriteHalf<russh::client::Msg>,
+    half: russh::ChannelWriteHalf<russh::client::Msg>,
 ) {
     while let Some(msg) = rx.recv().await {
         match msg {
@@ -505,7 +505,7 @@ pub async fn connect(
         .map_err(|e| AppError::Ssh(format!("请求 shell 失败: {e}")))?;
 
     // 拆分读写半，分别交给读循环与写转发任务
-    let (mut read_half, write_half) = channel.split();
+    let (read_half, write_half) = channel.split();
     tauri::async_runtime::spawn(read_loop(key.to_string(), read_half, on_output));
     let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
     tauri::async_runtime::spawn(write_forward(write_rx, write_half));

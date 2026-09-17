@@ -238,3 +238,41 @@ struct MySqlQueryResult {
 - 标签拖出新窗口：`@tauri-apps/api/webviewWindow` 的 WebviewWindow，标签携带 session id，新窗口内自行连接
 - 监控走 Channel 推送，无新增事件
 - 认证配置文件：SessionForm 增加配置文件选择器，选择后 auth_type 从配置文件解析
+
+---
+
+# 6. P2 契约扩展（第三期：MySQL 备份 + SQL 控制台）
+
+> 2026-09-17 契约治理备注：计划期曾定义 `MySqlBackupOptions`、`MySqlRestoreOptions`、
+> `MySqlBackupResult`、`MySqlExplainNode` 四个模型，实际实现采用内联参数 +
+> 扁平结果类型，四个死模型已从 models 中删除。本节反映实际命令签名。
+
+## 6.1 命令（P2 新增）
+
+### MySQL 备份/还原（commands/mysql_backup.rs ↔ api/mysqlBackup.ts）
+| 命令 | 签名 | 返回 |
+|---|---|---|
+| `mysql_backup` | `(conn_id: String, tables: Option<Vec<String>>, file_path: String, include_data: Option<bool>, include_create: Option<bool>)` | `u64` 导出数据行数（`tables` None = 全库；`include_data` None 默认 true；`include_create` None 默认 false） |
+| `mysql_restore` | `(conn_id: String, file_path: String, confirmed: Option<bool>)` | `u64` 受影响行数（覆盖确认由前端负责，后端直接执行） |
+| `mysql_backup_profile_list` | `()` | `Vec<MySqlBackupProfile>` |
+| `mysql_backup_profile_save` | `(id: Option<String>, name: String, tables: Vec<String>, include_data: bool, include_create: bool)` | `()`（id 为 null = 新建） |
+| `mysql_backup_profile_delete` | `(id: String)` | `()` |
+| `mysql_backup_run_list` | `()` | `Vec<MySqlBackupRun>`（最近 100 条，倒序） |
+
+### SQL 控制台（commands/mysql_console.rs ↔ api/mysqlConsole.ts）
+| 命令 | 签名 | 返回 |
+|---|---|---|
+| `mysql_history_list` | `(limit: u32)` | `Vec<MySqlQueryHistoryItem>` |
+| `mysql_history_search` | `(keyword: String, limit: u32)` | `Vec<MySqlQueryHistoryItem>` |
+| `mysql_history_clear` | `()` | `()` |
+| `mysql_explain` | `(conn_id: String, sql: String, analyze: Option<bool>)` | `MySqlExplainResult`（`analyze` None 默认 false，true = EXPLAIN ANALYZE） |
+| `mysql_query_multi` | `(conn_id: String, sql: String)` | `Vec<MySqlQueryResult>` |
+
+## 6.2 说明
+
+- 备份/还原执行结果由命令层直接返回 `u64` 行数；TS 侧的 `MySqlBackupResult`
+  （rows_total + duration_ms）由 api 封装层以客户端计时构造，非后端契约模型
+- `MySqlExplainResult` 为扁平行列表：`format`（"rows" 表格 / "tree" 树形文本）、
+  `columns`、`rows`（None = SQL NULL）、`tree`（树形文本）
+- 每次备份执行完成（成功/失败）后由命令层记录一条运行历史
+  （手动备份的 profile_id 为 None）

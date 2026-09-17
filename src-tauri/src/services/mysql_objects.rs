@@ -303,7 +303,7 @@ async fn do_save(
 
     // 执行新 CREATE（文本协议单条语句；触发器体的 BEGIN...END 无需 DELIMITER，
     // DELIMITER 是 mysql CLI 客户端概念，整段 DDL 一次下发即可）
-    let mut result = conn.query_iter(create_sql).await.map_err(mysql_err)?;
+    let result = conn.query_iter(create_sql).await.map_err(mysql_err)?;
     result.drop_result().await.map_err(mysql_err)?;
     Ok(())
 }

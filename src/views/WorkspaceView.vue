@@ -15,6 +15,7 @@ import FlexTabs, { type FlexTabItem } from '@/components/common/FlexTabs.vue'
 import StatusBar from '@/components/common/StatusBar.vue'
 import GlobalDialog from '@/components/common/GlobalDialog.vue'
 import MenuBar from '@/components/common/MenuBar.vue'
+import MasterPasswordDialog from '@/components/common/MasterPasswordDialog.vue'
 import ToolBar from '@/components/common/ToolBar.vue'
 import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
@@ -558,6 +559,8 @@ function disconnectActive(): void {
 const showMonitor = ref(false)
 /** 会话日志查看器开关 */
 const showLogViewer = ref(false)
+/** 主密码设置对话框开关（首次设置 + 修改/校验二合一） */
+const showMasterPassword = ref(false)
 
 /** 活动终端 Tab 的连接路由键（监控/快速命令/日志均按连接键路由；无终端 Tab 时为 null） */
 const activeTerminalId = computed(() => {
@@ -648,6 +651,9 @@ async function onMenuAction(action: string): Promise<void> {
       } else {
         ui.toast('请先选择一个已连接的会话终端', 'warning')
       }
+      break
+    case 'master-password':
+      showMasterPassword.value = true
       break
     case 'next-tab':
       cycleTab()
@@ -985,6 +991,9 @@ onUnmounted(() => {
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- 主密码设置对话框（首次设置 + 修改/校验） -->
+    <MasterPasswordDialog v-model="showMasterPassword" />
 
     <!-- 全局弹层（确认 / toast / 主题同步） -->
     <GlobalDialog />

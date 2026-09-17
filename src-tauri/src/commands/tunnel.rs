@@ -3,7 +3,6 @@
 //! 隧道服务使用模块级注册表（不依赖 AppState），命令层无需 State；
 //! 仅 tunnel_start 需要 AppHandle（事件推送与运行时任务持有）。
 
-use tauri::AppHandle;
 
 use crate::error::AppError;
 use crate::models::tunnel::TunnelRule;

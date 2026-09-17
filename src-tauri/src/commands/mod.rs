@@ -15,3 +15,4 @@ pub mod debug;
 pub mod mysql_objects;
 pub mod mysql_user;
 pub mod mysql_backup;
+pub mod master_password;

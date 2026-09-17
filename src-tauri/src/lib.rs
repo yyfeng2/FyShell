@@ -121,6 +121,10 @@ pub fn run() {
             commands::mysql_backup::mysql_backup_profile_save,
             commands::mysql_backup::mysql_backup_profile_delete,
             commands::mysql_backup::mysql_backup_run_list,
+            // 主密码（commands/master_password.rs，P0 预留接口接线）
+            commands::master_password::master_password_status,
+            commands::master_password::master_password_set,
+            commands::master_password::master_password_verify,
         ])
         .setup(|app| {
             // 会话配置存储：数据库路径经 Tauri API 获取（setup 在任何命令之前运行）

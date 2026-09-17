@@ -214,7 +214,7 @@ pub async fn delete_row(
 
 /// 执行写语句并取受影响行数（文本协议，值已转义内联，无需占位符）
 async fn exec_write(conn: &mut Conn, sql: &str) -> Result<u64, AppError> {
-    let mut result = conn.query_iter(sql).await.map_err(mysql_err)?;
+    let result = conn.query_iter(sql).await.map_err(mysql_err)?;
     let affected = result.affected_rows();
     // 写操作可能附带额外结果集（如多语句），统一消费掉
     result.drop_result().await.map_err(mysql_err)?;

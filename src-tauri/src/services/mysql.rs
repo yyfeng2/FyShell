@@ -301,7 +301,7 @@ pub async fn execute(conn_id: &str, sql: &str) -> Result<u64, AppError> {
 
 /// 执行写操作主体
 async fn do_execute(conn: &mut Conn, sql: &str) -> Result<u64, AppError> {
-    let mut result = conn.query_iter(sql).await.map_err(mysql_err)?;
+    let result = conn.query_iter(sql).await.map_err(mysql_err)?;
     let affected = result.affected_rows();
     // 写操作可能附带额外结果集（如多语句），统一消费掉
     result.drop_result().await.map_err(mysql_err)?;

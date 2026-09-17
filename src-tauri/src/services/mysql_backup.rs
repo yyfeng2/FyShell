@@ -423,7 +423,7 @@ async fn do_restore(conn: &mut Conn, file_path: &str) -> Result<u64, AppError> {
     }
     let mut rows_total = 0u64;
     for (idx, stmt) in statements.iter().enumerate() {
-        let mut result = match conn.query_iter(stmt.as_str()).await {
+        let result = match conn.query_iter(stmt.as_str()).await {
             Ok(result) => result,
             Err(e) => {
                 return Err(AppError::general(format!(
