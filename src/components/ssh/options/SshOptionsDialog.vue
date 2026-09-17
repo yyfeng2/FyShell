@@ -7,10 +7,18 @@
     <v-card>
       <v-card-title class="d-flex align-center">
         <v-icon icon="mdi-tune-vertical" size="small" class="mr-2" />
-        SSH 选项
-        <span class="ssh-options__subtitle ml-2">设置对所有 SSH 连接全局生效</span>
+        {{ isSessionMode ? `会话选项 - ${sessionName}` : 'SSH 选项' }}
+        <span class="ssh-options__subtitle ml-2">
+          {{ isSessionMode ? '设置仅对当前会话生效（覆盖全局值）' : '设置对所有 SSH 连接全局生效' }}
+        </span>
       </v-card-title>
       <v-divider />
+      <!-- 会话模式生效范围提示 -->
+      <div v-if="isSessionMode" class="ssh-options__session-hint">
+        <v-icon icon="mdi-information-outline" size="13" class="mr-1" />
+        当前编辑会话「{{ sessionName }}」：响铃 / 关键词高亮 / 登录提示符自动响应按会话覆盖全局值；
+        连接级选项（认证 / 压缩 / 代理等）当前仅全局生效。
+      </div>
       <div class="ssh-options settings-dialog__body">
         <!-- 左侧树形导航（参考 SecureCRT「会话选项」布局） -->
         <nav class="ssh-options__nav" aria-label="SSH 选项分类">
@@ -65,11 +73,14 @@
 /**
  * SshOptionsDialog —— SSH 专属选项对话框
  *
- * 左侧两级树形导航 + 右侧面板（1:1 对齐 SecureCRT「会话选项」布局），
- * 全局生效（对所有 SSH 连接生效）；分区见 types.ts 的 SSH_OPTIONS_NAV。
- * 所有选项变更即写回后端 SQLite（settings 表，sshopt_* 键），重启后仍保留。
+ * 左侧两级树形导航 + 右侧面板（1:1 对齐 SecureCRT「会话选项」布局）；
+ * 分区见 types.ts 的 SSH_OPTIONS_NAV。
+ * 全局模式（无 sessionId）：对所有 SSH 连接生效；
+ * 会话模式（传入 sessionId）：标题显示会话名，终端外观/行为类选项编辑写会话级键
+ * （sshopt_session_{session_id}_{key}），显示会话级值优先、回退全局值。
+ * 所有选项变更即写回后端 SQLite（settings 表），重启后仍保留。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   SSH_OPTIONS_NAV,
   type SshOptionsLeaf,
@@ -88,6 +99,10 @@ const props = defineProps<{
   modelValue: boolean
   /** 打开时默认展示的叶子页（缺省为用户身份验证） */
   initialLeaf?: SshOptionsLeaf
+  /** 会话模式：会话节点 id（SSH 会话 UUID）；缺省为全局模式 */
+  sessionId?: string
+  /** 会话模式：会话名（标题展示用） */
+  sessionName?: string
 }>()
 
 const emit = defineEmits<{
@@ -99,14 +114,27 @@ const opts = useSshOptionsStore()
 // 启动时从后端加载 SSH 选项（幂等）
 void opts.ensureLoaded()
 
+/** 是否处于会话模式（传入 sessionId） */
+const isSessionMode = computed(() => !!props.sessionId)
+
 /** 当前展示的叶子页 */
 const current = ref<SshOptionsLeaf>('auth')
 
-/** 打开对话框时定位到指定叶子 */
+/** 打开/关闭对话框：会话模式设置 store 会话上下文并加载会话覆盖项，关闭时恢复全局 */
 watch(
   () => props.modelValue,
   (visible) => {
-    if (visible) current.value = props.initialLeaf ?? 'auth'
+    if (visible) {
+      current.value = props.initialLeaf ?? 'auth'
+      if (props.sessionId) {
+        opts.dialogSessionId = props.sessionId
+        void opts.loadSessionOverrides(props.sessionId)
+      } else {
+        opts.dialogSessionId = null
+      }
+    } else {
+      opts.dialogSessionId = null
+    }
   },
 )
 
@@ -189,6 +217,16 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 .ssh-options__subtitle {
   font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
+}
+
+/* 会话模式生效范围提示条 */
+.ssh-options__session-hint {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  font-size: 11px;
+  color: rgb(var(--v-theme-on-surface) / 0.6);
+  background: rgb(var(--v-theme-primary) / 0.06);
 }
 </style>
 

@@ -149,7 +149,7 @@ const sqlPreview = computed<string>(() => {
 
 .explain-panel__title {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 14px;
 }
 
 .explain-panel__sql {

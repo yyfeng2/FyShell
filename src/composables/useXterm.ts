@@ -8,7 +8,7 @@
  * - 输出侧按会话编码用 TextDecoder 解码（支持 UTF-8/GBK/Big5 等），
  *   跨批量边界的多字节字符由 stream 模式正确衔接
  */
-import { onScopeDispose, ref, watch, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, watch, type Ref } from 'vue'
 import { Terminal, type IDisposable, type IDecoration } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebglAddon } from '@xterm/addon-webgl'
@@ -60,6 +60,12 @@ export interface UseXtermOptions {
   fontSize?: number
   /** 字体家族，默认取设置 store 的 terminal_font_family */
   fontFamily?: string
+  /**
+   * 终端所属会话的会话节点 id（SSH 会话 UUID；缺省时全部回退全局值）。
+   * 传入后 SSH 选项的终端外观/行为类选项（响铃/关键词高亮/登录提示符自动响应）
+   * 按会话覆盖全局值（sshopt_session_{session_id}_{key}，会话级优先）。
+   */
+  sessionNodeId?: string
   /**
    * 打开终端后是否立即 focus（默认 false）。
    * 多窗格/后台标签等场景会因盲抢焦点打断输入，交由上层自行决定。
@@ -126,6 +132,14 @@ export function useXterm(options: UseXtermOptions = {}) {
 
   // ---------------- SSH 选项联动：响铃 / 关键词高亮 / 登录提示符自动响应 ----------------
 
+  /**
+   * 会话级生效值（SSH 选项）：sessionNodeId 命中会话覆盖时优先，回退全局值。
+   * 覆盖项按会话存于 sshOptions store（sshopt_session_{session_id}_{key}），对话框编辑后实时生效。
+   */
+  function sshOptOf<T>(bareKey: string, fallback: T): T {
+    return sshOpts.effectiveOf(bareKey, options.sessionNodeId, fallback)
+  }
+
   /** 关键词高亮 decoration 集合（重扫时统一释放） */
   let highlightDecorations: IDecoration[] = []
   /** 关键词重扫防抖定时器（输出停止后扫描一次） */
@@ -153,8 +167,8 @@ export function useXterm(options: UseXtermOptions = {}) {
       }
     }
     highlightDecorations = []
-    if (!sshOpts.highlightEnabled) return
-    const rules = sshOpts.highlightRules.filter((r) => r.keyword)
+    if (!sshOptOf('highlight_enabled', sshOpts.highlightEnabled)) return
+    const rules = sshOptOf('highlight_rules', sshOpts.highlightRules).filter((r) => r.keyword)
     if (rules.length === 0) return
     const buffer = term.buffer.active
     const cursorAbs = buffer.cursorY + buffer.baseY
@@ -213,9 +227,9 @@ export function useXterm(options: UseXtermOptions = {}) {
     }, 150)
   }
 
-  /** 终端 BEL 响铃（按 sshopt_bell_style：sound → 提示音，visual → 背景闪烁） */
+  /** 终端 BEL 响铃（按会话级/全局 sshopt_bell_style：sound → 提示音，visual → 背景闪烁） */
   function handleBell(container: HTMLElement): void {
-    const style = sshOpts.bellStyle
+    const style = sshOptOf('bell_style', sshOpts.bellStyle)
     if (style === 'sound' || style === 'both') playBellSound()
     if (style === 'visual' || style === 'both') flashScreen(container)
   }
@@ -227,27 +241,32 @@ export function useXterm(options: UseXtermOptions = {}) {
   /** 上次响应时间戳（2s 冷却，避免连续响应） */
   let lastPromptResponse = 0
 
-  /** 登录提示符自动响应：行尾匹配 login:/username:/password: 时自动发送配置内容 */
+  /** 登录提示符自动响应：行尾匹配 login:/username:/password: 时自动发送配置内容（会话级优先） */
   function checkLoginPrompt(decoded: string): void {
-    if (!sshOpts.promptAutoRespond || !options.onData) return
+    if (!sshOptOf('prompt_auto_respond', sshOpts.promptAutoRespond) || !options.onData) return
     const now = Date.now()
     if (now - lastPromptResponse < 2000) return
-    if (promptResponses >= sshOpts.promptMaxAttempts) return
+    if (promptResponses >= sshOptOf('prompt_max_attempts', sshOpts.promptMaxAttempts)) return
     promptTailBuffer = (promptTailBuffer + decoded).slice(-64)
     if (/(?:login|username)\s*:\s*$/i.test(promptTailBuffer)) {
       lastPromptResponse = now
       promptResponses += 1
-      options.onData(sshOpts.promptUsername + '\r')
+      options.onData(sshOptOf('prompt_username', sshOpts.promptUsername) + '\r')
     } else if (/password\s*:\s*$/i.test(promptTailBuffer)) {
       lastPromptResponse = now
       promptResponses += 1
-      options.onData(sshOpts.promptPassword + '\r')
+      options.onData(sshOptOf('prompt_password', sshOpts.promptPassword) + '\r')
     }
   }
 
-  /** 关键词高亮规则/开关变更时重扫（无终端时仅记录，新终端创建后生效） */
+  /** 当前终端会话的会话级覆盖项（响应式：对话框编辑后触发高亮重扫） */
+  const sessionOverrideMap = computed(() =>
+    options.sessionNodeId ? sshOpts.sessionOverrides[options.sessionNodeId] : undefined,
+  )
+
+  /** 关键词高亮规则/开关/会话覆盖变更时重扫（无终端时仅记录，新终端创建后生效） */
   watch(
-    () => [sshOpts.highlightEnabled, sshOpts.highlightRules] as const,
+    () => [sshOpts.highlightEnabled, sshOpts.highlightRules, sessionOverrideMap.value] as const,
     () => {
       if (!term) return
       scanKeywords()

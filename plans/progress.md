@@ -55,15 +55,33 @@
 4. **SFTP 增强 + 隧道**：chmod 九宫格权限对话框（八进制双向联动）、收藏路径 SQLite 持久化、终端定位到当前目录、隧道一键全启（StartAllReport 汇总）
 5. **单元格套件 + SQL 编辑器**：复制为 SQL 变体（Where/Insert 单条批量/InsertOrUpdate/Update/Delete/表格文本）、填充（NULL/日期/UUID/自定义）、跳转行、排序、列锁定（sticky）、粘贴/新建并粘贴、克隆行/插入 N 行（前端构造 INSERT 走现有预览→确认→执行管道）；SQL 格式化/大小写转换/压缩/仅运行选中的（sql-formatter）
 
-## 遗留事项（2026-09-17 多智能体清理后剩余）
+## 第二三梯队扩展 — 已完成部分 ✅（2026-09-17）
 
-1. **updater 未配置**：`tauri.conf.json` 中 `active: false`、pubkey/endpoints 为空——留到准备发布时做（需发布渠道决策）
-2. **tauri-specta 未引入**：目前手写 `api/types.ts` 同步 Rust models（见 docs/ipc-contracts.md）
+1. **updater 配置**：密钥对（`src-tauri/keys/` gitignored）+ endpoint 占位符 + 检测更新菜单（帮助 → 检测更新）+ [docs/updater-config.md](../docs/updater-config.md)；**发布渠道决策未定**（endpoint 为占位符，正式发布时填）
+2. **已保存查询**：`saved_queries` 表 4 命令（list/save/rename/delete）+ HistoryDrawer 双 tab + 表格保存入口
+3. **原生插入 `mysql_insert_rows`**：事务包裹、参数化、表名列名反引号校验；预览确认后走原生命令保证原子性
+4. **字节流终端**：本地终端（ConPTY）/ Telnet（IAC 状态机）/ 串口（serialport）三类型统一模式，14 命令，`stores/terminal.ts` 按 sessionTypes 路由；`writeToSession` 统一写入入口（快捷命令/批量发送/SFTP 终端定位）
+5. **SSH 选项对话框**：SecureCRT 会话选项风格（SshOptionsDialog + 8 面板），trace/ssh_proxy/login_script 后端接线（代理连接/跟踪日志/登录脚本解析）
 
-**已解决**（2026-09-17 多智能体并行）：主密码接线（master_password 三命令 + MasterPasswordDialog）、CodeMirror 6 安装并集成 SQL 控制台、4 个死模型删除 + 契约同步、Rust warnings 19→1（仅第三方 future-incompat）、git 版本控制建立（基线提交 + 本地身份 yyfeng14）。
+**⛔ 跳过**（2026-09-17 用户决定）：Docker 管理视图、Redis 全套、批量操作+SSH 导入导出/公钥/Ping（对应智能体死亡后未重派）
+
+## tauri-specta 集成 — 已完成 ✅（2026-09-17）
+
+- **依赖**：specta =2.0.0-rc.25 + specta-typescript 0.0.12 + tauri-specta =2.0.0-rc.25（rc 阶段 `=` 锁定）
+- **后端**：120 命令全部加 `#[specta::specta]` + 43 处模型 `specta::Type` derive + AppError 手写 impl；lib.rs `specta_builder()`（collect_commands!）+ `export_ipc_bindings()`（debug 启动时导出）
+- **前端**：`src/bindings.ts`（963 行，120 命令 + 50 模型）自动生成；types.ts 迁移为 re-export（19 模型 re-export + 2 改名别名；3 个事件 payload / SessionNode 家族 / MonitorSample 保留手写，原因见提交说明）
+- **维护注意**：新增命令需在 lib.rs 的 `generate_handler!` 与 `collect_commands!` **两处**同时登记；P2 api/*.ts 内联模型可后续渐进迁移
+
+## 遗留事项
+
+1. **updater 发布渠道未定**：endpoint 为占位符——正式发布时确定渠道并填写
+2. **P2 api/*.ts 内联模型未迁移 bindings**：可后续渐进迁移
+
+**已解决**（2026-09-17）：主密码接线、CodeMirror 6 集成、契约治理、Rust warnings 清理、git 版本控制、tauri-specta 集成、updater 配置。
 
 ## 文档索引
 
 - [new-version-architecture.md](new-version-architecture.md) — 总架构与功能优先级（P0~P3）
 - [spicy-giggling-thompson.md](spicy-giggling-thompson.md) — Xshell 经典浅灰前端重设计方案（52 项 UI 缺陷已修复）
 - [ipc-contracts.md](../docs/ipc-contracts.md) — IPC 数据模型与命令契约
+- [updater-config.md](../docs/updater-config.md) — updater 配置与发布流程

@@ -343,7 +343,7 @@ function formatDuration(durationMs: number | null): string {
 
 .history-drawer__title {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 14px;
 }
 
 .history-drawer__search {
@@ -381,11 +381,11 @@ function formatDuration(durationMs: number | null): string {
 /* 已保存查询名称 */
 .history-drawer__name {
   font-weight: 500;
-  font-size: 0.85rem;
+  font-size: 13px;
 }
 
 .history-drawer__meta {
-  font-size: 0.75rem;
+  font-size: 12px;
 }
 
 .history-drawer__error {

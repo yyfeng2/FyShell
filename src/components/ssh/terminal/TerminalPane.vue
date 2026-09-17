@@ -12,6 +12,8 @@ const props = withDefaults(
   defineProps<{
     /** 绑定的会话 ID（resize/write 均按会话 ID 路由） */
     sessionId: string
+    /** 会话节点 id（SSH 会话 UUID；会话级 SSH 选项按它覆盖全局值） */
+    sessionNodeId?: string
     /** 会话编码，默认 UTF-8（如 "GBK"、"Big5"） */
     encoding?: string
     /** 字号 */
@@ -27,8 +29,10 @@ const terminalStore = useTerminalStore()
  * - onData/onResize：按会话传输类型路由到各自命令
  *   （SSH → ssh_write/ssh_resize，本地/Telnet/串口 → 各自 byte-stream 命令）
  * - write：注册到 store，Rust 侧 Channel 输出按会话 ID 分发到这里
+ * - sessionNodeId：会话级 SSH 选项（响铃/高亮/登录提示符）按它覆盖全局值
  */
 const xterm = useXterm({
+  sessionNodeId: props.sessionNodeId,
   encoding: props.encoding,
   fontSize: props.fontSize,
   onData: (data) => {

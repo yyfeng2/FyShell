@@ -94,3 +94,49 @@ pub fn set(key: &str, value: &str) -> Result<(), AppError> {
     )?;
     Ok(())
 }
+
+// ---------------- 会话级 SSH 选项（sshopt_session_{session_id}_{key} 前缀） ----------------
+
+/// 会话级键前缀：`sshopt_session_{session_id}_`（复用 settings 表，无 schema 迁移）
+fn session_prefix(session_id: &str) -> String {
+    format!("sshopt_session_{session_id}_")
+}
+
+/// 读取会话级全部覆盖项（返回裸 key -> value；未覆盖的键不在结果中，由前端回退全局值）
+pub fn session_list(session_id: &str) -> Result<HashMap<String, String>, AppError> {
+    let conn = lock();
+    // LIKE 通配符转义 + 显式匹配会话 id 后的分隔下划线，避免短 id 前缀误命中其他会话
+    let escaped = session_id
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    let pattern = format!("sshopt_session_{escaped}\\_%");
+    let mut stmt = conn.prepare("SELECT key, value FROM settings WHERE key LIKE ?1 ESCAPE '\\'")?;
+    let rows = stmt.query_map([pattern], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let prefix_len = session_prefix(session_id).len();
+    let mut map = HashMap::new();
+    for item in rows {
+        let (k, v) = item?;
+        if k.len() > prefix_len {
+            map.insert(k[prefix_len..].to_string(), v);
+        }
+    }
+    Ok(map)
+}
+
+/// 写入会话级覆盖项（幂等覆盖，key 为裸 key，如 bell_style）
+pub fn session_set(session_id: &str, key: &str, value: &str) -> Result<(), AppError> {
+    set(&format!("{}{}", session_prefix(session_id), key), value)
+}
+
+/// 删除会话级覆盖项（恢复继承全局值；键不存在时同样返回 Ok）
+pub fn session_delete(session_id: &str, key: &str) -> Result<(), AppError> {
+    let conn = lock();
+    conn.execute(
+        "DELETE FROM settings WHERE key = ?1",
+        [format!("{}{}", session_prefix(session_id), key)],
+    )?;
+    Ok(())
+}

@@ -3,6 +3,8 @@
  *
  * 职责（对照 docs/ipc-contracts.md §5.1 MySQL 基础 / §5.2 MySQL 基础）：
  * - 连接管理：connect（mysql_connect 返回 connection_id）、disconnect、当前连接状态
+ * - 已保存连接：以 settings 表（mysql_saved_connections 键）持久化最近使用过的连接配置，
+ *   供 MySQL 工作台连接入口列表与工具条连接下拉读取；连接成功后自动回填（去重）
  * - 表列表加载（mysqlListTables）、查询执行状态
  * - 危险 SQL 二次确认流程：mysql_execute 对危险 SQL（DROP/TRUNCATE/ALTER 开头或
  *   DELETE/UPDATE 无 WHERE）未确认时后端返回带提示的错误，前端捕获该错误后弹确认框，
@@ -25,10 +27,65 @@ import {
   mysqlQuery,
   mysqlRollback,
 } from '@/api/mysql'
+import { settingsGet, settingsSet } from '@/api/settings'
 import type { MySqlConnection, MySqlQueryResult, MySqlTableInfo } from '@/api/types'
 
 /** 对外复用契约类型（单一事实来源在 @/api/types） */
 export type { MySqlConnection, MySqlQueryResult, MySqlTableInfo }
+
+/** 已保存连接的持久化键（后端 SQLite settings 表，key-value 文本） */
+const SAVED_CONN_KEY = 'mysql_saved_connections'
+
+/** 已保存的 MySQL 连接配置（连接入口列表与工具条连接下拉共用） */
+export interface SavedMysqlConnection {
+  id: string
+  name: string
+  host: string
+  port: number
+  username: string
+  password: string
+  schema: string | null
+}
+
+/** 生成连接配置 id（前端本地标识，仅用于保存列表） */
+function uuid(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID()
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
+/** 解析持久化的已保存连接 JSON（容错：坏条目跳过，坏格式返回空数组） */
+function parseSaved(raw: string | null): SavedMysqlConnection[] {
+  if (!raw) return []
+  try {
+    const list = JSON.parse(raw) as unknown
+    if (!Array.isArray(list)) return []
+    const out: SavedMysqlConnection[] = []
+    for (const item of list) {
+      if (!item || typeof item !== 'object') continue
+      const r = item as Record<string, unknown>
+      const host = typeof r.host === 'string' ? r.host : ''
+      const port = Number(r.port)
+      const username = typeof r.username === 'string' ? r.username : ''
+      if (!host || !Number.isInteger(port) || !username) continue
+      out.push({
+        id: typeof r.id === 'string' && r.id ? r.id : uuid(),
+        name: typeof r.name === 'string' && r.name ? r.name : `${username}@${host}`,
+        host,
+        port,
+        username,
+        password: typeof r.password === 'string' ? r.password : '',
+        schema: typeof r.schema === 'string' && r.schema ? r.schema : null,
+      })
+    }
+    return out
+  } catch {
+    return []
+  }
+}
 
 /** 执行结果：needsConfirm=true 表示危险 SQL 待二次确认（未向后端发起执行） */
 export interface MysqlExecuteOutcome {
@@ -61,6 +118,12 @@ export const useMysqlStore = defineStore('mysql', {
     connecting: false,
     /** 连接失败/断开信息（v-alert 展示） */
     connError: '' as string,
+    /** 当前连接对应的已保存连接 id（null = 未连接或非保存连接发起） */
+    activeSavedId: null as string | null,
+    /** 已保存的 MySQL 连接（settings 表 mysql_saved_connections 键，重启后仍保留） */
+    savedConnections: [] as SavedMysqlConnection[],
+    /** 最近一次 connect 的入参（连接成功后回填保存列表用） */
+    lastConfig: null as MySqlConnection | null,
 
     tables: [] as MySqlTableInfo[],
     tablesLoading: false,
@@ -97,6 +160,7 @@ export const useMysqlStore = defineStore('mysql', {
     async connect(config: MySqlConnection): Promise<void> {
       this.connecting = true
       this.connError = ''
+      this.lastConfig = config
       try {
         this.connId = await mysqlConnect(config)
         this.connLabel = `${config.host}:${config.port} / ${config.username}`
@@ -126,6 +190,7 @@ export const useMysqlStore = defineStore('mysql', {
         // 无论后端是否报错，本地一律复位（后端可能已清理）
         this.connId = null
         this.connLabel = ''
+        this.activeSavedId = null
         this.tables = []
         this.lastResult = null
         this.pendingConfirm = null
@@ -134,6 +199,68 @@ export const useMysqlStore = defineStore('mysql', {
         this.executeMessage = ''
         this.executeError = ''
       }
+    },
+
+    /** 从后端 settings 表加载已保存连接（失败静默：列表为空，可手动新建） */
+    async loadSavedConnections(): Promise<void> {
+      try {
+        this.savedConnections = parseSaved(await settingsGet(SAVED_CONN_KEY))
+      } catch {
+        // 后端读取失败不阻塞 UI：列表保持为空，可在连接入口手动新建
+      }
+    },
+
+    /** 持久化已保存连接到 settings 表（失败静默：不阻塞 UI，下次变更会重试覆盖） */
+    persistSavedConnections(): void {
+      void settingsSet(SAVED_CONN_KEY, JSON.stringify(this.savedConnections)).catch(
+        () => undefined,
+      )
+    },
+
+    /**
+     * 保存连接配置：按 host+port+username 去重，已存在则更新密码/默认库。
+     * 返回该条目的 id（供组件回填 activeSavedId）
+     */
+    saveConnection(config: MySqlConnection): string {
+      const existing = this.savedConnections.find(
+        (c) => c.host === config.host && c.port === config.port && c.username === config.username,
+      )
+      let id: string
+      if (existing) {
+        existing.password = config.password
+        existing.schema = config.schema
+        id = existing.id
+      } else {
+        id = uuid()
+        this.savedConnections.push({
+          id,
+          name: `${config.username}@${config.host}`,
+          host: config.host,
+          port: config.port,
+          username: config.username,
+          password: config.password,
+          schema: config.schema,
+        })
+      }
+      this.persistSavedConnections()
+      return id
+    },
+
+    /** 删除已保存连接（仅持久化列表，不影响后端连接）；删除的是当前连接时复位 activeSavedId */
+    removeConnection(id: string): void {
+      this.savedConnections = this.savedConnections.filter((c) => c.id !== id)
+      if (this.activeSavedId === id) this.activeSavedId = null
+      this.persistSavedConnections()
+    },
+
+    /** 连接指定已保存配置：已连接时先断开（切换连接语义）；失败时抛出 */
+    async connectSaved(id: string): Promise<void> {
+      const cfg = this.savedConnections.find((c) => c.id === id)
+      if (!cfg) return
+      const { host, port, username, password, schema } = cfg
+      if (this.connId) await this.disconnect()
+      this.activeSavedId = id
+      await this.connect({ host, port, username, password, schema })
     },
 
     // ---------- 表列表 ----------

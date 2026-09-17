@@ -56,6 +56,7 @@ const MENUS: MenuDef[] = [
       { title: '服务器监控', action: 'monitor', dividerBefore: true },
       { title: '快捷命令', action: 'quick-command' },
       { title: 'SSH 隧道', action: 'tunnel' },
+      { title: '会话设置', action: 'session-settings' },
       { title: 'MySQL', action: 'mysql' },
       { title: '会话日志', action: 'session-log', dividerBefore: true },
       { title: '主密码设置', action: 'master-password' },

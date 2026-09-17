@@ -153,6 +153,13 @@
       :type="byteStreamFormType"
       @saved="onByteStreamSaved"
     />
+
+    <!-- SSH 选项对话框（会话模式：仅对该会话生效，覆盖全局值） -->
+    <SshOptionsDialog
+      v-model="sessionOptionsVisible"
+      :session-id="sessionOptionsId"
+      :session-name="sessionOptionsName"
+    />
   </div>
 </template>
 
@@ -169,6 +176,7 @@ import { useTerminalStore } from '@/stores/terminal'
 import { useUiStore } from '@/stores/ui'
 import SessionForm from './SessionForm.vue'
 import ByteStreamForm from './ByteStreamForm.vue'
+import SshOptionsDialog from '@/components/ssh/options/SshOptionsDialog.vue'
 
 const emit = defineEmits<{
   /** 双击会话：发起连接（由父级对接 terminal store 的 openTerminal） */
@@ -267,10 +275,44 @@ function buildMenuItems(node: SessionNode | null): { title: string; icon: string
       ...byteStreamMenuItems(),
     ]
   }
+  const connected = sessionConnected(node)
   return [
+    connected ? { title: '断开', icon: 'mdi-connection-paused', action: () => disconnectSessionNode(node) }
+      : { title: '连接', icon: 'mdi-console-line', action: () => emit('open', node.id) },
+    { title: '设置', icon: 'mdi-tune-vertical', action: () => openSessionOptions(node) },
     { title: '重命名', icon: 'mdi-pencil-outline', action: () => startRename(node) },
     { title: '删除', icon: 'mdi-delete-outline', action: () => removeNode(node) },
   ]
+}
+
+/** 会话是否有活动连接（已连接显示「断开」）：按 terminal store 连接状态查询 */
+function sessionConnected(node: SessionNode): boolean {
+  return terminalStore.isConnected(node.id)
+}
+
+/** 断开会话：经 terminal store 统一关闭（断开 + 清理），无活动连接时静默忽略 */
+function disconnectSessionNode(node: SessionNode): void {
+  if (!sessionConnected(node)) return
+  void terminalStore
+    .closeBySessionId(node.id)
+    .catch((err) => {
+      console.error('[session-tree] 断开失败:', err)
+      uiStore.toast(`断开「${node.name}」失败：${String(err)}`, 'error')
+    })
+}
+
+// ---------- 会话选项（会话级设置入口） ----------
+
+/** 会话选项对话框（会话模式）可见性与目标会话 */
+const sessionOptionsVisible = ref(false)
+const sessionOptionsId = ref('')
+const sessionOptionsName = ref('')
+
+/** 打开该会话的会话选项对话框（编辑写会话级键，覆盖全局值） */
+function openSessionOptions(node: SessionNode): void {
+  sessionOptionsId.value = node.id
+  sessionOptionsName.value = node.name
+  sessionOptionsVisible.value = true
 }
 
 /** 新建连接子菜单项：本地终端 / Telnet / 串口（byte-stream 终端） */

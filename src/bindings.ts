@@ -327,6 +327,12 @@ export const commands = {
 	settingsGet: (key: string) => __TAURI_INVOKE<string | null>("settings_get", { key }),
 	/**  写入单个设置项（幂等覆盖；value 统一序列化为字符串） */
 	settingsSet: (key: string, value: string) => __TAURI_INVOKE<null>("settings_set", { key, value }),
+	/**  读取会话级 SSH 选项覆盖项（裸 key -> value 映射；未覆盖的键由前端回退全局值） */
+	sshoptSessionList: (sessionId: string) => __TAURI_INVOKE<{ [key in string]: string }>("sshopt_session_list", { sessionId }),
+	/**  写入会话级 SSH 选项覆盖项（覆盖全局值；value 统一序列化为字符串） */
+	sshoptSessionSet: (sessionId: string, key: string, value: string) => __TAURI_INVOKE<null>("sshopt_session_set", { sessionId, key, value }),
+	/**  删除会话级 SSH 选项覆盖项（恢复继承全局值） */
+	sshoptSessionDelete: (sessionId: string, key: string) => __TAURI_INVOKE<null>("sshopt_session_delete", { sessionId, key }),
 	/**  键位映射列表 */
 	keyMappingList: () => __TAURI_INVOKE<KeyMapping[]>("key_mapping_list"),
 	/**  保存键位映射（新映射生成 id） */

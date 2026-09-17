@@ -511,7 +511,7 @@ onMounted(() => {
 
 .qc-tree__title {
   font-weight: 600;
-  font-size: 0.9rem;
+  font-size: 14px;
 }
 
 .qc-tree__body {
@@ -534,7 +534,7 @@ onMounted(() => {
 }
 
 .qc-tree__label {
-  font-size: 0.85rem;
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -542,7 +542,7 @@ onMounted(() => {
 
 .qc-tree__preview {
   color: rgba(var(--v-theme-on-surface), 0.5);
-  font-size: 0.75rem;
+  font-size: 12px;
   margin-left: 6px;
 }
 
@@ -560,6 +560,6 @@ onMounted(() => {
   padding: 16px;
   text-align: center;
   color: rgba(var(--v-theme-on-surface), 0.5);
-  font-size: 0.85rem;
+  font-size: 13px;
 }
 </style>

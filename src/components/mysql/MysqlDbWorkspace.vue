@@ -26,6 +26,31 @@
         {{ tab.label }}
       </v-btn>
       <v-divider vertical inset class="mx-1" />
+      <!-- 连接管理（仿 Navicat）：连接下拉 + 断开（未连接时下拉可用，其余按钮保持现有 disabled 逻辑） -->
+      <v-select
+        :model-value="store.activeSavedId"
+        :items="savedItems"
+        label="连接"
+        density="compact"
+        variant="outlined"
+        single-line
+        hide-details
+        :loading="store.connecting"
+        :disabled="store.savedConnections.length === 0"
+        class="mysql-ws__db-select mysql-ws__conn-select"
+        @update:model-value="connectFromSaved"
+      />
+      <v-btn
+        size="small"
+        variant="text"
+        prepend-icon="mdi-lan-disconnect"
+        :disabled="!store.isConnected"
+        title="断开当前 MySQL 连接"
+        @click="disconnectCurrent"
+      >
+        断开
+      </v-btn>
+      <v-divider vertical inset class="mx-1" />
       <!-- 数据库级管理（仿 Navicat）：切换下拉 + 新建/删除库 + 复制 Host -->
       <v-select
         :model-value="currentDb"
@@ -109,9 +134,70 @@
     </div>
     <v-divider />
 
-    <!-- 未连接占位 -->
-    <div v-if="!store.isConnected" class="mysql-ws__placeholder text-caption text-medium-emphasis">
-      连接 MySQL 后显示对象工作台
+    <!-- 未连接：连接入口（已保存连接列表 + 新建连接） -->
+    <div v-if="!store.isConnected" class="mysql-ws__placeholder">
+      <div class="mysql-ws__connect-entry">
+        <div class="text-subtitle-1">
+          <v-icon size="small" class="mr-1">mdi-database-outline</v-icon>MySQL 连接
+        </div>
+        <div class="text-caption text-medium-emphasis mt-1">
+          选择已有连接进入对象工作台，或新建连接
+        </div>
+        <v-alert
+          v-if="store.connError"
+          type="error"
+          variant="tonal"
+          density="compact"
+          closable
+          class="mt-3"
+          max-width="420"
+        >
+          {{ store.connError }}
+        </v-alert>
+        <v-list density="compact" class="mysql-ws__connect-list mt-2">
+          <v-list-item
+            v-for="c in store.savedConnections"
+            :key="c.id"
+          >
+            <template #prepend>
+              <v-icon size="small">mdi-database-outline</v-icon>
+            </template>
+            <v-list-item-title class="text-body-2">{{ c.name }}</v-list-item-title>
+            <v-list-item-subtitle class="text-caption">
+              {{ c.host }}:{{ c.port }} / {{ c.username }}
+            </v-list-item-subtitle>
+            <template #append>
+              <v-btn
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                prepend-icon="mdi-lan-connect"
+                :loading="store.connecting"
+                @click.stop="connectFromSaved(c.id)"
+              >
+                连接
+              </v-btn>
+              <v-btn
+                icon="mdi-delete-outline"
+                size="x-small"
+                variant="text"
+                color="error"
+                class="ml-1"
+                title="删除该连接"
+                @click.stop="removeSaved(c)"
+              />
+            </template>
+          </v-list-item>
+          <v-list-item v-if="store.savedConnections.length === 0">
+            <v-list-item-title class="text-caption text-medium-emphasis">
+              暂无已保存的连接
+            </v-list-item-title>
+          </v-list-item>
+        </v-list>
+        <v-btn color="primary" variant="tonal" prepend-icon="mdi-plus" class="mt-2" @click="showConnForm = true">
+          新建连接
+        </v-btn>
+      </div>
     </div>
 
     <!-- 表：直接嵌入现有数据网格（不修改 MysqlDataGrid） -->
@@ -591,11 +677,14 @@
     <!-- 备份 / 自动运行（仿 Navicat） -->
     <BackupPanel v-model="showBackup" :conn-id="store.connId ?? ''" />
     <AutoRunPanel v-model="showAutoRun" :conn-id="store.connId ?? ''" />
+
+    <!-- 新建连接对话框：复用现有 MysqlConnectionForm（v-model + @connected，接口不变） -->
+    <MysqlConnectionForm v-model="showConnForm" @connected="onFormConnected" />
   </v-card>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
 import {
@@ -623,8 +712,10 @@ import {
   mysqlTableShowCreate,
 } from '@/api/mysqlDb'
 import MysqlDataGrid from './MysqlDataGrid.vue'
+import MysqlConnectionForm from './MysqlConnectionForm.vue'
 import BackupPanel from './BackupPanel.vue'
 import AutoRunPanel from './AutoRunPanel.vue'
+import type { SavedMysqlConnection } from '@/stores/mysql'
 
 const store = useMysqlStore()
 const ui = useUiStore()
@@ -1313,6 +1404,65 @@ watch(
     void loadDatabases()
   },
 )
+
+// ---------- 连接入口与会话管理（已保存连接 + 新建连接） ----------
+const showConnForm = ref(false)
+
+/** 工具条连接下拉选项（已保存连接，含 host:port 说明） */
+const savedItems = computed(() =>
+  store.savedConnections.map((c) => ({ title: `${c.name}（${c.host}:${c.port}）`, value: c.id })),
+)
+
+/**
+ * 连接指定已保存连接（已连接时先断开再连，切换语义）。
+ * 失败信息已写入 store.connError（占位区展示），此处复位下拉选中态。
+ */
+async function connectFromSaved(id: string): Promise<void> {
+  if (store.connecting) return
+  try {
+    await store.connectSaved(id)
+  } catch {
+    store.activeSavedId = null
+  }
+}
+
+/** 断开当前连接（回到连接入口占位区） */
+async function disconnectCurrent(): Promise<void> {
+  if (!store.isConnected) return
+  try {
+    await store.disconnect()
+    ui.toast('已断开 MySQL 连接', 'info')
+  } catch (err) {
+    // disconnect 本地一律复位，后端报错仅提示
+    ui.toast(errText(err), 'error')
+  }
+}
+
+/** 新建连接成功后：把该配置回填到已保存列表（按 host+port+username 去重），下拉随之可选 */
+function onFormConnected(): void {
+  if (store.lastConfig) {
+    store.activeSavedId = store.saveConnection(store.lastConfig)
+  }
+  ui.toast(`已连接 ${store.connLabel}`, 'success')
+}
+
+/** 删除已保存连接：二次确认后移除（仅本地持久化列表，不影响后端） */
+async function removeSaved(c: SavedMysqlConnection): Promise<void> {
+  const ok = await ui.confirm({
+    title: '删除连接',
+    message: `确定删除已保存的连接「${c.name}」（${c.host}:${c.port}）吗？`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  store.removeConnection(c.id)
+  ui.toast(`已删除连接「${c.name}」`, 'success')
+}
+
+// 工作台挂载时加载已保存连接（失败静默，占位区仍可新建连接）
+onMounted(() => {
+  void store.loadSavedConnections()
+})
 </script>
 
 <style scoped>
@@ -1391,6 +1541,12 @@ watch(
   max-width: 180px;
   min-width: 140px;
   margin: 0 4px;
+}
+
+/* 工具条上的连接下拉：比数据库下拉略宽（容纳「名称（host:port）」文案） */
+.mysql-ws__conn-select {
+  flex: 0 0 200px;
+  max-width: 200px;
 }
 
 /* DDL / 权限展示区：等宽字体，可滚动 */
@@ -1497,12 +1653,32 @@ watch(
   margin-top: 4px;
 }
 
-/* 未连接占位 */
+/* 未连接占位：连接入口（已保存连接列表 + 新建连接） */
 .mysql-ws__placeholder {
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 120px;
+  overflow-y: auto;
+}
+
+/* 连接入口容器：居中卡片式布局 */
+.mysql-ws__connect-entry {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 320px;
+  max-width: 480px;
+  padding: 16px 8px;
+}
+
+/* 已保存连接列表：限高可滚动（连接较多时不撑开整页） */
+.mysql-ws__connect-list {
+  width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-radius: 4px;
 }
 </style>

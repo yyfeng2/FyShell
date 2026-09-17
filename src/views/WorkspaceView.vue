@@ -252,6 +252,16 @@ function menuConnect(): void {
   }
 }
 
+/** 右键菜单"设置"：打开该会话的会话选项对话框（会话模式，编辑写会话级键覆盖全局值） */
+function menuSessionSettings(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node || node.isFolder) return
+  sshOptionsSessionId.value = node.id
+  sshOptionsSessionName.value = node.name
+  showSshOptionsDialog.value = true
+}
+
 /** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框） */
 function menuRename(): void {
   treeMenu.visible = false
@@ -680,12 +690,26 @@ const settingsSection = ref<'appearance' | 'terminal' | 'sftp' | 'data' | 'secur
   'appearance',
 )
 
-/** SSH 选项对话框开关（标签右键菜单"会话设置"入口，对所有 SSH 连接全局生效） */
+/** SSH 选项对话框开关（标签右键菜单/菜单栏"会话设置"入口） */
 const showSshOptionsDialog = ref(false)
+/** 会话设置目标：会话节点 id 与会话名（会话模式，编辑写会话级键覆盖全局值） */
+const sshOptionsSessionId = ref<string | null>(null)
+const sshOptionsSessionName = ref('')
 
-/** 标签右键菜单"会话设置"：打开 SSH 选项对话框 */
-function onSessionSettings(): void {
+/** 打开会话选项对话框（会话模式）；无目标会话（非终端 Tab）时 toast 提示 */
+function openSessionSettingsFor(tab: { sessionId?: string; title: string } | null): void {
+  if (!tab || !tab.sessionId) {
+    ui.toast('请先选择一个会话终端', 'warning')
+    return
+  }
+  sshOptionsSessionId.value = tab.sessionId
+  sshOptionsSessionName.value = tab.title
   showSshOptionsDialog.value = true
+}
+
+/** 标签右键菜单"会话设置"：按目标 Tab 解析会话并打开 */
+function onSessionSettings(tabId: string): void {
+  openSessionSettingsFor(tabs.value.find((t) => t.id === tabId) ?? null)
 }
 
 /** 活动终端 Tab 的连接路由键（监控/快速命令/日志均按连接键路由；无终端 Tab 时为 null） */
@@ -769,6 +793,10 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'tunnel':
       openTunnelTab()
+      break
+    case 'session-settings':
+      // 会话设置：对当前活动会话打开（会话模式，编辑写会话级键）
+      openSessionSettingsFor(activeTab.value ?? null)
       break
     case 'mysql':
       openMysqlTab()
@@ -1043,6 +1071,9 @@ onUnmounted(() => {
           <v-list-item v-if="treeMenu.node && !treeMenu.node.isFolder" @click="menuConnect">
             <v-list-item-title>连接</v-list-item-title>
           </v-list-item>
+          <v-list-item v-if="treeMenu.node && !treeMenu.node.isFolder" @click="menuSessionSettings">
+            <v-list-item-title>设置</v-list-item-title>
+          </v-list-item>
           <v-divider />
           <!-- 新建连接：本地终端 / Telnet / 串口（byte-stream 终端） -->
           <v-list-item @click="menuNewLocal">
@@ -1099,6 +1130,7 @@ onUnmounted(() => {
             <TerminalPane
               v-if="tab.type === 'terminal' && tab.connId"
               :session-id="tab.connId"
+              :session-node-id="tab.sessionId"
             />
             <TransferQueueView v-else-if="tab.type === 'transfer'" />
             <DualPane
@@ -1198,8 +1230,12 @@ onUnmounted(() => {
       @open-master-password="showMasterPassword = true"
     />
 
-    <!-- SSH 选项对话框（标签右键"会话设置"入口，全局生效） -->
-    <SshOptionsDialog v-model="showSshOptionsDialog" />
+    <!-- SSH 选项对话框（标签右键/菜单栏"会话设置"入口；会话模式编辑写会话级键） -->
+    <SshOptionsDialog
+      v-model="showSshOptionsDialog"
+      :session-id="sshOptionsSessionId ?? undefined"
+      :session-name="sshOptionsSessionName"
+    />
 
     <!-- 全局弹层（确认 / toast / 主题同步） -->
     <GlobalDialog />
@@ -1359,7 +1395,7 @@ onUnmounted(() => {
 
 .workspace__node-host {
   font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
-  font-size: 10px;
+  font-size: 11px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
   overflow: hidden;
   text-overflow: ellipsis;

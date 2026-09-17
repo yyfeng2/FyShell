@@ -139,6 +139,10 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // SSH 选项会话级覆盖（commands/settings.rs，sshopt_session_{session_id}_{key}）
+            commands::settings::sshopt_session_list,
+            commands::settings::sshopt_session_set,
+            commands::settings::sshopt_session_delete,
             // 键位映射（commands/key_mapping.rs，SQLite key_mappings 表）
             commands::key_mapping::key_mapping_list,
             commands::key_mapping::key_mapping_save,
@@ -327,6 +331,10 @@ pub fn run() {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // SSH 选项会话级覆盖（commands/settings.rs，sshopt_session_{session_id}_{key}）
+            commands::settings::sshopt_session_list,
+            commands::settings::sshopt_session_set,
+            commands::settings::sshopt_session_delete,
             // 键位映射（commands/key_mapping.rs，SQLite key_mappings 表）
             commands::key_mapping::key_mapping_list,
             commands::key_mapping::key_mapping_save,

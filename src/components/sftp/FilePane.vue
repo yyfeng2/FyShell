@@ -867,7 +867,7 @@ onUnmounted(() => {
 
 .file-pane__arrow {
   margin-left: 2px;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .file-pane__body {
