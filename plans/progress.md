@@ -72,12 +72,24 @@
 - **前端**：`src/bindings.ts`（963 行，120 命令 + 50 模型）自动生成；types.ts 迁移为 re-export（19 模型 re-export + 2 改名别名；3 个事件 payload / SessionNode 家族 / MonitorSample 保留手写，原因见提交说明）
 - **维护注意**：新增命令需在 lib.rs 的 `generate_handler!` 与 `collect_commands!` **两处**同时登记；P2 api/*.ts 内联模型可后续渐进迁移
 
+## 体验修复 — 已完成 ✅（2026-09-18，提交 e072ac3）
+
+针对用户反馈 4 项问题：
+
+1. **MySQL 工作台连接入口**：未连接占位区改为连接入口（已存连接卡片 + 新建连接 + 断开），工具条连接下拉可用；mysql store 增加 saved_connections（settings 键 `mysql_saved_connections`）
+2. **会话级 SSH 选项**：SshOptionsDialog 会话模式（sessionId/sessionName props，会话级键 `sshopt_session_*`，编辑写会话级覆盖全局值）；sshOptions store 增加 dialogSessionId/sessionOverrides/effectiveOf/sessionAware；复用 settings 表零迁移
+3. **菜单栏/快捷栏/树设置项**：WorkspaceView 会话树右键菜单补「设置」项（menuSessionSettings，打开该会话的会话选项对话框）
+4. **字体统一**：rem 混用清零（ComposePane/QuickCommandTree/ExplainPanel/HistoryDrawer → px），10px 过小微字提升 11px；统一刻度 **11px 微字 / 12px 小字 / 13px 默认 / 14px 标题**；MenuBar 11px 等宽仅用于快捷键提示（合理保留）；SessionTree.vue 未挂载故跳过
+
+vue-tsc 全绿。
+
 ## 遗留事项
 
 1. **updater 发布渠道未定**：endpoint 为占位符——正式发布时确定渠道并填写
 2. **P2 api/*.ts 内联模型未迁移 bindings**：可后续渐进迁移
+3. **已存连接明文密码**：saved_connections 目前明文存储，可接入主密码体系加密
 
-**已解决**（2026-09-17）：主密码接线、CodeMirror 6 集成、契约治理、Rust warnings 清理、git 版本控制、tauri-specta 集成、updater 配置。
+**已解决**（2026-09-17/18）：主密码接线、CodeMirror 6 集成、契约治理、Rust warnings 清理、git 版本控制、tauri-specta 集成、updater 配置、体验修复 4 项（连接入口/会话选项/设置入口/字体统一）。
 
 ## 文档索引
 

@@ -25,6 +25,8 @@ export interface SessionConfig {
   encoding: string
   color: string | null
   keepalive_interval: number
+  /** 会话类型："mysql" = 数据库会话，缺省/"ssh" = SSH 会话（与后端 bindings 对齐，string 联动） */
+  session_type?: string | null
 }
 
 export interface SessionFolder {

@@ -32,6 +32,7 @@ import MonitorMiniBar from '@/components/ssh/monitor/MonitorMiniBar.vue'
 import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
 import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
+import { useMysqlStore } from '@/stores/mysql'
 import { sessionList } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
@@ -66,6 +67,7 @@ interface SessionNode {
     port?: number
     username?: string
     encoding?: string
+    session_type?: string | null
   } & Record<string, unknown>
 }
 
@@ -94,6 +96,8 @@ interface FlatNode {
   hostLabel: string
   /** 会话编码（副行展示用） */
   encoding: string | null
+  /** 数据库会话（session_type === 'mysql'，树图标与连接路由区分） */
+  isMysql: boolean
 }
 
 // ---------------- 会话树 ----------------
@@ -152,6 +156,7 @@ const flatNodes = computed<FlatNode[]>(() => {
               return user ? `${user}@${host}:${port}` : `${host}:${port}`
             })(),
         encoding: (n.config?.encoding as string | undefined) ?? null,
+        isMysql: n.config?.session_type === 'mysql',
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
         walk(n.children ?? [], depth + 1)
@@ -212,11 +217,16 @@ function onNodeClick(node: FlatNode): void {
   if (node.isFolder) toggleFolder(node.id)
 }
 
-/** 双击会话节点：打开终端 Tab */
+/** 双击会话节点：SSH 打开终端 Tab；数据库会话连 MySQL 工作台 */
 function onNodeDblClick(node: FlatNode): void {
   if (!node.isFolder) {
     const target = findNode(nodes.value, node.id)
-    if (target) openTerminal(target)
+    if (!target) return
+    if (target.config?.session_type === 'mysql') {
+      void connectMysqlSession(target)
+      return
+    }
+    openTerminal(target)
   }
 }
 
@@ -248,7 +258,43 @@ function menuConnect(): void {
   treeMenu.visible = false
   if (treeMenu.node && !treeMenu.node.isFolder) {
     const target = findNode(nodes.value, treeMenu.node.id)
-    if (target) openTerminal(target)
+    if (!target) return
+    // 数据库会话：切到 MySQL 工作台并按会话配置建连（不开终端）
+    if (target.config?.session_type === 'mysql') {
+      void connectMysqlSession(target)
+      return
+    }
+    openTerminal(target)
+  }
+}
+
+/** 连接数据库会话：激活 MySQL 工作台 Tab + 用会话配置建立连接（成功后回填已存连接列表） */
+async function connectMysqlSession(target: SessionNode): Promise<void> {
+  const mysqlStore = useMysqlStore()
+  openMysqlTab()
+  // 树节点的 config 即后端 SessionConfig（含 auth_type），按宽松类型取连接字段
+  const cfg = (target.config ?? {}) as {
+    host?: string
+    port?: number
+    username?: string
+    auth_type?: { type: string; password?: string }
+  }
+  const auth = cfg.auth_type
+  const connectCfg = {
+    host: cfg.host ?? '',
+    port: cfg.port ?? 3306,
+    username: cfg.username ?? '',
+    password: auth && (auth.type === 'password' || auth.type === 'interactive') ? (auth.password ?? '') : '',
+    schema: null as string | null,
+  }
+  try {
+    // 已有连接时先断开（切换连接语义，与 connectSaved 一致）
+    if (mysqlStore.connId) await mysqlStore.disconnect()
+    await mysqlStore.connect(connectCfg)
+    // 连接成功回填已存连接列表（按 host+port+username 去重）
+    mysqlStore.activeSavedId = mysqlStore.saveConnection(connectCfg)
+  } catch {
+    // 连接失败由 MySQL 工作台 v-alert 展示（store.connError）
   }
 }
 
@@ -1032,7 +1078,9 @@ onUnmounted(() => {
             @contextmenu.prevent="onTreeContextmenu(node, $event)"
           >
             <v-icon
-              :icon="node.isFolder ? (node.isOpen ? 'mdi-folder-open' : 'mdi-folder') : 'mdi-console'"
+              :icon="node.isFolder
+                ? (node.isOpen ? 'mdi-folder-open' : 'mdi-folder')
+                : (node.isMysql ? 'mdi-database' : 'mdi-console')"
               size="14"
               class="mr-1"
               :style="!node.isFolder && node.color ? { color: node.color } : undefined"

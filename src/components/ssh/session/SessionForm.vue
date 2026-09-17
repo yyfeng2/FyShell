@@ -42,6 +42,17 @@
             <v-col cols="12">
               <v-text-field v-model="name" label="名称" density="compact" :rules="[rules.required]" />
             </v-col>
+            <v-col cols="12">
+              <!-- 会话类型：SSH 或数据库（数据库会话连接后进入 MySQL 工作台） -->
+              <v-select
+                v-model="sessionKind"
+                label="会话类型"
+                density="compact"
+                :items="SESSION_KINDS"
+                item-title="title"
+                item-value="value"
+              />
+            </v-col>
             <v-col cols="8">
               <v-text-field v-model="host" label="主机" density="compact" :rules="[rules.required]" />
             </v-col>
@@ -57,7 +68,7 @@
             <v-col cols="6">
               <v-text-field v-model="username" label="用户名" density="compact" :rules="[rules.required]" />
             </v-col>
-            <v-col cols="6">
+            <v-col v-if="sessionKind === 'ssh'" cols="6">
               <v-select
                 v-model="authType"
                 label="认证方式"
@@ -69,7 +80,7 @@
               />
             </v-col>
 
-            <v-col cols="12">
+            <v-col v-if="sessionKind === 'ssh'" cols="12">
               <!-- 认证配置文件（P1）：选择后认证方式由配置文件接管，一处改全局生效 -->
               <div class="d-flex align-center">
                 <v-select
@@ -91,7 +102,7 @@
             </v-col>
 
             <!-- 密码 / 交互式 -->
-            <v-col v-if="authType === 'password' || authType === 'interactive'" cols="12">
+            <v-col v-if="sessionKind === 'mysql' || authType === 'password' || authType === 'interactive'" cols="12">
               <v-text-field
                 v-model="password"
                 label="密码"
@@ -105,7 +116,7 @@
             </v-col>
 
             <!-- 私钥 -->
-            <template v-if="authType === 'publicKey'">
+            <template v-if="sessionKind === 'ssh' && authType === 'publicKey'">
               <v-col cols="12">
                 <v-text-field
                   v-model="privateKeyPath"
@@ -150,18 +161,20 @@
               />
             </v-col>
 
-            <v-col cols="6">
-              <v-select v-model="encoding" label="编码" density="compact" :items="ENCODINGS" />
-            </v-col>
-            <v-col cols="6">
-              <v-text-field
-                v-model.number="keepalive"
-                label="保活间隔（秒）"
-                type="number"
-                density="compact"
-                :rules="[rules.required, rules.nonNegative]"
-              />
-            </v-col>
+            <template v-if="sessionKind === 'ssh'">
+              <v-col cols="6">
+                <v-select v-model="encoding" label="编码" density="compact" :items="ENCODINGS" />
+              </v-col>
+              <v-col cols="6">
+                <v-text-field
+                  v-model.number="keepalive"
+                  label="保活间隔（秒）"
+                  type="number"
+                  density="compact"
+                  :rules="[rules.required, rules.nonNegative]"
+                />
+              </v-col>
+            </template>
           </v-row>
         </v-form>
 
@@ -203,6 +216,7 @@ import { computed, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import { sessionTest } from '@/api/session'
 import { authProfileList } from '@/api/authProfile'
+import { mysqlConnect, mysqlDisconnect } from '@/api/mysql'
 import type { AuthProfile } from '@/api/types'
 import AuthProfileForm from '@/components/ssh/session/AuthProfileForm.vue'
 import { useSessionStore, type SessionConfig, type AuthType } from '@/stores/session'
@@ -244,6 +258,12 @@ const AUTH_OPTIONS: { value: AuthTypeKind; title: string }[] = [
   { value: 'jump', title: '跳板机' },
 ]
 
+/** 会话类型：SSH 终端会话 或 数据库（MySQL）会话 */
+const SESSION_KINDS: { value: 'ssh' | 'mysql'; title: string }[] = [
+  { value: 'ssh', title: 'SSH' },
+  { value: 'mysql', title: '数据库 (MySQL)' },
+]
+
 const rules = {
   required: (v: string | number | null | undefined) =>
     (v !== null && v !== undefined && String(v).trim() !== '') || '必填项',
@@ -256,6 +276,8 @@ const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null
 const name = ref('')
 const host = ref('')
 const port = ref(22)
+/** 会话类型（新建缺省 SSH；编辑从 session_type 恢复） */
+const sessionKind = ref<'ssh' | 'mysql'>('ssh')
 const username = ref('')
 const authType = ref<AuthTypeKind>('password')
 const password = ref('')
@@ -322,6 +344,12 @@ watch(
   }
 )
 
+/** 新建时切换类型联动默认端口（编辑模式端口由用户掌控） */
+watch(sessionKind, (kind) => {
+  if (props.session) return
+  port.value = kind === 'mysql' ? 3306 : 22
+})
+
 function initForm(): void {
   testResult.value = null
   // 重置明文开关，避免上次打开的明文状态带入下次
@@ -329,6 +357,7 @@ function initForm(): void {
   showPassphrase.value = false
   const cfg = props.session
   if (cfg) {
+    sessionKind.value = cfg.session_type === 'mysql' ? 'mysql' : 'ssh'
     name.value = cfg.name
     host.value = cfg.host
     port.value = cfg.port
@@ -353,6 +382,7 @@ function initForm(): void {
     name.value = ''
     host.value = props.presetHost ?? ''
     port.value = 22
+    sessionKind.value = 'ssh'
     username.value = 'root'
     authType.value = 'password'
     password.value = ''
@@ -378,9 +408,12 @@ const jumpCandidates = computed(() =>
 function buildConfig(): SessionConfigWithProfile {
   const prof = findProfile()
   let auth: AuthType
-  if (prof) {
+  if (prof && sessionKind.value === 'ssh') {
     // 认证方式从配置文件解析（深拷贝，避免与会话配置共享引用）
     auth = JSON.parse(JSON.stringify(prof.auth_type)) as AuthType
+  } else if (sessionKind.value === 'mysql') {
+    // 数据库会话：认证即用户名/密码（auth_type 仅作存储载体）
+    auth = { type: 'password', password: password.value }
   } else {
     switch (authType.value) {
       case 'password':
@@ -411,7 +444,8 @@ function buildConfig(): SessionConfigWithProfile {
     encoding: encoding.value,
     color: color.value,
     keepalive_interval: keepalive.value,
-    profile_id: prof ? prof.id : null,
+    profile_id: prof && sessionKind.value === 'ssh' ? prof.id : null,
+    session_type: sessionKind.value,
   }
   return config
 }
@@ -427,6 +461,28 @@ function onColorChange(value: string | Record<string, number>) {
 }
 
 async function runTest(): Promise<void> {
+  // 数据库会话：mysql_connect 建连后立即断开作为测试
+  if (sessionKind.value === 'mysql') {
+    testing.value = true
+    testResult.value = null
+    try {
+      const cfg = buildConfig()
+      const connId = await mysqlConnect({
+        host: cfg.host,
+        port: cfg.port,
+        username: cfg.username,
+        password: password.value,
+        schema: null,
+      })
+      await mysqlDisconnect(connId)
+      testResult.value = { ok: true, message: '连接成功' }
+    } catch (err) {
+      testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }
+    } finally {
+      testing.value = false
+    }
+    return
+  }
   testing.value = true
   testResult.value = null
   try {

@@ -78,6 +78,10 @@ pub struct SessionConfig {
     /// serde default：老数据缺该字段时反序列化为 None，向后兼容 P0 流程。
     #[serde(default)]
     pub profile_id: Option<String>,
+    /// 会话类型：Some("mysql") = 数据库会话，None 或 Some("ssh") = SSH 会话。
+    /// serde default：老数据缺该字段时反序列化为 None（视为 SSH），向后兼容。
+    #[serde(default)]
+    pub session_type: Option<String>,
 }
 
 /// 会话树文件夹

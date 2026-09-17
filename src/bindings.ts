@@ -852,6 +852,10 @@ export type SessionConfig = {
 	 *  serde default：老数据缺该字段时反序列化为 None，向后兼容 P0 流程。
 	 */
 	profile_id?: string | null,
+	/**
+	 *  会话类型："mysql" = 数据库会话，None 或 "ssh" = SSH 会话
+	 */
+	session_type?: string | null,
 };
 
 /**  会话树文件夹 */

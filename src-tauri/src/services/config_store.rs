@@ -74,6 +74,13 @@ impl ConfigStore {
                 if msg.contains("duplicate column name") => {}
             Err(e) => return Err(e.into()),
         }
+        // 会话类型列："mysql" = 数据库会话，NULL/"ssh" = SSH 会话
+        match conn.execute("ALTER TABLE sessions ADD COLUMN session_type TEXT", []) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok(())
     }
 
@@ -117,7 +124,7 @@ impl ConfigStore {
             // 匹配的会话（名称/主机模糊匹配）
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
-                        encoding, color, keepalive_interval, profile_id
+                        encoding, color, keepalive_interval, profile_id, session_type
                  FROM sessions
                  WHERE name LIKE ?1 OR host LIKE ?1",
             )?;
@@ -157,7 +164,7 @@ impl ConfigStore {
             }
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
-                        encoding, color, keepalive_interval, profile_id
+                        encoding, color, keepalive_interval, profile_id, session_type
                  FROM sessions ORDER BY name",
             )?;
             let sessions: Vec<SessionConfig> = stmt
@@ -174,7 +181,7 @@ impl ConfigStore {
         let conn = self.lock();
         let mut stmt = conn.prepare_cached(
             "SELECT id, name, folder_id, host, port, username, auth_type,
-                    encoding, color, keepalive_interval, profile_id
+                    encoding, color, keepalive_interval, profile_id, session_type
              FROM sessions WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map([id], row_to_session)?;
@@ -187,8 +194,8 @@ impl ConfigStore {
         let auth_json = serde_json::to_string(&config.auth_type)?;
         conn.execute(
             "INSERT INTO sessions (id, name, folder_id, host, port, username, auth_type,
-                                   encoding, color, keepalive_interval, profile_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                                   encoding, color, keepalive_interval, profile_id, session_type)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
                  folder_id = excluded.folder_id,
@@ -199,7 +206,8 @@ impl ConfigStore {
                  encoding = excluded.encoding,
                  color = excluded.color,
                  keepalive_interval = excluded.keepalive_interval,
-                 profile_id = excluded.profile_id",
+                 profile_id = excluded.profile_id,
+                 session_type = excluded.session_type",
             params![
                 config.id,
                 config.name,
@@ -212,6 +220,7 @@ impl ConfigStore {
                 config.color,
                 config.keepalive_interval as i64,
                 config.profile_id,
+                config.session_type,
             ],
         )?;
         Ok(())
@@ -357,6 +366,7 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionConfig> {
                 k as u32
             },
             profile_id: row.get("profile_id")?,
+            session_type: row.get("session_type")?,
         })
 }
 
