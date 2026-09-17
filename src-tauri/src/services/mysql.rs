@@ -179,13 +179,17 @@ pub async fn list_tables(conn_id: &str) -> Result<Vec<MySqlTableInfo>, AppError>
     let (mut conn, from_tx) = take_conn(conn_id).await?;
 
     // 未显式指定 schema 时取当前默认数据库（SELECT DATABASE()；
-    // 事务连接与池连接同源，当前库上下文一致，统一用此查询兜底）
-    let schema: String = conn
+    // 事务连接与池连接同源，当前库上下文一致，统一用此查询兜底）。
+    // 无默认库（schema 为空）时不报错：information_schema 查询无法限定库，
+    // 返回空表清单，用户在库切换下拉中选库后自动刷新
+    let Some(schema) = conn
         .query_first::<Option<String>, _>("SELECT DATABASE()")
         .await
         .map_err(mysql_err)?
         .flatten()
-        .ok_or_else(|| AppError::general("MySQL 未选择数据库（schema 为空），请指定默认库"))?;
+    else {
+        return Ok(Vec::new());
+    };
 
     // 单条查询拿全：TABLE_ROWS 为 InnoDB 预估行数（契约允许 information_schema 方案）
     let info_sql = "SELECT TABLE_NAME, COALESCE(TABLE_ROWS, 0), COALESCE(TABLE_COMMENT, ''), \

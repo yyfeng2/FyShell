@@ -260,7 +260,7 @@ function onRowClick(row: Record<string, unknown>, index: number): void {
   min-height: 28px;
   border-bottom: 1px solid rgb(var(--v-theme-surface-variant, 32 33 35));
   background: rgb(var(--v-theme-surface-variant, 32 33 35) / 0.25);
-  font-weight: 600;
+  font-weight: 400;
   user-select: none;
   will-change: transform;
 }

@@ -124,9 +124,9 @@ defineEmits<{ (e: 'action', action: string): void }>()
 }
 
 .menubar__shortcut {
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
-  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  font-family: var(--fy-font);
 }
 
 .menubar__item {

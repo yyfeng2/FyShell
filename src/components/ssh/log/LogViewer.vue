@@ -403,7 +403,7 @@ watch(dateContent, () => {
 .log-viewer__text {
   margin: 0;
   padding: 8px;
-  font-family: "Cascadia Mono", Consolas, "Microsoft YaHei", monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;

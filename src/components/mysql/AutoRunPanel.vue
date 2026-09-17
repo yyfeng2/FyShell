@@ -86,7 +86,7 @@
           <v-list-item v-for="p in profiles" :key="String(p.id)" class="autorun-panel__item">
             <!-- 任务名 + 选项摘要 -->
             <template #default>
-              <div class="text-body-2 font-weight-medium">{{ p.name }}</div>
+              <div class="text-body-2">{{ p.name }}</div>
               <div class="text-caption text-medium-emphasis">
                 {{ tablesLabel(p.tables) }} ·
                 {{ p.include_data ? '包含数据' : '仅结构' }}

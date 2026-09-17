@@ -1,7 +1,7 @@
 <template>
   <v-dialog
     :model-value="modelValue"
-    max-width="760"
+    max-width="680"
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <v-card>
@@ -37,6 +37,7 @@
               item-title="title"
               item-value="value"
               label="主题模式"
+              density="compact"
               class="settings-dialog__field"
               @update:model-value="(v: unknown) => settings.setThemeMode(v as ThemeMode)"
             />
@@ -526,7 +527,7 @@ onMounted(async () => {
 <style scoped>
 .settings-dialog__body {
   display: flex;
-  height: 420px;
+  height: 380px;
 }
 
 /* 左侧分类导航 */
@@ -548,7 +549,7 @@ onMounted(async () => {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;
@@ -578,7 +579,7 @@ onMounted(async () => {
 
 .settings-dialog__section-title {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
   margin-bottom: 12px;
 }
 
@@ -588,7 +589,7 @@ onMounted(async () => {
 
 .settings-dialog__hint {
   margin-top: 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
 }
 
@@ -606,12 +607,12 @@ onMounted(async () => {
 }
 
 .settings-dialog__row-title {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .settings-dialog__row-desc {
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   margin-top: 2px;
 }
@@ -626,8 +627,8 @@ onMounted(async () => {
 
 /* 键盘和鼠标分区：分组小标题 + 字段列 + 分隔符行 */
 .key-mouse__group-title {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 400;
   margin: 12px 0 8px;
 }
 

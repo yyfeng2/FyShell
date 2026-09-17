@@ -2,7 +2,7 @@
   <v-dialog
     :model-value="modelValue"
     persistent
-    width="1100"
+    width="960"
     @update:model-value="(v: boolean) => { if (!v) emit('update:modelValue', false) }"
   >
     <v-card class="table-designer" flat>
@@ -857,7 +857,7 @@ function diffDropped(original: string[], current: string[]): string[] {
   z-index: 1;
   height: 32px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.7);
   background: rgb(var(--v-theme-surface));
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
@@ -930,7 +930,7 @@ function diffDropped(original: string[], current: string[]): string[] {
   align-items: center;
   justify-content: center;
   height: 120px;
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.5);
 }
 
@@ -952,7 +952,7 @@ function diffDropped(original: string[], current: string[]): string[] {
   overflow: auto;
   min-height: 0;
   padding: 8px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;

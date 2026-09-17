@@ -1,7 +1,7 @@
 <template>
   <v-dialog
     :model-value="modelValue"
-    width="760"
+    width="680"
     scrollable
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
@@ -148,13 +148,13 @@ const sqlPreview = computed<string>(() => {
 }
 
 .explain-panel__title {
-  font-weight: 600;
+  font-weight: 400;
   font-size: 14px;
 }
 
 .explain-panel__sql {
   padding: 0 12px 8px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.7);
   word-break: break-all;
@@ -181,7 +181,7 @@ const sqlPreview = computed<string>(() => {
 .explain-panel__tree {
   margin: 0;
   padding: 8px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
   line-height: 1.6;
   white-space: pre;

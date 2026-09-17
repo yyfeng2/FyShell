@@ -855,7 +855,7 @@ onUnmounted(() => {
 .file-pane__head {
   height: 30px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.7);
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   user-select: none;
@@ -867,7 +867,7 @@ onUnmounted(() => {
 
 .file-pane__arrow {
   margin-left: 2px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .file-pane__body {
@@ -893,7 +893,7 @@ onUnmounted(() => {
 
 .file-pane__row {
   height: 28px;
-  font-size: 13px;
+  font-size: 12px;
   cursor: default;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
@@ -947,13 +947,13 @@ onUnmounted(() => {
 
 .chmod-grid__row--head {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.6);
   user-select: none;
 }
 
 .chmod-grid__label {
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.85);
 }
 
@@ -963,7 +963,7 @@ onUnmounted(() => {
   justify-content: center;
   height: 100%;
   min-height: 120px;
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.5);
 }
 </style>

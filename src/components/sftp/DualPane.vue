@@ -188,8 +188,8 @@ async function handleTransfer(entries: FileEntry[], from: PaneSide): Promise<voi
 
 .dual-pane__title {
   padding: 6px 8px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.85);
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   background: rgb(var(--v-theme-surface));

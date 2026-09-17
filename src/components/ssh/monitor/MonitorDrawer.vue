@@ -458,7 +458,7 @@ onBeforeUnmount(() => {
 
 .monitor-drawer__title {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .monitor-drawer__empty {
@@ -487,7 +487,7 @@ onBeforeUnmount(() => {
 
 .monitor-drawer__label {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   color: rgb(var(--v-theme-on-surface) / 0.75);
   white-space: nowrap;
 }
@@ -510,13 +510,13 @@ onBeforeUnmount(() => {
 
 .gauge__label {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   color: rgb(var(--v-theme-on-surface) / 0.75);
 }
 
 .gauge__value {
   margin-left: auto;
-  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
 }
 
@@ -576,7 +576,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 16px;
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.6);
   user-select: none;
 }
@@ -630,16 +630,16 @@ onBeforeUnmount(() => {
 }
 
 .docker-row__name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 400;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .docker-row__image {
-  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
+  font-family: var(--fy-font);
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.6);
   white-space: nowrap;
   overflow: hidden;
@@ -650,7 +650,7 @@ onBeforeUnmount(() => {
 .docker-row__status {
   display: flex;
   align-items: center;
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.75);
 }
 

@@ -1,7 +1,7 @@
 <template>
   <v-dialog
     :model-value="modelValue"
-    max-width="860"
+    max-width="760"
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <v-card>
@@ -167,8 +167,8 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options__nav-group {
   padding: 8px 10px 4px;
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 400;
   color: rgb(var(--v-theme-on-surface) / 0.85);
   user-select: none;
 }
@@ -181,7 +181,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;
@@ -224,7 +224,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   display: flex;
   align-items: center;
   padding: 6px 16px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.6);
   background: rgb(var(--v-theme-primary) / 0.06);
 }
@@ -234,7 +234,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 <style>
 .ssh-options .settings-dialog__section-title {
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
   margin-bottom: 12px;
 }
 
@@ -244,7 +244,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options .settings-dialog__hint {
   margin-top: 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
 }
 
@@ -261,12 +261,12 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options .settings-dialog__row-title {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .ssh-options .settings-dialog__row-desc {
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   margin-top: 2px;
 }
@@ -282,7 +282,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 /* 右侧内容区（与 SettingsDialog 布局一致） */
 .ssh-options.settings-dialog__body {
   display: flex;
-  height: 480px;
+  height: 420px;
 }
 
 .ssh-options .settings-dialog__content {

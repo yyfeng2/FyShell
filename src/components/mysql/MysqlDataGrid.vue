@@ -92,6 +92,7 @@
               :key="t.name"
               :active="t.name === selectedTable"
               @click="selectTable(t.name)"
+              @dblclick="dblClickTable(t.name)"
             >
               <template #prepend>
                 <v-icon size="small">mdi-table-outline</v-icon>
@@ -787,10 +788,15 @@ async function refreshTables(): Promise<void> {
   }
 }
 
-/** 点击表：填入 SELECT 语句并查询第一页 */
+/** 点击表：选中并填入 SELECT 语句（不执行，双击才自动查询） */
 function selectTable(name: string): void {
   selectedTable.value = name
   sql.value = `SELECT * FROM \`${name}\``
+}
+
+/** 双击表：自动执行该表查询（填入 SELECT 并查第一页） */
+function dblClickTable(name: string): void {
+  selectTable(name)
   void runQuery(1, pageSize.value)
 }
 
@@ -1942,6 +1948,16 @@ function onConnected(connLabel: string): void {
 </script>
 
 <style scoped>
+/* 顶部状态条：flex 布局让连接信息与按钮排一行，v-spacer 才能生效
+   （缺 flex 时 spacer 失效，图标+连接信息与按钮换行堆叠、文字挤叠） */
+.mysql-grid__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 4px 8px;
+  gap: 2px;
+}
+
 .mysql-grid {
   display: flex;
   flex-direction: column;
@@ -1969,6 +1985,21 @@ function onConnected(connLabel: string): void {
   flex: 1 1 auto;
   overflow-y: auto;
   min-height: 0;
+}
+
+/* 表列表左对齐：Vuetify .v-list-item 的 padding-inline 带 !important，
+   需同级强度覆盖才生效；压缩 prepend 图标间距，表名贴近左侧 */
+.mysql-grid__table-list :deep(.v-list) {
+  padding: 4px 0;
+}
+
+.mysql-grid__table-list :deep(.v-list-item) {
+  padding-inline-start: 8px !important;
+  padding-inline-end: 8px !important;
+}
+
+.mysql-grid__table-list :deep(.v-list-item__prepend) {
+  padding-inline-end: 6px;
 }
 
 /* 右侧主区：编辑区固定，结果区滚动 */
@@ -2093,7 +2124,7 @@ th[title='单击选中整列'] {
 }
 
 .mysql-grid__sql-preview-sql {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
   word-break: break-all;
   white-space: pre-wrap;

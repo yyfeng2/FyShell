@@ -480,7 +480,7 @@
     </div>
 
     <!-- DDL 编辑对话框：新建/编辑对象（保存调 mysql_object_save） -->
-    <v-dialog v-model="showDdlDialog" width="720" persistent>
+    <v-dialog v-model="showDdlDialog" width="640" persistent>
       <v-card>
         <v-card-title class="d-flex align-center">
           <v-icon size="small" class="mr-2">{{ kindIcon }}</v-icon>
@@ -1185,6 +1185,9 @@ const currentDb = ref<string | null>(null)
 const connHost = ref('')
 const databasesLoading = ref(false)
 
+/** 系统库清单（自动选中第一个用户库时跳过） */
+const SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
+
 /** 拉取库列表 + 当前库 + host（连接后自动加载，切换后刷新） */
 async function loadDatabases(): Promise<void> {
   const connId = store.connId
@@ -1195,6 +1198,15 @@ async function loadDatabases(): Promise<void> {
     databases.value = result.databases
     currentDb.value = result.current_db
     connHost.value = result.host
+    // 无默认库（schema 为空）时自动选中第一个用户库：让数据库出现在下拉框，
+    // 并联动加载该库的表清单（switchDb 重建连接池后 watch 二次刷新，不会循环）
+    if (!currentDb.value) {
+      const firstUserDb = databases.value.find((d) => !SYSTEM_DBS.has(d.toLowerCase()))
+      if (firstUserDb) {
+        await switchDb(firstUserDb)
+        return
+      }
+    }
   } catch (err) {
     // 权限不足等错误以 toast 提示，不影响工作台其它区域
     ui.toast(errText(err), 'error')
@@ -1220,6 +1232,8 @@ async function switchDb(name: string | null): Promise<void> {
     // 重置表列表后重新加载（新库的表清单）
     store.tables = []
     await store.loadTables()
+    // 切库成功后清除连接期的旧报错（如未选库时的提示横幅）
+    store.queryError = ''
     ui.toast(`已切换到数据库「${name}」`, 'success')
   } catch (err) {
     ui.toast(errText(err), 'error')
@@ -1545,8 +1559,9 @@ onMounted(() => {
 
 /* 工具条上的连接下拉：比数据库下拉略宽（容纳「名称（host:port）」文案） */
 .mysql-ws__conn-select {
-  flex: 0 0 200px;
-  max-width: 200px;
+  /* 加宽到 260px：连接文案 `user@host（名称）` 较长，200px 时截断显示 `…` */
+  flex: 0 0 260px;
+  max-width: 260px;
 }
 
 /* DDL / 权限展示区：等宽字体，可滚动 */
@@ -1559,7 +1574,7 @@ onMounted(() => {
 }
 
 .mysql-ws__ddl-text {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
@@ -1567,12 +1582,12 @@ onMounted(() => {
 }
 
 .mysql-ws__ddl-input {
-  font-family: 'Cascadia Mono', Consolas, monospace;
-  font-size: 13px;
+  font-family: var(--fy-font);
+  font-size: 12px;
 }
 
 .mysql-ws__grant-line {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
   word-break: break-all;
   white-space: pre-wrap;
@@ -1639,8 +1654,8 @@ onMounted(() => {
 }
 
 .mysql-ws__model-card-title {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
   display: flex;
   align-items: center;
   overflow: hidden;

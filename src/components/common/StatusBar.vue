@@ -142,7 +142,7 @@ const transferText = computed(() => {
   height: 26px;
   min-height: 26px;
   padding: 0 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.75);
   background: var(--fy-chrome-bg, #f0f2f5);
   border-top: 1px solid var(--fy-chrome-border, #d5d9de);
@@ -177,12 +177,12 @@ const transferText = computed(() => {
 
 /* 等宽小字（IP/编码等字段） */
 .status-bar__mono {
-  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
+  font-family: var(--fy-font);
+  font-size: 12px;
 }
 
 .status-bar__name {
-  font-weight: 600;
+  font-weight: 400;
   color: rgb(var(--v-theme-on-surface));
 }
 
@@ -195,8 +195,8 @@ const transferText = computed(() => {
 }
 
 .status-bar__path-text {
-  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
+  font-family: var(--fy-font);
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

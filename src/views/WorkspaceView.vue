@@ -33,6 +33,7 @@ import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
 import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
 import { useMysqlStore } from '@/stores/mysql'
+import { mysqlDbList, mysqlDbSwitch } from '@/api/mysqlDb'
 import { sessionList } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
@@ -98,6 +99,12 @@ interface FlatNode {
   encoding: string | null
   /** 数据库会话（session_type === 'mysql'，树图标与连接路由区分） */
   isMysql: boolean
+  /** 数据库子节点（已连接 MySQL 会话的库，Navicat 风格） */
+  isDbLeaf?: boolean
+  /** 分区头（SSH 服务 / 数据库服务，可收缩） */
+  isSection?: boolean
+  /** 分区虚线分隔 */
+  isSeparator?: boolean
 }
 
 // ---------------- 会话树 ----------------
@@ -106,13 +113,122 @@ const nodes = ref<SessionNode[]>([])
 const keyword = ref('')
 const expanded = ref(new Set<string>())
 
+/** 已连接 MySQL 会话的数据库子节点（Navicat 风格：库作为会话子节点展示）。
+    sessionId 为 null 表示树中无 MySQL 会话，库列表挂到数据库服务分区的独立节点下
+    （host 为连接主机，作为独立节点显示名） */
+const mysqlTreeDbs = ref<{ sessionId: string | null; host: string; databases: string[] } | null>(
+  null,
+)
+
+/** 导航分区展开态（SSH 服务 / 数据库服务，单击分区头收缩） */
+const openSections = ref(new Set(['section-ssh', 'section-db']))
+
+// 连接状态变化：任意入口（会话树/工作台）连接成功后，把数据库子节点挂到
+// 匹配的会话节点（按 host 匹配，MySQL 类型与用户名一致者优先）；断开时清空。
+// 切库会产生新 conn_id（非 null），库列表随之自动刷新，不会误清
+/** 加载当前连接的库列表并挂载到会话树（连接状态变化与树加载后均调用）。
+    库列表挂 MySQL 会话节点下；树中无 MySQL 会话时挂数据库服务分区的独立节点 */
+async function refreshMysqlTreeDbs(): Promise<void> {
+  const store = useMysqlStore()
+  const id = store.connId
+  if (!id) {
+    mysqlTreeDbs.value = null
+    return
+  }
+  try {
+    const result = await mysqlDbList(id)
+    // 全部库显示（含系统库，对齐 Navicat）
+    const databases = result.databases
+    // 挂靠目标：与当前连接 host 一致的 MySQL 会话节点（host 相同的 SSH 会话不可作为挂靠点，
+    // 否则库列表挂在数据库区不渲染的 SSH 会话上导致分区空白）
+    const cfg = store.lastConfig
+    const candidates = nodes.value.filter(
+      (n) =>
+        !n.is_folder &&
+        n.config?.session_type === 'mysql' &&
+        n.config.host &&
+        cfg &&
+        n.config.host === cfg.host,
+    )
+    const match =
+      candidates.sort((a, b) => scoreOf(b, cfg) - scoreOf(a, cfg))[0] ??
+      nodes.value.find((n) => !n.is_folder && n.config?.session_type === 'mysql')
+    mysqlTreeDbs.value = { sessionId: match?.id ?? null, host: result.host, databases }
+    debugLog(
+      `[mysql-tree] conn=${id} databases=${databases.length} target=${match?.id ?? 'standalone'}`,
+    )
+    if (match) {
+      expanded.value = new Set([...expanded.value, match.id])
+    }
+  } catch {
+    mysqlTreeDbs.value = null
+  }
+}
+
+// 连接状态变化：任意入口（会话树/工作台）连接成功后刷新树中库节点；断开时清空。
+// 切库会产生新 conn_id（非 null），库列表随之自动刷新，不会误清
+watch(
+  () => useMysqlStore().connId,
+  (id) => {
+    if (!id) {
+      mysqlTreeDbs.value = null
+      return
+    }
+    void refreshMysqlTreeDbs()
+  },
+)
+
+/** 挂靠优先级：MySQL 类型会话 +2，用户名一致 +1 */
+function scoreOf(node: SessionNode, cfg: { username?: string } | null): number {
+  return (
+    (node.config?.session_type === 'mysql' ? 2 : 0) +
+    (node.config?.username && cfg?.username === node.config.username ? 1 : 0)
+  )
+}
+
 async function loadTree(): Promise<void> {
   try {
     const tree = await sessionList()
-    nodes.value = Array.isArray(tree) ? (tree as unknown as SessionNode[]) : []
+    nodes.value = normalizeTreeNodes(tree)
+    // 树就绪后刷新库节点挂载（连接已建立时重新匹配会话节点）
+    const mysqlStore = useMysqlStore()
+    if (mysqlStore.connId) void refreshMysqlTreeDbs()
   } catch (e) {
     ui.toast(`加载会话列表失败：${String(e)}`, 'error')
   }
+}
+
+/** 会话树归一化：兼容「config 挂载」与「节点本身即 SessionConfig（Rust enum 平铺序列化）」
+    两种 wire 形态——不归一化时 config 恒为 undefined，host 匹配/连接路由/图标全部失效 */
+function normalizeTreeNodes(raw: unknown): SessionNode[] {
+  if (!Array.isArray(raw)) return []
+  const out: SessionNode[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const r = item as Record<string, unknown>
+    const id = String(r.id ?? '')
+    if (!id) continue
+    const isFolder =
+      r.kind === 'folder' || r.kind === 'Folder' || r.is_folder === true || Array.isArray(r.children)
+    if (isFolder) {
+      out.push({
+        id,
+        name: String(r.name ?? ''),
+        is_folder: true,
+        children: normalizeTreeNodes(r.children),
+      })
+      continue
+    }
+    // 会话节点：config 挂载优先，缺失时节点本身即配置（平铺）
+    const config = (r.config ?? r) as SessionNode['config']
+    out.push({
+      id,
+      name: String(r.name ?? ''),
+      is_folder: false,
+      config,
+    })
+  }
+  return out
 }
 
 /** 搜索过滤：保留命中节点及含命中子孙的文件夹 */
@@ -125,7 +241,10 @@ function filterTree(list: SessionNode[], kw: string): SessionNode[] {
       if (n.name.toLowerCase().includes(kw) || children.length > 0) {
         out.push({ ...n, children })
       }
-    } else if (n.name.toLowerCase().includes(kw)) {
+    } else if (
+      n.name.toLowerCase().includes(kw) ||
+      (n.config?.host ?? '').toLowerCase().includes(kw)
+    ) {
       out.push(n)
     }
   }
@@ -137,33 +256,122 @@ const flatNodes = computed<FlatNode[]>(() => {
   const kw = keyword.value.trim().toLowerCase()
   const forceExpand = kw.length > 0
   const out: FlatNode[] = []
-  const walk = (list: SessionNode[], depth: number) => {
+  const walk = (list: SessionNode[], depth: number, section: 'ssh' | 'db') => {
     for (const n of list) {
+      const isMysqlSession = !n.is_folder && n.config?.session_type === 'mysql'
+      // 分区过滤：SSH 区跳过 MySQL 会话；数据库区只保留 MySQL 会话
+      //（数据库区不显示文件夹，扁平列出其中嵌套的 MySQL 会话）
+      if (section === 'ssh' && isMysqlSession) continue
+      if (section === 'db' && n.is_folder) {
+        walk(n.children ?? [], depth, section)
+        continue
+      }
+      if (section === 'db' && !isMysqlSession) continue
       out.push({
         id: n.id,
-        name: n.name,
+        // 主机显示（Navicat 风格单行）：会话节点以主机地址为主，名称兜底
+        name: n.is_folder ? n.name : (n.config?.host || n.name),
         depth,
         isFolder: !!n.is_folder,
         color: n.config?.color ?? null,
         isOpen: !!n.is_folder && (forceExpand || expanded.value.has(n.id)),
-        hostLabel: n.is_folder
-          ? ''
-          : (() => {
-              const host = n.config?.host ?? ''
-              const user = n.config?.username ?? ''
-              const port = n.config?.port ?? 22
-              if (!host) return ''
-              return user ? `${user}@${host}:${port}` : `${host}:${port}`
-            })(),
+        hostLabel: '',
         encoding: (n.config?.encoding as string | undefined) ?? null,
-        isMysql: n.config?.session_type === 'mysql',
+        isMysql: isMysqlSession,
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
-        walk(n.children ?? [], depth + 1)
+        walk(n.children ?? [], depth + 1, section)
+      } else if (section === 'db' && mysqlTreeDbs.value?.sessionId === n.id) {
+        // 已连接的 MySQL 会话：数据库作为子节点展示（Navicat 风格）
+        for (const dbName of mysqlTreeDbs.value.databases) {
+          out.push({
+            id: `db-${n.id}-${dbName}`,
+            name: dbName,
+            depth: depth + 1,
+            isFolder: false,
+            color: null,
+            isOpen: false,
+            hostLabel: '',
+            encoding: null,
+            isMysql: false,
+            isDbLeaf: true,
+          })
+        }
       }
     }
   }
-  walk(filterTree(nodes.value, kw), 0)
+
+  // 分区头（可收缩：单击折叠/展开）
+  const sectionHeader = (id: string, name: string) => {
+    out.push({
+      id,
+      name,
+      depth: 0,
+      isFolder: false,
+      isSection: true,
+      isOpen: openSections.value.has(id),
+      color: null,
+      hostLabel: '',
+      encoding: null,
+      isMysql: false,
+    })
+  }
+
+  // SSH 服务分区：文件夹 + SSH 会话
+  sectionHeader('section-ssh', 'SSH 服务')
+  if (openSections.value.has('section-ssh')) {
+    walk(filterTree(nodes.value, kw), 0, 'ssh')
+  }
+
+  // 分区虚线分隔
+  out.push({
+    id: 'tree-separator',
+    name: '',
+    depth: 0,
+    isFolder: false,
+    color: null,
+    isOpen: false,
+    hostLabel: '',
+    encoding: null,
+    isMysql: false,
+    isSeparator: true,
+  })
+
+  // 数据库服务分区：MySQL 会话 + 库列表
+  sectionHeader('section-db', '数据库服务')
+  if (openSections.value.has('section-db')) {
+    walk(filterTree(nodes.value, kw), 0, 'db')
+    // 树中无 MySQL 会话时：独立节点显示连接主机 + 库列表（Navicat 风格）
+    if (mysqlTreeDbs.value && mysqlTreeDbs.value.sessionId === null) {
+      out.push({
+        id: 'db-standalone',
+        name: mysqlTreeDbs.value.host || 'MySQL 数据库',
+        depth: 0,
+        isFolder: false,
+        color: null,
+        isOpen: false,
+        hostLabel: '',
+        encoding: null,
+        isMysql: true,
+        isDbLeaf: false,
+      })
+      for (const dbName of mysqlTreeDbs.value.databases) {
+        out.push({
+          id: `db-standalone-${dbName}`,
+          name: dbName,
+          depth: 1,
+          isFolder: false,
+          color: null,
+          isOpen: false,
+          hostLabel: '',
+          encoding: null,
+          isMysql: false,
+          isDbLeaf: true,
+        })
+      }
+    }
+  }
+
   return out
 })
 
@@ -213,29 +421,45 @@ function toggleFolder(id: string): void {
 }
 
 function onNodeClick(node: FlatNode): void {
-  selectedId.value = node.id
-  if (node.isFolder) toggleFolder(node.id)
-}
-
-/** 双击会话节点：SSH 打开终端 Tab；数据库会话连 MySQL 工作台 */
-function onNodeDblClick(node: FlatNode): void {
-  if (!node.isFolder) {
-    const target = findNode(nodes.value, node.id)
-    if (!target) return
-    if (target.config?.session_type === 'mysql') {
-      void connectMysqlSession(target)
-      return
+  // 分区头：单击折叠/展开
+  if (node.isSection) {
+    const set = new Set(openSections.value)
+    if (set.has(node.id)) {
+      set.delete(node.id)
+    } else {
+      set.add(node.id)
     }
-    openTerminal(target)
+    openSections.value = set
+    return
   }
+  selectedId.value = node.id
+  if (node.isFolder) {
+    toggleFolder(node.id)
+    return
+  }
+  // 数据库子节点：单击切换当前库（内部按时间戳去重）
+  if (node.isDbLeaf) {
+    void switchMysqlDbFromTree(node)
+    return
+  }
+  // 会话单击即连接：已有该会话终端 Tab 时直接激活，不重复建连（双击也不会开两个 Tab）
+  const existing = tabs.value.find((t) => t.type === 'terminal' && t.sessionId === node.id)
+  if (existing) {
+    activeId.value = existing.id
+    return
+  }
+  const target = findNode(nodes.value, node.id)
+  if (!target) return
+  if (target.config?.session_type === 'mysql') {
+    void connectMysqlSession(target)
+    return
+  }
+  openTerminal(target)
 }
 
-/** 树节点键盘操作：Enter 打开终端，Space 选中/展开 */
+/** 树节点键盘操作：Enter 打开/连接，Space 选中/折叠 */
 function onNodeKeydown(node: FlatNode, e: KeyboardEvent): void {
-  if (e.key === 'Enter') {
-    e.preventDefault()
-    onNodeDblClick(node)
-  } else if (e.key === ' ' || e.key === 'Spacebar') {
+  if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
     e.preventDefault()
     onNodeClick(node)
   }
@@ -246,6 +470,7 @@ function onNodeKeydown(node: FlatNode, e: KeyboardEvent): void {
 const treeMenu = reactive({ visible: false, x: 0, y: 0, node: null as FlatNode | null })
 
 function onTreeContextmenu(node: FlatNode, e: MouseEvent): void {
+  if (node.isDbLeaf || node.isSection || node.id === 'db-standalone') return
   selectedId.value = node.id
   treeMenu.x = e.clientX
   treeMenu.y = e.clientY
@@ -287,14 +512,59 @@ async function connectMysqlSession(target: SessionNode): Promise<void> {
     password: auth && (auth.type === 'password' || auth.type === 'interactive') ? (auth.password ?? '') : '',
     schema: null as string | null,
   }
+  // 已连接/正在连接同一配置时直接复用（单击导航语义，双击/重复点击不反复重连）
+  const last = mysqlStore.lastConfig
+  if (
+    (mysqlStore.connId || mysqlStore.connecting) &&
+    last &&
+    last.host === connectCfg.host &&
+    last.port === connectCfg.port &&
+    last.username === connectCfg.username
+  ) {
+    return
+  }
   try {
     // 已有连接时先断开（切换连接语义，与 connectSaved 一致）
     if (mysqlStore.connId) await mysqlStore.disconnect()
     await mysqlStore.connect(connectCfg)
     // 连接成功回填已存连接列表（按 host+port+username 去重）
     mysqlStore.activeSavedId = mysqlStore.saveConnection(connectCfg)
+    // 数据库子节点由 connId watch 统一挂载（覆盖工作台等入口）
   } catch {
     // 连接失败由 MySQL 工作台 v-alert 展示（store.connError）
+  }
+}
+
+/** 树中最近一次切库（时间戳去重：双击会连发 click+dblclick，800ms 内重复点击同一库直接跳过） */
+let lastDbSwitchId = ''
+let lastDbSwitchAt = 0
+
+/** 树中双击数据库子节点：切换 MySQL 当前库并刷新表清单 */
+async function switchMysqlDbFromTree(node: FlatNode): Promise<void> {
+  const mysqlStore = useMysqlStore()
+  const connId = mysqlStore.connId
+  if (!connId) return
+  // 节点 id 格式 `db-${sessionId}-${dbName}` 或 `db-standalone-${dbName}`，库名取尾部
+  const sessionId = mysqlTreeDbs.value?.sessionId
+  const prefix = sessionId === null ? 'db-standalone-' : `db-${sessionId}-`
+  if (!node.id.startsWith(prefix)) return
+  const dbName = node.id.slice(prefix.length)
+  if (dbName === lastDbSwitchId && Date.now() - lastDbSwitchAt < 800) return
+  lastDbSwitchId = dbName
+  lastDbSwitchAt = Date.now()
+  try {
+    // 打开 MySQL 工作台展示切库结果（树中切库的可见反馈）
+    openMysqlTab()
+    // 后端重建连接池并返回新 conn_id，须替换 store.connId
+    //（MysqlDbWorkspace 的 connId watch 随之清空会话级状态并刷新库下拉）
+    const newId = await mysqlDbSwitch(connId, dbName)
+    mysqlStore.connId = newId
+    mysqlStore.tables = []
+    await mysqlStore.loadTables()
+    mysqlStore.queryError = ''
+  } catch {
+    // 切库失败由 MySQL 工作台 v-alert 展示；清除去重标记允许立即重试
+    lastDbSwitchId = ''
   }
 }
 
@@ -1061,38 +1331,42 @@ onUnmounted(() => {
           />
         </div>
         <div class="workspace__tree" role="tree" aria-label="会话列表">
-          <div
-            v-for="node in flatNodes"
-            :key="node.id"
-            role="treeitem"
-            tabindex="0"
-            class="workspace__tree-node"
-            :class="{
-              'workspace__node--selected': node.id === selectedId,
-              'workspace__tree-node--session': !node.isFolder,
-            }"
-            :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
-            @click="onNodeClick(node)"
-            @dblclick="onNodeDblClick(node)"
-            @keydown="onNodeKeydown(node, $event)"
-            @contextmenu.prevent="onTreeContextmenu(node, $event)"
-          >
-            <v-icon
-              :icon="node.isFolder
-                ? (node.isOpen ? 'mdi-folder-open' : 'mdi-folder')
-                : (node.isMysql ? 'mdi-database' : 'mdi-console')"
-              size="14"
-              class="mr-1"
-              :style="!node.isFolder && node.color ? { color: node.color } : undefined"
-            />
-            <!-- 会话节点双行：名称 + user@host:port（Xshell 会话树风格）；文件夹单行 -->
-            <div class="workspace__node-text">
-              <span class="workspace__node-name" :title="node.name">{{ node.name }}</span>
-              <span v-if="!node.isFolder && node.hostLabel" class="workspace__node-host">
-                {{ node.hostLabel }}
-              </span>
+          <template v-for="node in flatNodes" :key="node.id">
+            <!-- 分区虚线分隔（SSH 服务 / 数据库服务） -->
+            <div v-if="node.isSeparator" class="workspace__tree-sep" />
+            <div
+              v-else
+              role="treeitem"
+              tabindex="0"
+              class="workspace__tree-node"
+              :class="{
+                'workspace__node--selected': node.id === selectedId,
+                'workspace__tree-node--session': !node.isFolder,
+                'workspace__tree-node--section': node.isSection,
+              }"
+              :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
+              @click="onNodeClick(node)"
+              @keydown="onNodeKeydown(node, $event)"
+              @contextmenu.prevent="onTreeContextmenu(node, $event)"
+            >
+              <v-icon
+                :icon="node.isSection
+                  ? (node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right')
+                  : node.isFolder
+                    ? (node.isOpen ? 'mdi-folder-open' : 'mdi-folder')
+                    : node.isDbLeaf
+                      ? 'mdi-database-outline'
+                      : (node.isMysql ? 'mdi-database' : 'mdi-console')"
+                size="14"
+                class="mr-1"
+                :style="!node.isFolder && !node.isSection && node.color ? { color: node.color } : undefined"
+              />
+              <!-- 会话节点单行：以主机地址显示（Navicat 风格） -->
+              <div class="workspace__node-text">
+                <span class="workspace__node-name" :title="node.name">{{ node.name }}</span>
+              </div>
             </div>
-          </div>
+          </template>
           <div v-if="flatNodes.length === 0" class="workspace__tree-empty">无匹配会话</div>
         </div>
       </aside>
@@ -1193,7 +1467,7 @@ onUnmounted(() => {
           </div>
           <div v-if="tabs.length === 0" class="workspace__empty">
             <v-icon icon="mdi-console" size="48" class="mb-2" />
-            <div class="text-body-2">双击左侧会话打开终端，Ctrl+T 新建标签</div>
+            <div class="workspace__empty-hint">双击左侧会话打开终端，Ctrl+T 新建标签</div>
           </div>
         </div>
       </main>
@@ -1228,7 +1502,7 @@ onUnmounted(() => {
     />
 
     <!-- 会话日志查看器（P1：活动会话日志落盘开关与查看） -->
-    <v-dialog v-model="showLogViewer" width="720">
+    <v-dialog v-model="showLogViewer" width="640">
       <LogViewer v-if="activeTerminalId" :session-id="activeTerminalId" />
     </v-dialog>
 
@@ -1442,8 +1716,8 @@ onUnmounted(() => {
 }
 
 .workspace__node-host {
-  font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
-  font-size: 11px;
+  font-family: var(--fy-font);
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1467,6 +1741,19 @@ onUnmounted(() => {
 .workspace__node-name {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 分区虚线分隔（SSH 服务 / 数据库服务） */
+.workspace__tree-sep {
+  height: 0;
+  border-top: 1px dashed #c6c9ce;
+  margin: 4px 10px;
+  user-select: none;
+}
+
+/* 分区头：浅色文字 + 紧凑行高，单击可收缩 */
+.workspace__tree-node--section {
+  color: rgb(var(--v-theme-on-surface) / 0.75);
 }
 
 .workspace__tree-empty {
@@ -1521,5 +1808,11 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   color: rgb(var(--v-theme-on-surface) / 0.45);
+}
+
+/* 空态提示文字：主区中央大字提示，14px 标题档 */
+.workspace__empty-hint {
+  font-size: 14px;
+  color: rgb(var(--v-theme-on-surface) / 0.55);
 }
 </style>

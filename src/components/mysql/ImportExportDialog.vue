@@ -409,13 +409,13 @@ function onDialogToggle(v: boolean): void {
 }
 
 .io-wizard__step {
-  font-size: 13px;
+  font-size: 12px;
   opacity: 0.55;
 }
 
 .io-wizard__step--active {
   opacity: 1;
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .io-wizard__steps-divider {
@@ -431,14 +431,14 @@ function onDialogToggle(v: boolean): void {
 .io-wizard__summary-item {
   display: flex;
   gap: 8px;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.6;
   word-break: break-all;
 }
 
 .io-wizard__summary-key {
   flex: 0 0 auto;
-  font-weight: 500;
+  font-weight: 400;
   opacity: 0.7;
 }
 

@@ -71,7 +71,7 @@ async function sendCommand(text: string): Promise<void> {
           {{ cmd.name }}
         </button>
       </template>
-      <span v-else class="quick-bar__empty">暂无快捷命令 — 在「工具 → 快捷命令」中添加常用命令</span>
+      <span v-else class="quick-bar__empty">暂无快捷命令（工具 → 快捷命令）</span>
     </div>
 
     <!-- 折叠开关 -->
@@ -135,8 +135,8 @@ async function sendCommand(text: string): Promise<void> {
 }
 
 .quick-bar__empty {
-  font-size: 11px;
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  font-size: 13px;
+  color: rgb(var(--v-theme-on-surface) / 0.55);
   padding: 0 8px;
   white-space: nowrap;
 }

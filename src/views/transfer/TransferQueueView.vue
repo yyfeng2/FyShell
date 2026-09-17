@@ -260,7 +260,7 @@ onUnmounted(() => {
 .transfer-queue__head {
   height: 32px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.7);
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   user-select: none;
@@ -268,7 +268,7 @@ onUnmounted(() => {
 
 .transfer-queue__row {
   height: 56px;
-  font-size: 13px;
+  font-size: 12px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
@@ -309,7 +309,7 @@ onUnmounted(() => {
 }
 
 .transfer-queue__bytes {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.6);
   flex: none;
 }
@@ -324,7 +324,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   height: 200px;
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.5);
 }
 </style>

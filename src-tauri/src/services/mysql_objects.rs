@@ -109,13 +109,16 @@ async fn do_list(
     conn: &mut Conn,
     kind: MySqlObjectKind,
 ) -> Result<Vec<MySqlObjectInfo>, AppError> {
-    // 未显式指定 schema 时取当前默认数据库（SELECT DATABASE() 兜底）
-    let schema: String = conn
+    // 未显式指定 schema 时取当前默认数据库（SELECT DATABASE() 兜底）。
+    // 无默认库（schema 为空）时不报错，返回空清单，用户选库后自动刷新
+    let Some(schema) = conn
         .query_first::<Option<String>, _>("SELECT DATABASE()")
         .await
         .map_err(mysql_err)?
         .flatten()
-        .ok_or_else(|| AppError::general("MySQL 未选择数据库（schema 为空），请指定默认库"))?;
+    else {
+        return Ok(Vec::new());
+    };
 
     // 各类别的清单 SQL：第二列为注释占位（视图取 TABLE_COMMENT，其余统一空串）
     let sql = match kind {

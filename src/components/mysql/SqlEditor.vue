@@ -103,8 +103,8 @@ const lightTheme = EditorView.theme({
   },
   '.cm-scroller': {
     overflow: 'auto',
-    fontFamily: "'Cascadia Mono', Consolas, monospace",
-    fontSize: '13px',
+    fontFamily: "var(--fy-font)",
+    fontSize: '12px',
     lineHeight: '1.6',
   },
   '.cm-gutters': {
@@ -256,7 +256,7 @@ watch(
 
 /* 补全面板：跟随浅色主题（默认白底，覆盖暗色变量风险） */
 .sql-editor :deep(.cm-tooltip.cm-tooltip-autocomplete > ul) {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
 }
 

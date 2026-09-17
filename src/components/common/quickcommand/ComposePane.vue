@@ -267,8 +267,8 @@ async function send(): Promise<void> {
   background: rgba(var(--v-theme-surface), 0.4);
   color: rgb(var(--v-theme-on-surface));
   padding: 8px 10px;
-  font-family: 'Consolas', 'JetBrains Mono', 'Courier New', monospace;
-  font-size: 13px;
+  font-family: var(--fy-font);
+  font-size: 12px;
   line-height: 1.5;
   outline: none;
 }

@@ -510,7 +510,7 @@ onMounted(() => {
 }
 
 .qc-tree__title {
-  font-weight: 600;
+  font-weight: 400;
   font-size: 14px;
 }
 
@@ -534,7 +534,7 @@ onMounted(() => {
 }
 
 .qc-tree__label {
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -560,6 +560,6 @@ onMounted(() => {
   padding: 16px;
   text-align: center;
   color: rgba(var(--v-theme-on-surface), 0.5);
-  font-size: 13px;
+  font-size: 12px;
 }
 </style>

@@ -495,7 +495,7 @@ onMounted(() => {
 .tunnel-view__head {
   height: 32px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.7);
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   user-select: none;
@@ -503,7 +503,7 @@ onMounted(() => {
 
 .tunnel-view__row {
   min-height: 52px;
-  font-size: 13px;
+  font-size: 12px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
@@ -522,7 +522,7 @@ onMounted(() => {
 }
 
 .tunnel-view__cell--mono {
-  font-family: 'Consolas', 'Courier New', monospace;
+  font-family: var(--fy-font);
   font-size: 12px;
 }
 
@@ -535,13 +535,13 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   height: 200px;
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.5);
 }
 
 /* 表单对话框：深色主题下与 surface 背景一致 */
 .tunnel-form__label {
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.8);
 }
 
