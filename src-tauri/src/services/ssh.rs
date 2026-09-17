@@ -21,6 +21,10 @@ use crate::error::AppError;
 use crate::models::session::{AuthType, SessionConfig};
 use crate::state::AppState;
 
+use super::login_script;
+use super::ssh_proxy::ProxyConfig;
+use crate::ssh_trace;
+
 /// 默认终端尺寸（前端 resize 后更新）
 const DEFAULT_COLS: u32 = 80;
 const DEFAULT_ROWS: u32 = 24;
@@ -158,6 +162,8 @@ struct SshClientHandler {
     host: String,
     /// 目标端口（known_hosts 匹配用）
     port: u16,
+    /// 主机 key 严格模式（SSH 选项「SSH → 安全性」）：开启时未信任主机直接拒绝，不弹确认窗
+    hostkey_strict: bool,
 }
 
 /// hostkey-prompt 事件 payload（契约第 3 节）
@@ -175,8 +181,9 @@ struct SessionStatusPayload {
     status: String,
 }
 
-/// 推送连接状态变更（低频状态走 event）
-fn emit_status(app: &tauri::AppHandle, id: &str, status: &str) {
+/// 推送连接状态变更（低频状态走 event）。
+/// pub(crate)：本地终端 / Telnet / 串口服务复用同一 session-status 事件流。
+pub(crate) fn emit_status(app: &tauri::AppHandle, id: &str, status: &str) {
     let _ = app.emit(
         "session-status",
         SessionStatusPayload {
@@ -211,6 +218,12 @@ impl russh::client::Handler for SshClientHandler {
         let trusted = known_hosts::check_known_hosts(&self.host, self.port, &key).unwrap_or(false);
         if trusted {
             return Ok(true);
+        }
+
+        // 主机 key 严格模式（SSH 选项）：未信任主机一律拒绝，不弹确认窗
+        if self.hostkey_strict {
+            eprintln!("[ssh] {} hostkey strict: rejecting untrusted key", self.session_id);
+            return Ok(false);
         }
 
         // 推送 hostkey-prompt 事件（payload 按契约第 3 节）
@@ -470,33 +483,62 @@ pub async fn connect(
     eprintln!("[ssh] {} connect start: {}:{}", key, cfg.host, cfg.port);
     emit_status(app, key, STATUS_CONNECTING);
 
-    // 连接配置：keepalive 按 SessionConfig.keepalive_interval 秒（russh 内建 keepalive 定时器）
+    // 跟踪开关：连接是低频操作，每次连接前刷新一次（SSH 选项「高级 → 跟踪」）
+    let _ = super::trace::refresh_from_settings();
+    ssh_trace!("[ssh] {key} connect start: {}:{}", cfg.host, cfg.port);
+    emit_status(app, key, STATUS_CONNECTING);
+
+    // 连接配置：keepalive 按 SessionConfig.keepalive_interval 秒（russh 内建 keepalive 定时器）；
+    // sshopt_keepalive_enabled 关闭时全局禁用 keepalive（SSH 选项「连接 → 保持活动状态」）
+    let keepalive_enabled = settings_flag("sshopt_keepalive_enabled", true);
     let mut config = russh::client::Config::default();
-    config.keepalive_interval = Some(Duration::from_secs(u64::from(cfg.keepalive_interval.max(1))));
+    if keepalive_enabled {
+        config.keepalive_interval =
+            Some(Duration::from_secs(u64::from(cfg.keepalive_interval.max(1))));
+    }
 
     let handler = SshClientHandler {
         app: app.clone(),
         session_id: key.to_string(),
         host: cfg.host.clone(),
         port: cfg.port,
+        hostkey_strict: settings_flag("sshopt_hostkey_strict", false),
     };
 
+    // 代理：启用时经 SOCKS5/HTTP CONNECT 握手建立流，再交给 russh connect_stream
+    let proxy = ProxyConfig::from_settings().unwrap_or(None);
     // kex 期间 Handler 的 check_server_key 可能挂起等待前端确认
-    let mut handle =
-        russh::client::connect(Arc::new(config), (cfg.host.as_str(), cfg.port), handler).await?;
-    eprintln!("[ssh] {} tcp+kex+hostkey done", cfg.id);
+    let mut handle = if let Some(proxy) = &proxy {
+        ssh_trace!(
+            "[ssh] {key} connecting via proxy {}:{}",
+            proxy.host,
+            proxy.port
+        );
+        let stream = super::ssh_proxy::connect(cfg.host.as_str(), cfg.port, proxy).await?;
+        russh::client::connect_stream(Arc::new(config), stream, handler).await?
+    } else {
+        russh::client::connect(Arc::new(config), (cfg.host.as_str(), cfg.port), handler).await?
+    };
+    ssh_trace!("[ssh] {} tcp+kex+hostkey done", cfg.id);
 
     // 认证（5 种方式按契约 AuthType）
     authenticate(&mut handle, cfg).await?;
-    eprintln!("[ssh] {} auth done ({:?})", cfg.id, cfg.auth_type);
+    ssh_trace!("[ssh] {} auth done ({:?})", cfg.id, cfg.auth_type);
 
-    // 打开 session channel 并请求 PTY + shell（默认 80x24，前端 resize 后更新）
+    // 打开 session channel 并请求 PTY + shell（默认 80x24，前端 resize 后更新）；
+    // 终端类型按 SSH 选项「终端 → VT 模式」（白名单校验，缺省 xterm-256color）
+    let term_type = match settings_text("sshopt_vt_term_type").as_str() {
+        "xterm" | "vt100" | "vt102" | "vt220" | "ansi" | "linux" => {
+            settings_text("sshopt_vt_term_type")
+        }
+        _ => "xterm-256color".to_string(),
+    };
     let channel = handle
         .channel_open_session()
         .await
         .map_err(|e| AppError::Ssh(format!("打开 channel 失败: {e}")))?;
     channel
-        .request_pty(true, "xterm-256color", DEFAULT_COLS, DEFAULT_ROWS, 0, 0, &[])
+        .request_pty(true, &term_type, DEFAULT_COLS, DEFAULT_ROWS, 0, 0, &[])
         .await
         .map_err(|e| AppError::Ssh(format!("请求 PTY 失败: {e}")))?;
     channel
@@ -509,7 +551,22 @@ pub async fn connect(
     tauri::async_runtime::spawn(read_loop(key.to_string(), read_half, on_output));
     let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
     tauri::async_runtime::spawn(write_forward(write_rx, write_half));
-    eprintln!("[ssh] {} pty/shell ready, read_loop spawned", key);
+    ssh_trace!("[ssh] {key} pty/shell ready, read_loop spawned");
+
+    // 登录脚本：启用时 shell 就绪后按行间隔自动发送（SSH 选项「连接 → 登录脚本」）
+    if settings_flag("sshopt_script_enabled", false) {
+        let content = settings_text("sshopt_script_content");
+        let delay_ms = settings_number("sshopt_script_delay", 200).clamp(50, 10_000);
+        let lines = login_script::parse(&content);
+        if !lines.is_empty() {
+            tauri::async_runtime::spawn(run_login_script(
+                key.to_string(),
+                write_tx.clone(),
+                lines,
+                delay_ms,
+            ));
+        }
+    }
 
     // 注册会话句柄（断开时清理）；Handle 用 Arc 包裹以便跨 await 共享
     let handle = Arc::new(handle);
@@ -522,6 +579,57 @@ pub async fn connect(
     );
     emit_status(app, key, STATUS_CONNECTED);
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// SSH 选项辅助：settings 表读取（失败容错为默认值，不阻塞连接）
+// ---------------------------------------------------------------------------
+
+/// 读布尔设置（缺省/失败回退 default）
+fn settings_flag(key: &str, default: bool) -> bool {
+    crate::services::settings_store::get(key)
+        .ok()
+        .flatten()
+        .map(|v| v == "true")
+        .unwrap_or(default)
+}
+
+/// 读文本设置（缺省/失败回退空串）
+fn settings_text(key: &str) -> String {
+    crate::services::settings_store::get(key)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// 读数字设置（缺省/失败/非有限回退 default）
+fn settings_number(key: &str, default: u64) -> u64 {
+    crate::services::settings_store::get(key)
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(default)
+}
+
+/// 登录脚本任务：shell 就绪后按行间隔自动发送脚本命令。
+/// 每行经既有写转发路径发送（与键盘输入同路），发送失败（会话关闭）即终止。
+async fn run_login_script(
+    key: String,
+    write_tx: tokio::sync::mpsc::UnboundedSender<SshWriteMsg>,
+    lines: Vec<login_script::ScriptLine>,
+    delay_ms: u64,
+) {
+    let total = lines.len();
+    for line in lines {
+        if write_tx
+            .send(SshWriteMsg::Data(line.send.into_bytes()))
+            .is_err()
+        {
+            return; // 会话已关闭
+        }
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+    ssh_trace!("[ssh] {key} login script done ({total} lines)");
 }
 
 /// 断开并清理会话：从 ssh_sessions 移除句柄（触发连接关闭），

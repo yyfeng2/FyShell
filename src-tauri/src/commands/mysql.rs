@@ -10,24 +10,28 @@ use crate::services;
 
 /// `mysql_connect` (config: MySqlConnection) -> String connection_id
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_connect(config: MySqlConnection) -> Result<String, AppError> {
     services::mysql::connect(&config).await
 }
 
 /// `mysql_disconnect` (conn_id: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_disconnect(conn_id: String) -> Result<(), AppError> {
     services::mysql::disconnect(&conn_id).await
 }
 
 /// `mysql_list_tables` (conn_id: String) -> Vec<MySqlTableInfo>
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_list_tables(conn_id: String) -> Result<Vec<MySqlTableInfo>, AppError> {
     services::mysql::list_tables(&conn_id).await
 }
 
 /// `mysql_query` (conn_id: String, sql: String, page: u32, page_size: u32) -> MySqlQueryResult
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_query(
     conn_id: String,
     sql: String,
@@ -42,6 +46,7 @@ pub async fn mysql_query(
 /// `confirmed` 为契约扩展的可选参数：前端首次调用不传，命中危险 SQL 时收到
 /// 错误提示并二次确认，确认后带 `confirmed: true` 重新调用。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_execute(
     conn_id: String,
     sql: String,
@@ -57,18 +62,21 @@ pub async fn mysql_execute(
 
 /// `mysql_begin` (conn_id: String) -> 开启事务
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_begin(conn_id: String) -> Result<(), AppError> {
     services::mysql::begin(&conn_id).await
 }
 
 /// `mysql_commit` (conn_id: String) -> 提交事务
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_commit(conn_id: String) -> Result<(), AppError> {
     services::mysql::commit(&conn_id).await
 }
 
 /// `mysql_rollback` (conn_id: String) -> 回滚事务
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_rollback(conn_id: String) -> Result<(), AppError> {
     services::mysql::rollback(&conn_id).await
 }

@@ -11,12 +11,14 @@ use crate::services::quick_command_store;
 ///
 /// 契约签名为 `()`。
 #[tauri::command]
+#[specta::specta]
 pub fn qc_list() -> Result<Vec<QuickCommandNode>, AppError> {
     quick_command_store::list_nodes()
 }
 
 /// 保存快捷命令（新命令生成 id）
 #[tauri::command]
+#[specta::specta]
 pub fn qc_save_command(mut cmd: QuickCommand) -> Result<QuickCommand, AppError> {
     if cmd.name.trim().is_empty() {
         return Err(AppError::general("命令名称不能为空"));
@@ -33,6 +35,7 @@ pub fn qc_save_command(mut cmd: QuickCommand) -> Result<QuickCommand, AppError> 
 
 /// 保存快捷命令文件夹（新文件夹生成 id）
 #[tauri::command]
+#[specta::specta]
 pub fn qc_save_folder(mut folder: QuickCommandFolder) -> Result<QuickCommandFolder, AppError> {
     if folder.name.trim().is_empty() {
         return Err(AppError::general("文件夹名称不能为空"));
@@ -46,6 +49,7 @@ pub fn qc_save_folder(mut folder: QuickCommandFolder) -> Result<QuickCommandFold
 
 /// 删除快捷命令或文件夹（is_folder 区分，前端已二次确认）
 #[tauri::command]
+#[specta::specta]
 pub fn qc_delete(id: String, is_folder: bool) -> Result<(), AppError> {
     if id.trim().is_empty() {
         return Err(AppError::general("id 不能为空"));

@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 快捷命令（契约第 5.1 节）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct QuickCommand {
     /// uuid v4
     pub id: String,
@@ -19,7 +19,7 @@ pub struct QuickCommand {
 }
 
 /// 快捷命令树文件夹（契约第 5.1 节）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct QuickCommandFolder {
     /// uuid v4
     pub id: String,
@@ -33,7 +33,7 @@ pub struct QuickCommandFolder {
 ///
 /// serde tag 字段为 `kind`，值为 `"folder" | "command"`（internally tagged），
 /// 与 `SessionNode` 同模式；层级由 `group_id` / `parent_id` 表达。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum QuickCommandNode {
     /// 文件夹分组

@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 查询历史条目（SQLite 持久化，history_list / history_search 返回）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlQueryHistoryItem {
     pub id: i64,
     /// 执行该语句的连接标识（表列名 conn_host）
@@ -19,8 +19,21 @@ pub struct MySqlQueryHistoryItem {
     pub success: bool,
 }
 
+/// 已保存查询条目（命名保存，区别于自动记录的查询历史；saved_query_list 返回）
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct MySqlSavedQueryItem {
+    pub id: i64,
+    /// 用户命名（表内 UNIQUE 约束，同名保存走覆盖语义）
+    pub name: String,
+    /// 绑定的连接标识（None = 不绑定连接，全局可见）
+    pub conn_id: Option<String>,
+    pub sql: String,
+    /// 格式 "YYYY-MM-DD HH:MM:SS"（SQLite datetime('now','localtime') 生成）
+    pub created_at: String,
+}
+
 /// 执行计划结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlExplainResult {
     /// "rows" = 传统表格格式；"tree" = 树形文本（EXPLAIN ANALYZE 输出）
     pub format: String,

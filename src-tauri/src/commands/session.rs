@@ -14,6 +14,7 @@ use crate::state::AppState;
 /// 契约签名为 `()`；`filter` 为可选扩展参数（Tauri 允许省略 Option 参数），
 /// 前端搜索过滤可下沉到 Rust 侧执行。
 #[tauri::command]
+#[specta::specta]
 pub fn session_list(
     state: State<'_, AppState>,
     filter: Option<String>,
@@ -23,6 +24,7 @@ pub fn session_list(
 
 /// 保存会话（新会话生成 id）
 #[tauri::command]
+#[specta::specta]
 pub fn session_save(
     state: State<'_, AppState>,
     mut config: SessionConfig,
@@ -37,6 +39,7 @@ pub fn session_save(
 
 /// 删除会话或文件夹（is_folder 区分，前端已二次确认）
 #[tauri::command]
+#[specta::specta]
 pub fn session_delete(state: State<'_, AppState>, id: String, is_folder: bool) -> Result<(), AppError> {
     if id.trim().is_empty() {
         return Err(AppError::general("id 不能为空"));
@@ -52,6 +55,7 @@ pub fn session_delete(state: State<'_, AppState>, id: String, is_folder: bool) -
 ///
 /// State 由 Tauri 注入（不属于前端 IPC 签名），仅用于 Jump 时读取被引用的跳板会话。
 #[tauri::command]
+#[specta::specta]
 pub async fn session_test(
     state: State<'_, AppState>,
     config: SessionConfig,
@@ -104,6 +108,7 @@ pub async fn session_test(
 
 /// 保存文件夹（新文件夹生成 id）
 #[tauri::command]
+#[specta::specta]
 pub fn folder_save(
     state: State<'_, AppState>,
     mut folder: SessionFolder,
@@ -122,6 +127,7 @@ pub fn folder_save(
 ///
 /// 克隆复制完整配置（含 folder_id / auth_type / profile_id 引用），不建立连接。
 #[tauri::command]
+#[specta::specta]
 pub fn session_clone(state: State<'_, AppState>, id: String) -> Result<SessionConfig, AppError> {
     if id.trim().is_empty() {
         return Err(AppError::general("id 不能为空"));
@@ -154,7 +160,7 @@ fn validate_session(config: &SessionConfig) -> Result<(), AppError> {
 }
 
 /// session_test 的返回结构（契约：`{ ok: bool, message: String }`）
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, specta::Type)]
 #[serde(rename_all = "camelCase")]
 pub struct TestResult {
     pub ok: bool,

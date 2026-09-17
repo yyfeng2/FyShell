@@ -78,7 +78,10 @@ const MENUS: MenuDef[] = [
   {
     title: '帮助',
     accel: 'H',
-    items: [{ title: '关于 FyShell', action: 'about' }],
+    items: [
+      { title: '检测更新', action: 'check-update' },
+      { title: '关于 FyShell', action: 'about', dividerBefore: true },
+    ],
   },
 ]
 

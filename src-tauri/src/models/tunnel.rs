@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 隧道类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum TunnelKind {
     /// 本地转发：本地监听端口 → SSH → target_host:target_port
     Local,
@@ -38,7 +38,7 @@ impl TunnelKind {
 }
 
 /// 隧道状态
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 pub enum TunnelStatus {
     /// 已停止
     Stopped,
@@ -69,7 +69,7 @@ impl TunnelStatus {
 }
 
 /// SSH 隧道规则（契约第 5.1 节）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct TunnelRule {
     /// uuid v4
     pub id: String,
@@ -94,7 +94,7 @@ pub struct TunnelRule {
 }
 
 /// 一键全启结果报告（start_all 返回，前端展示成功/失败计数）
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct StartAllReport {
     /// 规则总数（含已在运行中被跳过的）
     pub total: usize,

@@ -190,7 +190,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { sshWrite } from '@/api/ssh'
 import { useQuickCommandStore, isCommandFolder, commandTextOf } from '@/stores/quickCommand'
 import { useSessionStore } from '@/stores/session'
 import { useTerminalStore } from '@/stores/terminal'
@@ -474,7 +473,9 @@ async function confirmSend(): Promise<void> {
   const raw = command.command_text ?? ''
   const text = raw.endsWith('\n') ? raw : `${raw}\n`
   const payload = new TextEncoder().encode(text)
-  const results = await Promise.allSettled(sessionIds.map((id) => sshWrite(id, payload)))
+  const results = await Promise.allSettled(
+    sessionIds.map((id) => terminalStore.writeToSession(id, payload)),
+  )
   const failed = sessionIds.filter((_, i) => results[i].status === 'rejected')
   if (failed.length === 0) {
     uiStore.toast(`已发送到 ${sessionIds.length} 个会话`, 'success')

@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// mysql.user 表中的一行用户信息（User, Host 联合为主键）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlUserInfo {
     pub user: String,
     pub host: String,
@@ -15,7 +15,7 @@ pub struct MySqlUserInfo {
 }
 
 /// SHOW GRANTS FOR 的每条授权语句（单个用户可能有多条，含同义行）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlGrantItem {
     /// 完整的 GRANT 语句原文（如 `GRANT SELECT ON *.* TO 'u'@'%'`）
     pub grant_sql: String,

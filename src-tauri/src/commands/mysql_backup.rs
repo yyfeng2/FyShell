@@ -20,6 +20,7 @@ use crate::services;
 ///   DROP TABLE IF EXISTS；建表结构始终导出）。
 /// 返回导出的数据行数。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_backup(
     conn_id: String,
     tables: Option<Vec<String>>,
@@ -52,6 +53,7 @@ pub async fn mysql_backup(
 /// 覆盖确认由前端负责（与 mysql_import 的 confirmed 流程一致），后端直接执行。
 /// 返回总受影响行数。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_restore(
     conn_id: String,
     file_path: String,
@@ -62,6 +64,7 @@ pub async fn mysql_restore(
 
 /// `mysql_backup_profile_list` () -> Vec<MySqlBackupProfile>
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_backup_profile_list() -> Result<Vec<MySqlBackupProfile>, AppError> {
     // SQLite 操作为亚毫秒级阻塞，async 命令内直接调用（与 tunnel 同策略）
     services::mysql_backup::profile_list()
@@ -74,6 +77,7 @@ pub async fn mysql_backup_profile_list() -> Result<Vec<MySqlBackupProfile>, AppE
 /// id None = 新建（生成 uuid）；conn_host = 关联的 MySQL 连接标识（host 描述，
 /// 可选，前端省略时存空串）；tables None = 全库（空表）。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_backup_profile_save(
     id: Option<String>,
     name: String,
@@ -98,6 +102,7 @@ pub async fn mysql_backup_profile_save(
 
 /// `mysql_backup_profile_delete` (id: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_backup_profile_delete(id: String) -> Result<(), AppError> {
     services::mysql_backup::profile_delete(&id)
 }
@@ -106,6 +111,7 @@ pub async fn mysql_backup_profile_delete(id: String) -> Result<(), AppError> {
 ///
 /// 运行历史列表（最近 100 条，倒序）。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_backup_run_list() -> Result<Vec<MySqlBackupRun>, AppError> {
     services::mysql_backup::run_history_list(100)
 }

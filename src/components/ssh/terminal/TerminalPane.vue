@@ -6,12 +6,11 @@
 import { onBeforeUnmount, onMounted, watch } from 'vue'
 import { useXterm } from '@/composables/useXterm'
 import { useTerminalStore } from '@/stores/terminal'
-import { sshResize, sshWrite } from '@/api/ssh'
 import { debugLog } from '@/api/channels'
 
 const props = withDefaults(
   defineProps<{
-    /** 绑定的 SSH 会话 ID（resize/write 均按会话 ID 路由） */
+    /** 绑定的会话 ID（resize/write 均按会话 ID 路由） */
     sessionId: string
     /** 会话编码，默认 UTF-8（如 "GBK"、"Big5"） */
     encoding?: string
@@ -25,7 +24,8 @@ const terminalStore = useTerminalStore()
 
 /**
  * useXterm 组合式函数：
- * - onResize：fit 完成后按会话 ID 路由 resize（架构红线），仅在 connected 时发送
+ * - onData/onResize：按会话传输类型路由到各自命令
+ *   （SSH → ssh_write/ssh_resize，本地/Telnet/串口 → 各自 byte-stream 命令）
  * - write：注册到 store，Rust 侧 Channel 输出按会话 ID 分发到这里
  */
 const xterm = useXterm({
@@ -33,16 +33,10 @@ const xterm = useXterm({
   fontSize: props.fontSize,
   onData: (data) => {
     // 键盘输入写入（xterm 输出为 UTF-16 字符串，统一按 UTF-8 编码上送）
-    void sshWrite(props.sessionId, new TextEncoder().encode(data)).catch(() => {
-      // 会话已断开时写入失败静默忽略
-    })
+    terminalStore.writeTerminal(props.sessionId, new TextEncoder().encode(data))
   },
   onResize: (dims) => {
-    if (terminalStore.isConnected(props.sessionId)) {
-      void sshResize(props.sessionId, dims.cols, dims.rows).catch(() => {
-        // resize 失败静默忽略，下轮尺寸变化会重试
-      })
-    }
+    terminalStore.resizeTerminal(props.sessionId, dims.cols, dims.rows)
   },
 })
 

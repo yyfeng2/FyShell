@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 数据库对象类别（serde tag = "kind"，变体序列化为小写）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum MySqlObjectKind {
     View,
@@ -31,7 +31,7 @@ impl MySqlObjectKind {
 }
 
 /// 数据库对象列表项（object_list 返回）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlObjectInfo {
     pub name: String,
     /// 对象类别（小写 view/function/procedure/trigger/event，IPC 传输为字符串）
@@ -41,7 +41,7 @@ pub struct MySqlObjectInfo {
 }
 
 /// 数据库对象 DDL（object_ddl 返回）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlObjectDdl {
     pub name: String,
     /// 对象类别（同上，IPC 传输为字符串）

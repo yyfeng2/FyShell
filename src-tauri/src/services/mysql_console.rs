@@ -1,8 +1,9 @@
-//! SQL 控制台服务（P2 阶段：查询历史 + 执行计划 + 多结果集）。
+//! SQL 控制台服务（P2 阶段：查询历史 + 执行计划 + 多结果集 + 已保存查询）。
 //!
 //! - 查询历史：SQLite（同 fyshell.db，独立 Connection，模块级
 //!   `OnceLock<Mutex<Connection>>` + `init(app_data_dir)` 注入，参照 tunnel.rs 模式，
 //!   不触碰 AppState / lib.rs）
+//! - 已保存查询：同库 saved_queries 表（命名保存，与自动记录的历史区分）
 //! - 执行计划：经 `services::mysql::pool_of` 复用现有连接池，标准 `EXPLAIN`
 //!   表格 + `EXPLAIN FORMAT=TREE` 树形文本；`EXPLAIN ANALYZE` 会真实执行语句，
 //!   仅对 SELECT 开头的语句提供（防止借此执行写语句）
@@ -18,7 +19,7 @@ use rusqlite::{params, Connection};
 
 use crate::error::AppError;
 use crate::models::mysql::MySqlQueryResult;
-use crate::models::mysql_console::{MySqlExplainResult, MySqlQueryHistoryItem};
+use crate::models::mysql_console::{MySqlExplainResult, MySqlQueryHistoryItem, MySqlSavedQueryItem};
 
 // ---------------------------------------------------------------------------
 // 查询历史：SQLite 持久化
@@ -58,6 +59,13 @@ pub fn init(app_data_dir: &Path) -> Result<(), AppError> {
              created_at  TEXT DEFAULT (datetime('now','localtime'))
          );
          CREATE INDEX IF NOT EXISTS idx_query_history_conn ON query_history (conn_host);
+         CREATE TABLE IF NOT EXISTS saved_queries (
+             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+             name        TEXT NOT NULL UNIQUE,
+             conn_id     TEXT,
+             sql         TEXT NOT NULL,
+             created_at  TEXT DEFAULT (datetime('now','localtime'))
+         );
          COMMIT;",
     )?;
     Ok(())
@@ -125,6 +133,115 @@ pub fn history_search(keyword: &str, limit: u32) -> Result<Vec<MySqlQueryHistory
 pub fn history_clear() -> Result<(), AppError> {
     let conn = lock_conn();
     conn.execute("DELETE FROM query_history", [])?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// 已保存查询（命名保存，区别于自动记录的查询历史）
+// ---------------------------------------------------------------------------
+
+/// 查询名称的最大字符数
+const NAME_MAX_LEN: usize = 100;
+
+/// 名称校验：去首尾空白、非空、限长（返回 trim 后的名称）
+fn validate_name(name: &str) -> Result<&str, AppError> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::general("查询名称不能为空"));
+    }
+    if trimmed.chars().count() > NAME_MAX_LEN {
+        return Err(AppError::general(format!(
+            "查询名称过长（最多 {NAME_MAX_LEN} 字符）"
+        )));
+    }
+    Ok(trimmed)
+}
+
+/// 行 -> MySqlSavedQueryItem 的映射
+fn row_to_saved_query(row: &rusqlite::Row<'_>) -> rusqlite::Result<MySqlSavedQueryItem> {
+    Ok(MySqlSavedQueryItem {
+        id: row.get("id")?,
+        name: row.get("name")?,
+        conn_id: row.get("conn_id")?,
+        sql: row.get("sql")?,
+        created_at: row.get("created_at")?,
+    })
+}
+
+/// 列出已保存查询（按名称排序，便于查找）
+pub fn saved_query_list() -> Result<Vec<MySqlSavedQueryItem>, AppError> {
+    let conn = lock_conn();
+    let mut stmt = conn.prepare(
+        "SELECT id, name, conn_id, sql, created_at
+         FROM saved_queries
+         ORDER BY name ASC",
+    )?;
+    let items: Vec<MySqlSavedQueryItem> = stmt.query_map([], row_to_saved_query)?.collect::<Result<_, _>>()?;
+    Ok(items)
+}
+
+/// 保存查询：新增或覆盖（同名 UPSERT，保留原 id 与创建时间）。
+///
+/// 同名且 `overwrite=false` 时返回带提示错误，前端覆盖确认后带
+/// `overwrite=true` 重新调用（与 mysql_update_row 的 confirmed 流程一致）；
+/// 返回 true 表示覆盖了同名记录，false 表示新增。
+pub fn saved_query_save(
+    name: &str,
+    conn_id: Option<&str>,
+    sql: &str,
+    overwrite: bool,
+) -> Result<bool, AppError> {
+    let name = validate_name(name)?;
+    let truncated: String = sql.chars().take(SQL_MAX_LEN).collect();
+    let conn = lock_conn();
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM saved_queries WHERE name = ?1",
+        params![name],
+        |r| r.get(0),
+    )?;
+    if exists > 0 && !overwrite {
+        return Err(AppError::general(format!(
+            "同名查询已存在：{name}，请确认后以 overwrite=true 重新保存"
+        )));
+    }
+    conn.execute(
+        "INSERT INTO saved_queries (name, conn_id, sql) VALUES (?1, ?2, ?3)
+         ON CONFLICT(name) DO UPDATE SET conn_id = excluded.conn_id, sql = excluded.sql",
+        params![name, conn_id, truncated],
+    )?;
+    Ok(exists > 0)
+}
+
+/// 重命名已保存查询（按 id 定位；新名称与其它条目冲突时报错）
+pub fn saved_query_rename(id: i64, new_name: &str) -> Result<(), AppError> {
+    let new_name = validate_name(new_name)?;
+    let conn = lock_conn();
+    // 同名冲突检查（排除自身）
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM saved_queries WHERE name = ?1 AND id != ?2",
+        params![new_name, id],
+        |r| r.get(0),
+    )?;
+    if exists > 0 {
+        return Err(AppError::general(format!("名称已存在：{new_name}")));
+    }
+    let affected = conn.execute(
+        "UPDATE saved_queries SET name = ?1 WHERE id = ?2",
+        params![new_name, id],
+    )?;
+    if affected == 0 {
+        return Err(AppError::general(format!("未找到 id 为 {id} 的已保存查询")));
+    }
+    Ok(())
+}
+
+/// 删除已保存查询（按 id 定位；id 不存在视为错误）
+pub fn saved_query_delete(id: i64) -> Result<(), AppError> {
+    let conn = lock_conn();
+    let affected = conn.execute("DELETE FROM saved_queries WHERE id = ?1", params![id])?;
+    if affected == 0 {
+        return Err(AppError::general(format!("未找到 id 为 {id} 的已保存查询")));
+    }
     Ok(())
 }
 

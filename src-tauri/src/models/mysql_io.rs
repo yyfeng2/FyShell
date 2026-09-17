@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 导出格式（内部 tag 表示：序列化/反序列化为 { "format": "csv" } 等对象）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "format", rename_all = "lowercase")]
 pub enum MySqlExportFormat {
     Csv,
@@ -14,7 +14,7 @@ pub enum MySqlExportFormat {
 }
 
 /// 导入格式（内部 tag 表示：序列化/反序列化为 { "format": "csv" } 等对象）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "format", rename_all = "lowercase")]
 pub enum MySqlImportFormat {
     Csv,
@@ -22,7 +22,7 @@ pub enum MySqlImportFormat {
 }
 
 /// 导出选项
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlExportOptions {
     /// 导出的查询 SQL（SELECT）
     pub sql: String,
@@ -35,7 +35,7 @@ pub struct MySqlExportOptions {
 }
 
 /// 导入选项
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlImportOptions {
     /// 源文件路径
     pub file_path: String,
@@ -56,7 +56,7 @@ fn default_batch_size() -> u32 {
 }
 
 /// 导入导出结果（rows_total：导出 = 导出行数 / 导入 = 导入行数）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlIoResult {
     pub rows_total: u64,
     /// 耗时（毫秒）

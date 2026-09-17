@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::models::session::AuthType;
 
 /// 认证配置文件（契约第 5.1 节）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct AuthProfile {
     /// uuid v4
     pub id: String,

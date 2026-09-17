@@ -13,6 +13,7 @@ use crate::state::AppState;
 
 /// 开始采集（SSH exec /proc）：采样经 Channel 推送，返回即已开始
 #[tauri::command]
+#[specta::specta]
 pub async fn monitor_start(
     app: AppHandle,
     id: String,
@@ -24,6 +25,7 @@ pub async fn monitor_start(
 
 /// 停止采集（按会话 ID 路由）
 #[tauri::command]
+#[specta::specta]
 pub fn monitor_stop(id: String) -> Result<(), AppError> {
     monitor_service::stop(&id);
     Ok(())
@@ -31,6 +33,7 @@ pub fn monitor_stop(id: String) -> Result<(), AppError> {
 
 /// Docker 容器列表：`Vec<DockerContainer>`
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_list(
     state: State<'_, AppState>,
     id: String,
@@ -40,6 +43,7 @@ pub async fn docker_list(
 
 /// 容器操作：action 为 start / stop / restart
 #[tauri::command]
+#[specta::specta]
 pub async fn docker_operate(
     state: State<'_, AppState>,
     id: String,

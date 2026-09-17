@@ -11,7 +11,6 @@ import { useQuickCommandStore } from '@/stores/quickCommand'
 import { useUiStore } from '@/stores/ui'
 import { useSessionStore } from '@/stores/session'
 import { useTerminalStore } from '@/stores/terminal'
-import { sshWrite } from '@/api/ssh'
 
 const props = withDefaults(
   defineProps<{
@@ -49,7 +48,7 @@ async function sendCommand(text: string): Promise<void> {
   }
   const payload = new TextEncoder().encode(text.endsWith('\n') ? text : `${text}\n`)
   try {
-    await sshWrite(id, payload)
+    await terminalStore.writeToSession(id, payload)
   } catch (e) {
     ui.toast(`发送失败：${String(e)}`, 'error')
   }

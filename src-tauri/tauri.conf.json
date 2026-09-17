@@ -27,14 +27,16 @@
   },
   "plugins": {
     "updater": {
-      "active": false,
-      "pubkey": "",
-      "endpoints": []
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4QjE5QURGNzI2RTBCQ0QKUldUTkMyNXkzNXF4V0ZmWVhJMUhONlBzbmJZQkRFK1ZPTC9rTnJTdm9NS25ocktSS3I4RlBDUEEK",
+      "endpoints": [
+        "https://releases.example.com/fyshell/{{target}}/{{current_version}}"
+      ]
     }
   },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/icon.ico", "icons/icon.png"]
+    "icon": ["icons/icon.ico", "icons/icon.png"],
+    "createUpdaterArtifacts": true
   }
 }

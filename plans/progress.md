@@ -45,6 +45,16 @@
 2. **用户管理**：列表/授权/创建/删除
 3. **备份/还原 + 自动运行档案**：SQLite 持久化，mysqldump 风格；前端 MysqlDbWorkspace 工具条 + BackupPanel/AutoRunPanel
 
+## HexHub 对齐定制 — 已完成 ✅（2026-09-17，5 智能体并行，排除外部搜索/代理 Chrome）
+
+对照 [功能菜单清单.md](../功能菜单清单.md)（HexHub 逆向）的差距分析后实施：
+
+1. **高功能设置对话框**：SettingsDialog.vue（外观/终端/SFTP/数据/安全/关于六分区），主题浅色/深色/跟随系统（matchMedia 实时切换）、终端字体/字号/缓冲/光标实时生效到已开终端、SFTP 默认下载目录、清除查询历史/无效数据、主密码入口；后端 settings_store.rs（SQLite settings 表）持久化
+2. **标签页右键管理**：复制名称/固定/重命名/新窗口打开/关闭其他·全部·左右；固定标签受所有关闭路径保护（批量跳过/X 隐藏/中键/拖出屏蔽）
+3. **数据库级管理**：数据库切换（重建连接池方案，规避 mysql_async COM_RESET_CONNECTION 问题）/新建/删除（强确认）/复制 Host；表操作菜单（复制表结构 SQL/清空/截断/优化/重命名）
+4. **SFTP 增强 + 隧道**：chmod 九宫格权限对话框（八进制双向联动）、收藏路径 SQLite 持久化、终端定位到当前目录、隧道一键全启（StartAllReport 汇总）
+5. **单元格套件 + SQL 编辑器**：复制为 SQL 变体（Where/Insert 单条批量/InsertOrUpdate/Update/Delete/表格文本）、填充（NULL/日期/UUID/自定义）、跳转行、排序、列锁定（sticky）、粘贴/新建并粘贴、克隆行/插入 N 行（前端构造 INSERT 走现有预览→确认→执行管道）；SQL 格式化/大小写转换/压缩/仅运行选中的（sql-formatter）
+
 ## 遗留事项（2026-09-17 多智能体清理后剩余）
 
 1. **updater 未配置**：`tauri.conf.json` 中 `active: false`、pubkey/endpoints 为空——留到准备发布时做（需发布渠道决策）

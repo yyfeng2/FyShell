@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 单行单列更新（按主键定位行，一次只改一列）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlRowUpdate {
     pub table: String,
     pub pk_column: String,
@@ -20,14 +20,14 @@ pub struct MySqlRowUpdate {
 }
 
 /// 批量更新（每条按主键定位，逐条执行）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlRowUpdateBatch {
     pub table: String,
     pub updates: Vec<MySqlRowUpdate>,
 }
 
 /// 更新预览（预览 -> 确认 -> 执行管道的第一步产物）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlEditPreview {
     /// 将要执行的完整 UPDATE 语句（值已转义内联）
     pub sql: String,

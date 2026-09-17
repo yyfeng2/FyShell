@@ -19,6 +19,15 @@ pub struct AppState {
     /// ssh_hostkey_accept 取出后 send(bool)，实现前端确认前的异步挂起。
     pub pending_hostkey: Mutex<HashMap<String, tokio::sync::oneshot::Sender<bool>>>,
 
+    /// 本地终端会话句柄（portable-pty），key = 连接路由键（每标签唯一）
+    pub local_sessions: Mutex<HashMap<String, crate::services::local_shell::LocalShellHandle>>,
+
+    /// Telnet 会话句柄，key = 连接路由键（每标签唯一）
+    pub telnet_sessions: Mutex<HashMap<String, crate::services::telnet::TelnetSessionHandle>>,
+
+    /// 串口会话句柄，key = 连接路由键（每标签唯一）
+    pub serial_sessions: Mutex<HashMap<String, crate::services::serial::SerialSessionHandle>>,
+
     /// 会话配置持久化存储（SQLite，内部自带 Mutex<Connection>，方法为同步签名）
     pub config_store: crate::services::config_store::ConfigStore,
 }
@@ -32,6 +41,9 @@ impl AppState {
             transfer_tasks: Mutex::new(Vec::new()),
             cancelled_transfers: Mutex::new(HashSet::new()),
             pending_hostkey: Mutex::new(HashMap::new()),
+            local_sessions: Mutex::new(HashMap::new()),
+            telnet_sessions: Mutex::new(HashMap::new()),
+            serial_sessions: Mutex::new(HashMap::new()),
             config_store,
         }
     }

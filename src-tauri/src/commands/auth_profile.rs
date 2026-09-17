@@ -6,12 +6,14 @@ use crate::services::auth_profile;
 
 /// 列出全部认证配置文件
 #[tauri::command]
+#[specta::specta]
 pub fn auth_profile_list() -> Result<Vec<AuthProfile>, AppError> {
     auth_profile::list()
 }
 
 /// 保存认证配置文件（新配置文件生成 id；一处改全局生效）
 #[tauri::command]
+#[specta::specta]
 pub fn auth_profile_save(mut profile: AuthProfile) -> Result<AuthProfile, AppError> {
     if profile.name.trim().is_empty() {
         return Err(AppError::general("配置文件名称不能为空"));
@@ -25,6 +27,7 @@ pub fn auth_profile_save(mut profile: AuthProfile) -> Result<AuthProfile, AppErr
 
 /// 删除认证配置文件（引用它的会话不删除，profile_id 引用被置空）
 #[tauri::command]
+#[specta::specta]
 pub fn auth_profile_delete(id: String) -> Result<(), AppError> {
     if id.trim().is_empty() {
         return Err(AppError::general("id 不能为空"));

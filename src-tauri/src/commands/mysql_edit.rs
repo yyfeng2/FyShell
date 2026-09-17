@@ -2,8 +2,9 @@
 //!
 //! 「预览 -> 确认 -> 执行」管道：前端先调 mysql_edit_preview 获取将执行的
 //! SQL 与受影响行数估算；确认后再调 mysql_update_row / mysql_update_rows /
-//! mysql_delete_row 执行。写命令的 `confirmed` 参数与 mysql_execute 一致：
-//! 命中危险操作且未确认时返回带提示错误，前端二次确认后重新调用。
+//! mysql_delete_row 执行。写命令的 `confirmed` 参数与
+//! mysql_execute 一致：命中危险操作且未确认时返回带提示错误，前端二次确认
+//! 后重新调用。mysql_insert_rows 为原生插入命令（事务包裹 + 逐行参数化）。
 
 use crate::error::AppError;
 use crate::models::mysql_edit::{MySqlEditPreview, MySqlRowUpdate, MySqlRowUpdateBatch};
@@ -11,6 +12,7 @@ use crate::services;
 
 /// `mysql_edit_preview` (conn_id: String, update: MySqlRowUpdate) -> MySqlEditPreview
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_edit_preview(
     conn_id: String,
     update: MySqlRowUpdate,
@@ -24,6 +26,7 @@ pub async fn mysql_edit_preview(
 /// 未确认时返回带提示错误；确认后带 `confirmed: true` 重新调用（复用 P0 的
 /// confirm 流程）。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_update_row(
     conn_id: String,
     update: MySqlRowUpdate,
@@ -44,6 +47,7 @@ pub async fn mysql_update_row(
 /// 批量条目全部按主键定位（生成的 UPDATE 恒含 WHERE，无全表风险），
 /// `confirmed` 参数为管道一致性保留；批量默认以隐式事务包裹，失败整体回滚。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_update_rows(
     conn_id: String,
     batch: MySqlRowUpdateBatch,
@@ -58,6 +62,7 @@ pub async fn mysql_update_rows(
 /// 按主键定位删除，SQL 恒含 WHERE（非无 WHERE 的危险 DELETE），
 /// `confirmed` 参数为管道一致性保留。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_delete_row(
     conn_id: String,
     table: String,
@@ -67,4 +72,22 @@ pub async fn mysql_delete_row(
 ) -> Result<u64, AppError> {
     let _ = confirmed;
     services::mysql_edit::delete_row(&conn_id, &table, &pk_column, pk_value).await
+}
+
+/// `mysql_insert_rows` (conn_id: String, table: String, columns: Vec<String>, rows: Vec<Vec<Option<String>>> [, confirmed: bool]) -> u64 插入行数
+///
+/// 原生插入命令：事务包裹（失败整体回滚）、逐行参数化 INSERT（值经 `?` 占位符
+/// 二进制协议传输，防注入）；columns 为空表示逐行插入全默认值行。
+/// `confirmed` 参数与 mysql_update_rows / mysql_delete_row 一致（管道一致性保留）。
+#[tauri::command]
+#[specta::specta]
+pub async fn mysql_insert_rows(
+    conn_id: String,
+    table: String,
+    columns: Vec<String>,
+    rows: Vec<Vec<Option<String>>>,
+    confirmed: Option<bool>,
+) -> Result<u64, AppError> {
+    let _ = confirmed;
+    services::mysql_edit::insert_rows(&conn_id, &table, &columns, &rows).await
 }

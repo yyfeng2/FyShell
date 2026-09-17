@@ -18,7 +18,7 @@ use crate::error::AppError;
 static CONN: OnceLock<Mutex<Connection>> = OnceLock::new();
 
 /// 收藏路径条目（side: local | remote，便于下拉按窗格侧过滤，避免跨侧误跳转）
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct SftpFavorite {
     /// uuid v4
     pub id: String,

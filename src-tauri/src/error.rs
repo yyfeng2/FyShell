@@ -51,3 +51,11 @@ impl Serialize for AppError {
         serializer.serialize_str(&self.to_string())
     }
 }
+
+// tauri-specta 要求命令错误类型实现 specta::Type；AppError 的 Serialize 行为
+// 是字符串，故类型形状按 string 导出（不生成命名的错误结构体）
+impl specta::Type for AppError {
+    fn definition(_: &mut specta::Types) -> specta::datatype::DataType {
+        specta::datatype::Primitive::str.into()
+    }
+}

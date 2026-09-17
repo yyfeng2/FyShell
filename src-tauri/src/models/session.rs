@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// TS 侧为可辨识联合（discriminated union），tag 字段为 `type`，
 /// 值为 `"password" | "publicKey" | "interactive" | "noAuth" | "jump"`。
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum AuthType {
     /// 密码认证
@@ -52,7 +52,7 @@ impl std::fmt::Debug for AuthType {
 }
 
 /// 会话配置（存 Rust 侧 SQLite，契约第 1 节）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SessionConfig {
     /// uuid v4
     pub id: String,
@@ -81,7 +81,7 @@ pub struct SessionConfig {
 }
 
 /// 会话树文件夹
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SessionFolder {
     /// uuid v4
     pub id: String,
@@ -95,7 +95,7 @@ pub struct SessionFolder {
 ///
 /// serde tag 字段为 `kind`，值为 `"folder" | "session"`；
 /// 层级由 `folder_id` / `parent_id` 表达，`session_list` 返回扁平全量列表。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind")]
 pub enum SessionNode {
     Folder(SessionFolder),

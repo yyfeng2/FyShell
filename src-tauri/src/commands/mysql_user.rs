@@ -8,12 +8,14 @@ use crate::services;
 
 /// `mysql_user_list` (conn_id: String) -> Vec<MySqlUserInfo>
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_user_list(conn_id: String) -> Result<Vec<MySqlUserInfo>, AppError> {
     services::mysql_user::user_list(&conn_id).await
 }
 
 /// `mysql_user_create` (conn_id: String, user: String, host: String, password: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_user_create(
     conn_id: String,
     user: String,
@@ -25,6 +27,7 @@ pub async fn mysql_user_create(
 
 /// `mysql_user_drop` (conn_id: String, user: String, host: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_user_drop(
     conn_id: String,
     user: String,
@@ -35,6 +38,7 @@ pub async fn mysql_user_drop(
 
 /// `mysql_user_grants` (conn_id: String, user: String, host: String) -> Vec<MySqlGrantItem>
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_user_grants(
     conn_id: String,
     user: String,

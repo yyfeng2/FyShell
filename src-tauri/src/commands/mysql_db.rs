@@ -10,12 +10,14 @@ use crate::services;
 
 /// `mysql_db_list` (conn_id: String) -> MySqlDatabaseList（host + current_db + databases）
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_db_list(conn_id: String) -> Result<MySqlDatabaseList, AppError> {
     services::mysql_db::list_databases(&conn_id).await
 }
 
 /// `mysql_db_create` (conn_id: String, name: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_db_create(conn_id: String, name: String) -> Result<(), AppError> {
     services::mysql_db::create_database(&conn_id, &name).await
 }
@@ -25,6 +27,7 @@ pub async fn mysql_db_create(conn_id: String, name: String) -> Result<(), AppErr
 /// 强确认：数据库级删除不可恢复，首次调用不传 confirmed 时返回带提示的错误，
 /// 前端弹出二次确认（danger）后带 `confirmed: true` 重新调用。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_db_drop(
     conn_id: String,
     name: String,
@@ -43,12 +46,14 @@ pub async fn mysql_db_drop(
 /// 切库实现为重建连接池（mysql_async 池归还连接时会 COM_RESET_CONNECTION
 /// 重置当前库，USE 不可靠），前端以新 conn_id 替换后刷新对象树与数据网格。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_db_switch(conn_id: String, name: String) -> Result<String, AppError> {
     services::mysql_db::switch_database(&conn_id, &name).await
 }
 
 /// `mysql_table_show_create` (conn_id: String, table: String) -> MySqlTableDdl
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_table_show_create(
     conn_id: String,
     table: String,
@@ -58,12 +63,14 @@ pub async fn mysql_table_show_create(
 
 /// `mysql_table_optimize` (conn_id: String, table: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_table_optimize(conn_id: String, table: String) -> Result<(), AppError> {
     services::mysql_db::optimize_table(&conn_id, &table).await
 }
 
 /// `mysql_table_rename` (conn_id: String, old_name: String, new_name: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_table_rename(
     conn_id: String,
     old_name: String,

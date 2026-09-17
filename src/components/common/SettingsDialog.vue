@@ -89,6 +89,151 @@
             </div>
           </template>
 
+          <!-- 键盘和鼠标 -->
+          <template v-else-if="section === 'keyboard-mouse'">
+            <div class="settings-dialog__section-title">键盘和鼠标</div>
+
+            <!-- 按键对应 -->
+            <div class="settings-dialog__row">
+              <div>
+                <div class="settings-dialog__row-title">按键对应</div>
+                <div class="settings-dialog__row-desc">
+                  键盘操作可由菜单功能、发送字符串等自定义。
+                </div>
+              </div>
+              <v-btn size="small" variant="tonal" prepend-icon="mdi-pencil-outline" @click="showKeyMapping = true">
+                编辑(E)...
+              </v-btn>
+            </div>
+
+            <!-- 鼠标 -->
+            <div class="key-mouse__group-title">鼠标</div>
+            <div class="key-mouse__fields">
+              <v-select
+                :model-value="settings.mouseMiddleButton"
+                :items="MOUSE_BUTTON_ITEMS"
+                item-title="title"
+                item-value="value"
+                label="中间按钮"
+                density="compact"
+                class="settings-dialog__field"
+                @update:model-value="(v: unknown) => settings.setMouseMiddleButton(v as MouseButtonAction)"
+              />
+              <v-select
+                :model-value="settings.mouseRightButton"
+                :items="MOUSE_BUTTON_ITEMS"
+                item-title="title"
+                item-value="value"
+                label="向右按钮"
+                density="compact"
+                class="settings-dialog__field"
+                @update:model-value="(v: unknown) => settings.setMouseRightButton(v as MouseButtonAction)"
+              />
+              <v-switch
+                :model-value="settings.mouseCtrlClickMoveCursor"
+                label="用(Ctrl +鼠标左单击)移动终端光标"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setMouseCtrlClickMoveCursor(!!v)"
+              />
+              <v-switch
+                :model-value="settings.mouseUrlHyperlink"
+                label="使用URL超链接"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setMouseUrlHyperlink(!!v)"
+              />
+              <template v-if="settings.mouseUrlHyperlink">
+                <v-text-field
+                  :model-value="settings.mouseUrlPrefixes"
+                  label="URL prefix"
+                  density="compact"
+                  hint="以 | 分隔的 URL 前缀"
+                  class="settings-dialog__field key-mouse__indent"
+                  @change="onUrlPrefixesChange"
+                />
+                <v-switch
+                  :model-value="settings.mouseCtrlClickOpenHyperlink"
+                  label="[Ctrl +单击]以打开超链接"
+                  color="primary"
+                  density="compact"
+                  hide-details
+                  @update:model-value="(v: unknown) => settings.setMouseCtrlClickOpenHyperlink(!!v)"
+                />
+              </template>
+            </div>
+
+            <!-- 选择 -->
+            <div class="key-mouse__group-title">选择</div>
+            <div class="key-mouse__hint-line">双击指定选择时使用的分隔符。</div>
+            <div class="key-mouse__fields">
+              <div class="key-mouse__delimiter-row">
+                <v-text-field
+                  :model-value="settings.selectionWordSeparators"
+                  label="分隔符"
+                  density="compact"
+                  hide-details
+                  class="flex-grow-1"
+                  @change="onWordSeparatorsChange"
+                />
+                <v-btn size="small" variant="tonal" @click="resetWordSeparators">重置</v-btn>
+              </div>
+              <v-switch
+                :model-value="settings.selectionShiftDoubleClick"
+                label="[Shift +双击]按分隔符而不是空格选择"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setSelectionShiftDoubleClick(!!v)"
+              />
+              <v-switch
+                :model-value="settings.selectionAutoCopy"
+                label="将选定的文本自动复制到剪贴板"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setSelectionAutoCopy(!!v)"
+              />
+              <v-switch
+                :model-value="settings.selectionSoftTabs"
+                label="转换制表符软标签"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setSelectionSoftTabs(!!v)"
+              />
+              <v-switch
+                :model-value="settings.selectionCopyIncludeNewline"
+                label="复制选定的文本时，包括最后一个新行字符"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setSelectionCopyIncludeNewline(!!v)"
+              />
+              <v-switch
+                :model-value="settings.selectionCopyTrimWhitespace"
+                label="复制时，删除尾部的空白"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setSelectionCopyTrimWhitespace(!!v)"
+              />
+              <v-switch
+                :model-value="settings.selectionCopyNonblankOnly"
+                label="复制时，排除仅含空白的行"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setSelectionCopyNonblankOnly(!!v)"
+              />
+            </div>
+            <div class="settings-dialog__hint">
+              鼠标与选择设置对已打开终端实时生效；复制后处理仅作用于复制到剪贴板的内容。
+            </div>
+          </template>
+
           <!-- SFTP -->
           <template v-else-if="section === 'sftp'">
             <div class="settings-dialog__section-title">SFTP</div>
@@ -186,6 +331,9 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <!-- 键位映射管理对话框（键盘和鼠标分区 → 按键对应 → 编辑(E)...） -->
+  <KeyMappingDialog v-model="showKeyMapping" />
 </template>
 
 <script setup lang="ts">
@@ -207,16 +355,18 @@ import { getVersion } from '@tauri-apps/api/app'
 import { open } from '@tauri-apps/plugin-dialog'
 import { mysqlHistoryClear } from '@/api/mysqlConsole'
 import { transferClear } from '@/api/sftp'
-import { useSettingsStore, type ThemeMode } from '@/stores/settings'
+import KeyMappingDialog from '@/components/common/KeyMappingDialog.vue'
+import { useSettingsStore, type ThemeMode, type MouseButtonAction } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 
 /** 设置分区 key（左侧导航） */
-type SettingsSection = 'appearance' | 'terminal' | 'sftp' | 'data' | 'security' | 'about'
+type SettingsSection = 'appearance' | 'terminal' | 'keyboard-mouse' | 'sftp' | 'data' | 'security' | 'about'
 
 /** 左侧导航定义 */
 const SECTIONS: { key: SettingsSection; title: string; icon: string }[] = [
   { key: 'appearance', title: '外观', icon: 'mdi-palette-outline' },
   { key: 'terminal', title: '终端', icon: 'mdi-console' },
+  { key: 'keyboard-mouse', title: '键盘和鼠标', icon: 'mdi-keyboard-outline' },
   { key: 'sftp', title: 'SFTP', icon: 'mdi-swap-horizontal' },
   { key: 'data', title: '数据', icon: 'mdi-database-outline' },
   { key: 'security', title: '安全', icon: 'mdi-lock-outline' },
@@ -229,6 +379,15 @@ const THEME_MODE_ITEMS: { title: string; value: ThemeMode }[] = [
   { title: '深色', value: 'dark' },
   { title: '跟随系统', value: 'auto' },
 ]
+
+/** 鼠标中/右键行为下拉选项 */
+const MOUSE_BUTTON_ITEMS: { title: string; value: MouseButtonAction }[] = [
+  { title: '没做什么。', value: 'nothing' },
+  { title: '粘贴剪贴板内容。', value: 'paste' },
+]
+
+/** 键位映射管理对话框可见性（键盘和鼠标分区的「编辑(E)...」按钮） */
+const showKeyMapping = ref(false)
 
 const props = defineProps<{
   modelValue: boolean
@@ -285,6 +444,25 @@ function onScrollbackChange(e: Event): void {
 /** 默认下载目录（手输路径，失焦提交） */
 function onDownloadDirChange(e: Event): void {
   settings.setSftpDownloadDir((e.target as HTMLInputElement).value)
+}
+
+// ---------------- 键盘和鼠标设置提交 ----------------
+
+/** URL 前缀（失焦提交，非空才生效） */
+function onUrlPrefixesChange(e: Event): void {
+  const v = (e.target as HTMLInputElement).value.trim()
+  if (v) settings.setMouseUrlPrefixes(v)
+}
+
+/** 双击选择分隔符（失焦提交；空值回退默认分隔符） */
+function onWordSeparatorsChange(e: Event): void {
+  const v = (e.target as HTMLInputElement).value
+  if (v !== '') settings.setSelectionWordSeparators(v)
+}
+
+/** 分隔符重置为默认值（与 Xshell 默认一致） */
+function resetWordSeparators(): void {
+  settings.setSelectionWordSeparators('\\:\\~\\-!@#$%^&*()-=+[]{}')
 }
 
 /** 目录选择按钮：@tauri-apps/plugin-dialog 目录选择，选中后立即生效 */
@@ -444,5 +622,42 @@ onMounted(async () => {
   gap: 8px;
   max-width: 420px;
   flex: 1 1 auto;
+}
+
+/* 键盘和鼠标分区：分组小标题 + 字段列 + 分隔符行 */
+.key-mouse__group-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 12px 0 8px;
+}
+
+.key-mouse__hint-line {
+  font-size: 12px;
+  color: rgb(var(--v-theme-on-surface) / 0.55);
+  margin-bottom: 8px;
+}
+
+.key-mouse__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.key-mouse__fields .settings-dialog__field {
+  width: 100%;
+  max-width: 420px;
+}
+
+.key-mouse__indent {
+  margin-left: 24px;
+}
+
+.key-mouse__delimiter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
 }
 </style>

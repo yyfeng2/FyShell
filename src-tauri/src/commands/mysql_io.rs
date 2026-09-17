@@ -9,6 +9,7 @@ use crate::services;
 
 /// `mysql_export` (conn_id: String, options: MySqlExportOptions) -> MySqlIoResult
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_export(
     conn_id: String,
     options: MySqlExportOptions,
@@ -22,6 +23,7 @@ pub async fn mysql_export(
 /// 已有主键）时，前端首次调用不传，收到错误提示并二次确认，确认后带
 /// `confirmed: true` 重新调用。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_import(
     conn_id: String,
     options: MySqlImportOptions,

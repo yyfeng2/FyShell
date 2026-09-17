@@ -9,6 +9,7 @@ use crate::services;
 
 /// `mysql_object_list` (conn_id: String, kind: String) -> Vec<MySqlObjectInfo>
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_object_list(
     conn_id: String,
     kind: String,
@@ -19,6 +20,7 @@ pub async fn mysql_object_list(
 
 /// `mysql_object_ddl` (conn_id: String, kind: String, name: String) -> MySqlObjectDdl
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_object_ddl(
     conn_id: String,
     kind: String,
@@ -33,6 +35,7 @@ pub async fn mysql_object_ddl(
 /// create_sql 为前端编辑后的完整 CREATE 语句；校验失败（首词非 CREATE /
 /// OR REPLACE、对象名含反引号）返回错误，保存语义为「替换旧对象」。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_object_save(
     conn_id: String,
     kind: String,
@@ -45,6 +48,7 @@ pub async fn mysql_object_save(
 
 /// `mysql_object_drop` (conn_id: String, kind: String, name: String) -> ()
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_object_drop(conn_id: String, kind: String, name: String) -> Result<(), AppError> {
     let kind = services::mysql_objects::parse_kind(&kind)?;
     services::mysql_objects::object_drop(&conn_id, kind, &name).await

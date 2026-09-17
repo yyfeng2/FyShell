@@ -26,7 +26,7 @@ use crate::services::ssh::SshSessionHandle;
 // ---------------------------------------------------------------------------
 
 /// 监控采样（SSH exec 采集 /proc，Channel 推送）
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, specta::Type)]
 pub struct MonitorSample {
     pub cpu_percent: f64,
     pub mem_used_mb: u64,
@@ -38,7 +38,7 @@ pub struct MonitorSample {
 }
 
 /// Docker 容器（SSH exec docker 命令采集）
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct DockerContainer {
     pub id: String,
     pub names: String,

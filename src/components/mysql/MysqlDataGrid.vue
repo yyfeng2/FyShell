@@ -147,6 +147,16 @@
             >
               历史
             </v-btn>
+            <v-btn
+              size="small"
+              variant="text"
+              prepend-icon="mdi-content-save-outline"
+              :disabled="!store.isConnected || !sql.trim()"
+              title="将当前 SQL 保存为命名查询"
+              @click="openSaveQuery"
+            >
+              保存查询
+            </v-btn>
             <v-spacer />
             <!-- 事务按钮组 -->
             <v-btn
@@ -609,6 +619,40 @@
     <HistoryDrawer v-model="showHistory" @recall="recallSql" />
     <ExplainPanel v-model="showExplain" :conn-id="store.connId ?? ''" :sql="sql" />
     <ImportExportDialog v-model="showIo" :conn-id="store.connId ?? ''" />
+
+    <!-- 保存查询对话框：命名保存当前 SQL（可选绑定当前连接） -->
+    <v-dialog v-model="showSaveQuery" max-width="420">
+      <v-card>
+        <v-card-title class="text-subtitle-1">保存查询</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="saveQueryName"
+            label="查询名称"
+            density="compact"
+            variant="outlined"
+            autofocus
+            counter="100"
+            @keyup.enter="confirmSaveQuery"
+          />
+          <v-checkbox-btn
+            v-model="saveBindConn"
+            density="compact"
+            label="绑定当前连接（仅该连接可见）"
+            hide-details
+          />
+          <div class="mysql-grid__sql-preview text-caption text-medium-emphasis mt-2">
+            {{ saveQueryPreview }}
+          </div>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showSaveQuery = false">取消</v-btn>
+          <v-btn color="primary" prepend-icon="mdi-check" :loading="savingQuery" @click="confirmSaveQuery">
+            保存
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-card>
 </template>
 
@@ -619,10 +663,12 @@ import { useUiStore } from '@/stores/ui'
 import {
   mysqlDeleteRow,
   mysqlEditPreview,
+  mysqlInsertRows,
   mysqlTableDesignGet,
   mysqlUpdateRows,
 } from '@/api/mysqlEdit'
 import type { MySqlRowUpdate } from '@/api/mysqlEdit'
+import { mysqlSavedQueryList, mysqlSavedQuerySave } from '@/api/mysqlConsole'
 import MysqlConnectionForm from './MysqlConnectionForm.vue'
 import SqlEditor from './SqlEditor.vue'
 import { splitSqlStatements } from './sql-format'
@@ -667,6 +713,60 @@ function onDesignerSaved(): void {
 /** 查询历史快召回：插入 SQL 编辑器（已含换行则追加，否则换行分隔） */
 function recallSql(text: string): void {
   sql.value = sql.value.trimEnd() ? `${sql.value.trimEnd()}\n${text}` : text
+}
+
+// ---------- 已保存查询：命名保存当前 SQL ----------
+const showSaveQuery = ref(false)
+const saveQueryName = ref('')
+const saveBindConn = ref(true)
+const savingQuery = ref(false)
+
+/** 对话框内的 SQL 单行摘要（预览用） */
+const saveQueryPreview = computed(() => {
+  const text = sql.value.trim()
+  return text.length > 60 ? `${text.slice(0, 60)}…` : text || '（当前 SQL 为空）'
+})
+
+function openSaveQuery(): void {
+  showSaveQuery.value = true
+}
+
+/** 保存当前 SQL 为命名查询：重名时经 uiStore.confirm 覆盖确认（后端 UPSERT 保留原 id） */
+async function confirmSaveQuery(): Promise<void> {
+  const name = saveQueryName.value.trim()
+  if (!name) {
+    ui.toast('请输入查询名称', 'warning')
+    return
+  }
+  const text = sql.value.trim()
+  if (!text) {
+    ui.toast('当前 SQL 为空，无法保存', 'warning')
+    return
+  }
+  savingQuery.value = true
+  try {
+    // 同名覆盖确认：先查列表判重（本地 SQLite，开销可忽略）
+    const saved = await mysqlSavedQueryList()
+    if (saved.some((q) => q.name === name)) {
+      const ok = await ui.confirm({
+        title: '覆盖确认',
+        message: `已存在同名查询「${name}」，确定覆盖吗？`,
+        confirmText: '覆盖',
+      })
+      if (!ok) return
+    }
+    const overwritten = await mysqlSavedQuerySave(
+      name,
+      saveBindConn.value ? (store.connId ?? null) : null,
+      text,
+    )
+    ui.toast(overwritten ? `已覆盖同名查询：${name}` : `已保存查询：${name}`, 'success')
+    showSaveQuery.value = false
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+  } finally {
+    savingQuery.value = false
+  }
 }
 
 // ---------- 左侧表列表 ----------
@@ -1433,8 +1533,8 @@ async function pasteToCell(startRi: number, startCi: number): Promise<void> {
 
 /**
  * 插入行预览：INSERT 语句由前端构造（仅用于展示，单引号/反斜杠成对转义），
- * 主键列不参与插入（由数据库自增/默认值生成）；确认后走 store.executeSql。
- * 后端编辑契约无插入命令，此处复用预览对话框 + 通用执行管道。
+ * 主键列不参与插入（由数据库自增/默认值生成）；确认后走原生命令
+ * mysql_insert_rows（事务包裹 + 逐行参数化，见 confirmPreview）。
  */
 function insertPreviewRows(values: (string | null)[][]): void {
   const table = tableOfQuery(lastQuerySql.value)
@@ -1447,12 +1547,19 @@ function insertPreviewRows(values: (string | null)[][]): void {
   resultColumns.value.forEach((c, i) => {
     if (c !== pkColumn.value) colIdx.push(i)
   })
-  const colList = colIdx.map((i) => `\`${resultColumns.value[i]}\``).join(', ')
+  const columns = colIdx.map((i) => resultColumns.value[i])
+  const colList = columns.map((c) => `\`${c}\``).join(', ')
   previewItems.value = values.map((row) => ({
     sql: `INSERT INTO \`${table}\` (${colList}) VALUES (${colIdx.map((i) => sqlLiteral(row[i] ?? null)).join(', ')});`,
     estimate: 1,
     danger: false,
   }))
+  // 原生负载：rows 与 columns 逐列对齐（null = NULL），确认后交 mysql_insert_rows
+  pendingInsert.value = {
+    table,
+    columns,
+    rows: values.map((row) => colIdx.map((i) => row[i] ?? null)),
+  }
   previewMode.value = 'insert'
   showPreview.value = true
 }
@@ -1467,6 +1574,8 @@ function insertDefaultRows(n: number): void {
   const statements: string[] = []
   for (let i = 0; i < n; i++) statements.push(`INSERT INTO \`${table}\` () VALUES ();`)
   previewItems.value = statements.map((s) => ({ sql: s, estimate: 1, danger: false }))
+  // 原生命令以空 columns 表达全默认值行（后端逐行生成 INSERT INTO t () VALUES ()）
+  pendingInsert.value = { table, columns: [], rows: Array.from({ length: n }, () => []) }
   previewMode.value = 'insert'
   showPreview.value = true
 }
@@ -1533,6 +1642,15 @@ const executing = ref(false)
 const previewMode = ref<'edit' | 'delete' | 'insert'>('edit')
 const previewItems = ref<PreviewItem[]>([])
 
+/** 插入预览的原生负载（columns + rows 逐列对齐）：确认后交 mysql_insert_rows */
+interface PendingInsert {
+  table: string
+  columns: string[]
+  rows: (string | null)[][]
+}
+
+const pendingInsert = ref<PendingInsert | null>(null)
+
 /** 批量估算影响行数上界（各条目估算的最大值） */
 const previewMaxEstimate = computed(() =>
   Math.max(0, ...previewItems.value.map((i) => i.estimate)),
@@ -1549,6 +1667,7 @@ async function commitEdits(): Promise<void> {
   const table = tableOfQuery(lastQuerySql.value)
   if (!connId || !table || !pkColumn.value || pendingEdits.value.size === 0) return
   previewLoading.value = true
+  pendingInsert.value = null // 非插入预览：清空插入负载
   try {
     const items: PreviewItem[] = []
     for (const edit of pendingEdits.value.values()) {
@@ -1597,6 +1716,7 @@ async function deleteSelected(): Promise<void> {
   }
   previewItems.value = items
   previewMode.value = 'delete'
+  pendingInsert.value = null // 非插入预览：清空插入负载
   showPreview.value = true
 }
 
@@ -1605,6 +1725,7 @@ async function deleteSelected(): Promise<void> {
  * - danger=true 或估算影响行数 > 1 时先弹 uiStore.confirm 二次确认
  * - 编辑批量走 mysql_update_rows（隐式事务包裹，失败整体回滚）
  * - 删除逐行走 mysql_delete_row
+ * - 插入走 mysql_insert_rows（事务包裹 + 逐行参数化）
  */
 async function confirmPreview(): Promise<void> {
   const connId = store.connId
@@ -1642,19 +1763,13 @@ async function confirmPreview(): Promise<void> {
       ui.toast(`已删除 ${rows.length} 行，受影响行数：${affected}`, 'success')
       selectedRows.value = new Set()
     } else {
-      // 插入：逐条执行前端构造的 INSERT 语句（预览对话框已提供确认环节）
-      let affected = 0
-      for (const item of previewItems.value) {
-        try {
-          const outcome = await store.executeSql(item.sql)
-          if (outcome.needsConfirm) return // 危险确认由 store.pendingConfirm 驱动弹出
-          affected += outcome.affected
-        } catch (err) {
-          ui.toast(errText(err), 'error')
-          return
-        }
-      }
-      ui.toast(`已插入 ${previewItems.value.length} 行，受影响行数：${affected}`, 'success')
+      // 插入：走原生命令 mysql_insert_rows（事务包裹 + 逐行参数化，
+      // 预览对话框已提供确认环节）
+      const pending = pendingInsert.value
+      if (!pending) return
+      const affected = await mysqlInsertRows(connId, pending.table, pending.columns, pending.rows, true)
+      ui.toast(`已插入 ${pending.rows.length} 行，受影响行数：${affected}`, 'success')
+      pendingInsert.value = null
     }
     showPreview.value = false
     // 执行成功后刷新当前页（写操作可能改变结果集）

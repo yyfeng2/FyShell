@@ -15,12 +15,20 @@ import { defineStore } from 'pinia'
 import {
   sshConnect,
   sshDisconnect,
+  sshResize,
+  sshWrite,
   listenSessionStatus,
 } from '@/api/ssh'
+import { localShellConnect, localShellDisconnect, localShellResize, localShellWrite } from '@/api/localShell'
+import { telnetConnect, telnetDisconnect, telnetWrite } from '@/api/telnet'
+import { serialConnect, serialDisconnect, serialWrite } from '@/api/serial'
 import { debugLog } from '@/api/channels'
 
 /** 分屏方向 */
 export type SplitDirection = 'horizontal' | 'vertical'
+
+/** 会话传输类型：byte-stream 终端（本地/Telnet/串口）与 SSH 共用 TerminalPane 渲染，仅传输层命令不同 */
+export type SessionType = 'ssh' | 'local' | 'telnet' | 'serial'
 
 /** 会话连接状态（与后端 session-status 事件同名同构） */
 export type SessionStatus =
@@ -46,11 +54,21 @@ export interface TerminalTab {
   activePaneId: string
 }
 
-/** 打开终端所需的最小会话信息（来自会话树） */
+/** 打开终端所需的最小会话信息（来自会话树或本地/Telnet/串口新建入口） */
 export interface TerminalSessionRef {
   id: string
   name: string
   color?: string | null
+  /** 会话类型（默认 ssh）；本地终端/Telnet/串口为 byte-stream 终端，经各自命令读写 */
+  sessionType?: SessionType
+  /** Telnet 主机（sessionType = telnet 时必填） */
+  host?: string
+  /** Telnet 端口，默认 23 */
+  port?: number
+  /** 串口名（sessionType = serial 时必填，如 "COM3"） */
+  serialPort?: string
+  /** 串口波特率，默认 115200 */
+  baudRate?: number
 }
 
 /** 生成唯一 ID（窗格/标签） */
@@ -85,6 +103,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   const outputWriters = new Map<string, Set<(data: Uint8Array) => void>>()
   /** 无窗格注册期间的输出缓冲（key = session_id），注册时一次性 flush */
   const outputHistory = new Map<string, Uint8Array[]>()
+  /** 各会话传输类型（key = 连接路由键），byte-stream 终端读写按类型路由到各自命令 */
+  const sessionTypes = new Map<string, SessionType>()
   /** session-status 监听句柄（应用生命周期，store 内注册一次） */
   let unlistenStatus: (() => void) | null = null
   let statusListenerPending = false
@@ -171,36 +191,123 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
-  /** 清理单个会话的前端侧缓存（写入器/历史/状态） */
+  /** 清理单个会话的前端侧缓存（写入器/历史/状态/类型） */
   function cleanupSession(sessionId: string): void {
     outputWriters.delete(sessionId)
     outputHistory.delete(sessionId)
+    sessionTypes.delete(sessionId)
     delete sessionStatus.value[sessionId]
     delete sessionError.value[sessionId]
   }
 
-  /** 建立连接：调 ssh_connect，输出走 Channel 回调（connId 为连接路由键，未传时用 session.id） */
+  /** 查询会话传输类型（byte-stream 终端读写路由用，默认 ssh） */
+  function sessionTypeOf(sessionId: string): SessionType {
+    return sessionTypes.get(sessionId) ?? 'ssh'
+  }
+
+  /**
+   * 统一键盘输入写入：按会话传输类型路由到各自命令
+   * （SSH → ssh_write，本地/Telnet/串口 → 各自 byte-stream 命令）
+   */
+  function writeTerminal(sessionId: string, data: Uint8Array): void {
+    const type = sessionTypeOf(sessionId)
+    if (type === 'local') {
+      void localShellWrite(sessionId, data).catch(() => {
+        // 会话已断开时写入失败静默忽略
+      })
+    } else if (type === 'telnet') {
+      void telnetWrite(sessionId, data).catch(() => {
+        // 忽略
+      })
+    } else if (type === 'serial') {
+      void serialWrite(sessionId, data).catch(() => {
+        // 忽略
+      })
+    } else {
+      void sshWrite(sessionId, data).catch(() => {
+        // 忽略
+      })
+    }
+  }
+
+  /**
+   * 程序化写入（快捷命令/批量发送/终端定位等）：与 writeTerminal 同路由，
+   * 但保留 Promise 让调用方可感知失败（键盘输入用 writeTerminal，程序化用本入口）
+   */
+  function writeToSession(sessionId: string, data: Uint8Array): Promise<void> {
+    const type = sessionTypeOf(sessionId)
+    if (type === 'local') return localShellWrite(sessionId, data)
+    if (type === 'telnet') return telnetWrite(sessionId, data)
+    if (type === 'serial') return serialWrite(sessionId, data)
+    return sshWrite(sessionId, data)
+  }
+
+  /**
+   * 统一终端尺寸变更：按会话传输类型路由（仅 connected 时发送）。
+   * Telnet（最小实现不协商 NAWS）与串口（无尺寸概念）忽略 resize。
+   */
+  function resizeTerminal(sessionId: string, cols: number, rows: number): void {
+    if (!isConnected(sessionId)) return
+    const type = sessionTypeOf(sessionId)
+    if (type === 'local') {
+      void localShellResize(sessionId, cols, rows).catch(() => {
+        // resize 失败静默忽略，下轮尺寸变化会重试
+      })
+    } else if (type === 'ssh') {
+      void sshResize(sessionId, cols, rows).catch(() => {
+        // 忽略
+      })
+    }
+  }
+
+  /**
+   * 统一断开：按会话传输类型路由到各自 disconnect 命令
+   * （架构红线：关闭终端必须断开，让 Rust 侧同步清理 session/PTY）
+   */
+  function disconnectSession(sessionId: string): Promise<void> {
+    const type = sessionTypeOf(sessionId)
+    if (type === 'local') return localShellDisconnect(sessionId)
+    if (type === 'telnet') return telnetDisconnect(sessionId)
+    if (type === 'serial') return serialDisconnect(sessionId)
+    return sshDisconnect(sessionId)
+  }
+
+  /** 建立连接：按会话类型分发到各自命令（SSH 查持久化配置；本地/Telnet/串口为 byte-stream 终端），输出走 Channel 回调（connId 为连接路由键，未传时用 session.id） */
   async function connectSession(session: TerminalSessionRef, connId?: string): Promise<void> {
     const key = connId ?? session.id
     ensureStatusListener()
     sessionStatus.value[key] = 'connecting'
-    debugLog(`ssh_connect start: ${key}`)
+    const type = session.sessionType ?? 'ssh'
+    // 记录传输类型：write/resize/断开均按它路由到各自命令
+    sessionTypes.set(key, type)
+    debugLog(`${type} connect start: ${key}`)
     let firstChunk = true
     try {
-      // 配置按 session.id 加载，连接注册/输出/状态按 key 路由
-      await sshConnect(session.id, (data) => {
-        // api 层回调数据可能为 number[]，归一化后推给写入器
-        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
+      // 输出回调：api 层回调数据可能为 number[]，归一化后推给写入器
+      const onOutput = (data: unknown) => {
+        // api 层回调可能为 number[]，先归一化再推给写入器
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data as ArrayLike<number>)
         if (firstChunk) {
           firstChunk = false
           debugLog(`first output chunk: ${key} ${bytes.byteLength} bytes`)
         }
         pushOutput(key, bytes)
-      }, key)
-      debugLog(`ssh_connect resolved (connected): ${key}`)
+      }
+      if (type === 'local') {
+        // 本地终端：无持久会话，连接路由键即标识
+        await localShellConnect(key, onOutput)
+      } else if (type === 'telnet') {
+        await telnetConnect(key, session.host ?? '', session.port ?? null, onOutput)
+      } else if (type === 'serial') {
+        await serialConnect(key, session.serialPort ?? '', session.baudRate ?? null, onOutput)
+      } else {
+        // 配置按 session.id 加载，连接注册/输出/状态按 key 路由
+        await sshConnect(session.id, onOutput, key)
+      }
+      debugLog(`${type} connect resolved (connected): ${key}`)
       sessionStatus.value[key] = 'connected'
     } catch (e) {
-      debugLog(`ssh_connect failed: ${key} ${e instanceof Error ? e.message : String(e)}`)
+      debugLog(`${type} connect failed: ${key} ${e instanceof Error ? e.message : String(e)}`)
       sessionStatus.value[key] = 'disconnected'
       sessionError.value[key] =
         e instanceof Error ? e.message : String(e)
@@ -338,9 +445,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
 
     if (!sessionUsedElsewhere(pane.sessionId, pane.paneId)) {
-      // 架构红线：关闭终端必须调 ssh_disconnect，让 Rust 侧同步清理 session/PTY
-      await sshDisconnect(pane.sessionId).catch((e) => {
-        console.warn('[terminal] ssh_disconnect 失败:', e)
+      // 架构红线：关闭终端必须断开连接，让 Rust 侧同步清理 session/PTY
+      await disconnectSession(pane.sessionId).catch((e) => {
+        console.warn('[terminal] disconnect 失败:', e)
       })
       cleanupSession(pane.sessionId)
     }
@@ -356,8 +463,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   async function closeBySessionId(sessionId: string): Promise<void> {
     const tab = tabs.value.find((t) => t.panes.some((p) => p.sessionId === sessionId))
     if (!tab) {
-      await sshDisconnect(sessionId).catch((e) => {
-        console.warn('[terminal] ssh_disconnect 失败:', e)
+      await disconnectSession(sessionId).catch((e) => {
+        console.warn('[terminal] disconnect 失败:', e)
       })
       cleanupSession(sessionId)
       return
@@ -373,8 +480,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   }
 
   /**
-   * 关闭终端标签：对该标签内所有未共享会话调 ssh_disconnect
-   * （架构红线：标签关闭时 Rust 侧同步清理 SSH session/PTY）
+   * 关闭终端标签：对该标签内所有未共享会话调各自 disconnect
+   * （架构红线：标签关闭时 Rust 侧同步清理 session/PTY）
    */
   async function closeTerminal(tabId: string): Promise<void> {
     const tab = tabs.value.find((t) => t.tabId === tabId)
@@ -383,8 +490,8 @@ export const useTerminalStore = defineStore('terminal', () => {
     const sessionIds = new Set(tab.panes.map((p) => p.sessionId))
     for (const sessionId of sessionIds) {
       if (!sessionUsedElsewhere(sessionId)) {
-        await sshDisconnect(sessionId).catch((e) => {
-          console.warn('[terminal] ssh_disconnect 失败:', e)
+        await disconnectSession(sessionId).catch((e) => {
+          console.warn('[terminal] disconnect 失败:', e)
         })
         cleanupSession(sessionId)
       }
@@ -405,6 +512,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     sessionError,
     // getter
     isConnected,
+    sessionTypeOf,
     // 动作
     openTerminal,
     splitPane,
@@ -418,5 +526,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     activateNextTab,
     activateTabIndex,
     bindPaneWriter,
+    writeTerminal,
+    writeToSession,
+
+    resizeTerminal,
   }
 })

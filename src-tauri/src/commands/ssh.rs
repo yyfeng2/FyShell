@@ -11,6 +11,7 @@ use crate::state::AppState;
 /// 建立 SSH 连接并打开 PTY/shell；终端输出流走 Channel（契约：`ssh_connect(id, onOutput)`）。
 /// conn_id：多标签同会话独立连接的路由键（Xshell 行为：每个标签一条独立连接）。
 #[tauri::command]
+#[specta::specta]
 pub async fn ssh_connect(
     id: String,
     conn_id: Option<String>,
@@ -30,6 +31,7 @@ pub async fn ssh_connect(
 
 /// 关闭并清理 session/PTY（契约红线：标签关闭时 Rust 侧同步清理）
 #[tauri::command]
+#[specta::specta]
 pub fn ssh_disconnect(id: String, state: State<'_, AppState>) -> Result<(), AppError> {
     ssh::disconnect(state.inner(), &id);
     Ok(())
@@ -37,12 +39,14 @@ pub fn ssh_disconnect(id: String, state: State<'_, AppState>) -> Result<(), AppE
 
 /// 键盘输入写入（按会话 ID 路由）
 #[tauri::command]
+#[specta::specta]
 pub fn ssh_write(id: String, data: Vec<u8>, state: State<'_, AppState>) -> Result<(), AppError> {
     ssh::write(state.inner(), &id, &data)
 }
 
 /// 终端尺寸变更（按会话 ID 路由 resize）
 #[tauri::command]
+#[specta::specta]
 pub fn ssh_resize(
     id: String,
     cols: u32,
@@ -55,6 +59,7 @@ pub fn ssh_resize(
 /// 会话存活查询：Rust 侧是否持有该会话连接句柄（dev 重启/HMR 后
 /// 前端状态可能残留，以 Rust 侧为真源校正，避免"以为已连接"而黑屏）
 #[tauri::command]
+#[specta::specta]
 pub fn ssh_alive(id: String, state: State<'_, AppState>) -> bool {
     ssh::alive(state.inner(), &id)
 }
@@ -62,6 +67,7 @@ pub fn ssh_alive(id: String, state: State<'_, AppState>) -> bool {
 /// HostKey 首次确认：前端确认后取出 AppState::pending_hostkey 中的
 /// oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
 #[tauri::command]
+#[specta::specta]
 pub fn ssh_hostkey_accept(id: String, accept: bool, state: State<'_, AppState>) -> Result<(), AppError> {
     let sender = state
         .pending_hostkey

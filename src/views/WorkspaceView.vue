@@ -9,7 +9,7 @@
  *
  * 全局快捷键（技术红线）：Ctrl+T 新标签、Ctrl+W 关闭、Ctrl+Tab 切换、Alt+1~9 直达
  */
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import FlexTabs, { type FlexTabItem } from '@/components/common/FlexTabs.vue'
 import StatusBar from '@/components/common/StatusBar.vue'
@@ -17,9 +17,11 @@ import GlobalDialog from '@/components/common/GlobalDialog.vue'
 import MenuBar from '@/components/common/MenuBar.vue'
 import MasterPasswordDialog from '@/components/common/MasterPasswordDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
+import SshOptionsDialog from '@/components/ssh/options/SshOptionsDialog.vue'
 import ToolBar from '@/components/common/ToolBar.vue'
 import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
+import ByteStreamForm from '@/components/ssh/session/ByteStreamForm.vue'
 import HostkeyDialog from '@/components/ssh/terminal/HostkeyDialog.vue'
 import TerminalPane from '@/components/ssh/terminal/TerminalPane.vue'
 import DualPane from '@/components/sftp/DualPane.vue'
@@ -39,6 +41,7 @@ import { useTerminalStore } from '@/stores/terminal'
 import { debugLog } from '@/api/channels'
 import { useDragOutWindow } from '@/composables/useDragOutWindow'
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { check_update, install_update } from '@/api/updater'
 
 const ui = useUiStore()
 const sessionStore = useSessionStore()
@@ -329,6 +332,98 @@ function openTerminal(node: { id: string; name: string; color?: string | null })
     })
 }
 
+/**
+ * 打开本地终端 Tab（byte-stream 终端）：无需表单与持久会话，直接创建，
+ * 连接路由键 = local-<tabId>，读写经 local_shell_* 命令路由
+ */
+function openLocalTerminal(): void {
+  const connKey = `local-${genTabId()}`
+  const tab: WorkTab = {
+    id: genTabId(),
+    type: 'terminal',
+    sessionId: connKey,
+    connId: connKey,
+    title: '本地终端',
+    color: null,
+  }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+  debugLog(`workspace openLocalTerminal: tab=${tab.id} conn=${connKey}`)
+  void terminalStore
+    .openTerminal({ id: connKey, name: '本地终端', sessionType: 'local' }, connKey)
+    .catch((e) => {
+      ui.toast(`打开本地终端失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      const idx = tabs.value.findIndex((t) => t.id === tab.id)
+      if (idx >= 0) tabs.value.splice(idx, 1)
+      if (activeId.value === tab.id) {
+        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
+      }
+    })
+}
+
+/**
+ * 打开 Telnet / 串口终端 Tab（byte-stream 终端，连接参数由表单收集，不持久化）：
+ * 连接路由键 = byte-<tabId>，读写经 telnet_* 与 serial_* 命令路由
+ */
+function openByteStreamTerminal(params: {
+  type: 'telnet' | 'serial'
+  host?: string
+  port?: number
+  serialPort?: string
+  baudRate?: number
+}): void {
+  const connKey = `byte-${genTabId()}`
+  const title =
+    params.type === 'telnet'
+      ? `Telnet ${params.host}:${params.port}`
+      : `串口 ${params.serialPort}@${params.baudRate}`
+  const tab: WorkTab = {
+    id: genTabId(),
+    type: 'terminal',
+    sessionId: connKey,
+    connId: connKey,
+    title,
+    color: null,
+  }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+  debugLog(`workspace openByteStreamTerminal: tab=${tab.id} type=${params.type} conn=${connKey}`)
+  void terminalStore
+    .openTerminal(
+      {
+        id: connKey,
+        name: title,
+        sessionType: params.type,
+        host: params.host,
+        port: params.port,
+        serialPort: params.serialPort,
+        baudRate: params.baudRate,
+      },
+      connKey,
+    )
+    .catch((e) => {
+      ui.toast(`连接失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      const idx = tabs.value.findIndex((t) => t.id === tab.id)
+      if (idx >= 0) tabs.value.splice(idx, 1)
+      if (activeId.value === tab.id) {
+        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
+      }
+    })
+}
+
+/** 树右键菜单：新建本地终端（直接创建，无需表单） */
+function menuNewLocal(): void {
+  treeMenu.visible = false
+  openLocalTerminal()
+}
+
+/** 树右键菜单：新建 Telnet / 串口连接（打开最小表单） */
+function menuNewByteStream(type: 'telnet' | 'serial'): void {
+  treeMenu.visible = false
+  byteStreamFormType.value = type
+  showByteStreamForm.value = true
+}
+
 /** 打开传输队列 Tab（单例） */
 function openTransferTab(): void {
   const existing = tabs.value.find((t) => t.type === 'transfer')
@@ -526,6 +621,10 @@ const showSessionForm = ref(false)
 const editingSession = ref<SessionConfig | null>(null)
 const presetHost = ref('')
 
+/** Telnet / 串口连接表单（byte-stream 终端新建入口，不持久化） */
+const showByteStreamForm = ref(false)
+const byteStreamFormType = ref<'telnet' | 'serial'>('telnet')
+
 function openSessionForm(): void {
   editingSession.value = null
   presetHost.value = ''
@@ -580,6 +679,14 @@ const showSettings = ref(false)
 const settingsSection = ref<'appearance' | 'terminal' | 'sftp' | 'data' | 'security' | 'about'>(
   'appearance',
 )
+
+/** SSH 选项对话框开关（标签右键菜单"会话设置"入口，对所有 SSH 连接全局生效） */
+const showSshOptionsDialog = ref(false)
+
+/** 标签右键菜单"会话设置"：打开 SSH 选项对话框 */
+function onSessionSettings(): void {
+  showSshOptionsDialog.value = true
+}
 
 /** 活动终端 Tab 的连接路由键（监控/快速命令/日志均按连接键路由；无终端 Tab 时为 null） */
 const activeTerminalId = computed(() => {
@@ -688,6 +795,47 @@ async function onMenuAction(action: string): Promise<void> {
       settingsSection.value = 'about'
       showSettings.value = true
       break
+    case 'check-update':
+      // 检测更新：调用 updater 插件，按结果提示（无更新/有更新/网络错误）
+      runCheckUpdate()
+      break
+  }
+}
+
+// 终端内键位映射触发的菜单命令（经 ui store 分发，seq 递增支持连续触发）
+watch(
+  () => ui.menuActionRequest,
+  ({ action }) => {
+    if (action) void onMenuAction(action)
+  },
+)
+
+// ---------------- 更新检测 ----------------
+
+/** 检测更新：无更新提示最新版本；有更新确认后下载安装并重启；网络错误 toast 提示 */
+async function runCheckUpdate(): Promise<void> {
+  const r = await check_update()
+  if (!r.ok) {
+    ui.toast(`检测更新失败：${r.error ?? '未知错误'}`, 'error')
+    return
+  }
+  if (!r.update) {
+    ui.toast('已是最新版本', 'success')
+    return
+  }
+  const v = r.update.version
+  const ok = await ui.confirm({
+    title: '检测到新版本',
+    message: `新版本 v${v} 可用，是否下载并安装？（安装完成后需重启应用生效）`,
+    confirmText: '下载并安装',
+  })
+  if (!ok) return
+  try {
+    await install_update(r.update)
+    // 已落盘安装，新版本在下次启动时生效（重启依赖 plugin-process，暂提示用户手动重启）
+    ui.toast('更新安装完成，重启应用后生效', 'success')
+  } catch (e) {
+    ui.toast(`安装更新失败：${e instanceof Error ? e.message : String(e)}`, 'error')
   }
 }
 
@@ -895,6 +1043,18 @@ onUnmounted(() => {
           <v-list-item v-if="treeMenu.node && !treeMenu.node.isFolder" @click="menuConnect">
             <v-list-item-title>连接</v-list-item-title>
           </v-list-item>
+          <v-divider />
+          <!-- 新建连接：本地终端 / Telnet / 串口（byte-stream 终端） -->
+          <v-list-item @click="menuNewLocal">
+            <v-list-item-title>新建本地终端</v-list-item-title>
+          </v-list-item>
+          <v-list-item @click="menuNewByteStream('telnet')">
+            <v-list-item-title>Telnet 连接</v-list-item-title>
+          </v-list-item>
+          <v-list-item @click="menuNewByteStream('serial')">
+            <v-list-item-title>串口终端</v-list-item-title>
+          </v-list-item>
+          <v-divider />
           <v-list-item @click="menuRename">
             <v-list-item-title>重命名</v-list-item-title>
           </v-list-item>
@@ -926,6 +1086,7 @@ onUnmounted(() => {
           @reorder="onReorder"
           @drag-out="onDragOut"
           @rename="onRenameTab"
+          @session-settings="onSessionSettings"
         />
         <div class="workspace__content">
           <!-- v-show 保持终端 Tab 存活，切换不销毁会话状态 -->
@@ -999,6 +1160,13 @@ onUnmounted(() => {
       @saved="onSessionSaved"
     />
 
+    <!-- Telnet / 串口连接表单（byte-stream 终端，不持久化到会话树） -->
+    <ByteStreamForm
+      v-model="showByteStreamForm"
+      :type="byteStreamFormType"
+      @saved="openByteStreamTerminal"
+    />
+
     <!-- 新建文件夹对话框 -->
     <v-dialog v-model="showFolderDialog" width="360">
       <v-card>
@@ -1029,6 +1197,9 @@ onUnmounted(() => {
       :initial-section="settingsSection"
       @open-master-password="showMasterPassword = true"
     />
+
+    <!-- SSH 选项对话框（标签右键"会话设置"入口，全局生效） -->
+    <SshOptionsDialog v-model="showSshOptionsDialog" />
 
     <!-- 全局弹层（确认 / toast / 主题同步） -->
     <GlobalDialog />

@@ -45,6 +45,54 @@ export function mysqlHistoryClear(): Promise<void> {
   return invoke<void>('mysql_history_clear');
 }
 
+// ---------------------------------------------------------------------------
+// 已保存查询（命名保存，区别于自动记录的查询历史）
+// ---------------------------------------------------------------------------
+
+/** 已保存查询条目（用户命名，区别于查询历史） */
+export interface MySqlSavedQueryItem {
+  id: number;
+  /** 查询名称（后端 UNIQUE 约束，同名保存走覆盖语义） */
+  name: string;
+  /** 绑定的连接标识（null = 不绑定连接，全局可见） */
+  conn_id: string | null;
+  sql: string;
+  created_at: string;
+}
+
+/** 列出已保存查询（按名称排序） */
+export function mysqlSavedQueryList(): Promise<MySqlSavedQueryItem[]> {
+  return invoke<MySqlSavedQueryItem[]>('mysql_saved_query_list');
+}
+
+/**
+ * 保存查询（新增或覆盖），返回 true = 覆盖了同名记录。
+ * 同名且未带 overwrite=true 时 reject（由调用方覆盖确认后重调）。
+ */
+export function mysqlSavedQuerySave(
+  name: string,
+  connId: string | null,
+  sql: string,
+  overwrite?: boolean,
+): Promise<boolean> {
+  return invoke<boolean>('mysql_saved_query_save', {
+    name,
+    connId,
+    sql,
+    overwrite: overwrite ?? null,
+  });
+}
+
+/** 重命名已保存查询（按 id 定位；新名称与其它条目冲突时 reject） */
+export function mysqlSavedQueryRename(id: number, name: string): Promise<void> {
+  return invoke<void>('mysql_saved_query_rename', { id, name });
+}
+
+/** 删除已保存查询（按 id 定位） */
+export function mysqlSavedQueryDelete(id: number): Promise<void> {
+  return invoke<void>('mysql_saved_query_delete', { id });
+}
+
 /** 执行计划（EXPLAIN）；analyze=true 时执行 EXPLAIN ANALYZE */
 export function mysqlExplain(connId: string, sql: string, analyze?: boolean): Promise<MySqlExplainResult> {
   return invoke<MySqlExplainResult>('mysql_explain', { connId, sql, analyze: analyze ?? null });

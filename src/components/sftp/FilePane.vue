@@ -286,7 +286,6 @@ import {
   sftpFavoriteAdd,
   sftpFavoriteRemove,
 } from '@/api/sftp'
-import { sshWrite } from '@/api/ssh'
 import { useTerminalStore } from '@/stores/terminal'
 import {
   DEFAULT_PATH,
@@ -480,7 +479,7 @@ function actionTransfer(): void {
 
 /**
  * 右键"将终端定位到当前目录"：向该会话的 SSH 终端注入 `cd <path>` 并回车执行。
- * 写入通道与快捷命令栏一致（ssh_write 按连接键路由）；路径含空格/单引号时按 POSIX shell 语义加引号。
+ * 写入通道与快捷命令栏一致（writeToSession 按会话类型路由）；路径含空格/单引号时按 POSIX shell 语义加引号。
  */
 async function actionLocateTerminal(): Promise<void> {
   menu.visible = false
@@ -493,7 +492,7 @@ async function actionLocateTerminal(): Promise<void> {
   const quoted = `'${currentPath.value.replace(/'/g, `'\\''`)}'`
   const payload = new TextEncoder().encode(`cd ${quoted}\n`)
   try {
-    await sshWrite(props.sessionId, payload)
+    await terminalStore.writeToSession(props.sessionId, payload)
     notify(`已将终端定位到 ${currentPath.value}`)
   } catch (e) {
     notify(e instanceof Error ? e.message : String(e))

@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 列信息（information_schema.COLUMNS 组装）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlColumnInfo {
     pub name: String,
     /// 完整类型定义（如 `int unsigned` / `varchar(255)`，来自 COLUMN_TYPE）
@@ -26,7 +26,7 @@ pub struct MySqlColumnInfo {
 }
 
 /// 索引信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlIndexInfo {
     pub name: String,
     /// 索引覆盖的列（按 SEQ_IN_INDEX 顺序）
@@ -38,7 +38,7 @@ pub struct MySqlIndexInfo {
 }
 
 /// 外键信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlForeignKeyInfo {
     pub name: String,
     /// 本表外键列（按 ORDINAL_POSITION 顺序）
@@ -54,7 +54,7 @@ pub struct MySqlForeignKeyInfo {
 }
 
 /// 表设计快照（get_design 返回）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlTableDesign {
     pub table: String,
     pub columns: Vec<MySqlColumnInfo>,
@@ -76,7 +76,7 @@ pub const ACTION_DROP: &str = "drop";
 /// 字段级变更
 ///
 /// drop 时仅 `name` 有意义，其余字段由前端省略（serde default 兜底）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlColumnChange {
     /// 动作：add / modify / drop（取值见 ACTION_* 常量）
     pub action: String,
@@ -96,7 +96,7 @@ pub struct MySqlColumnChange {
 }
 
 /// 表设计变更（apply_change 入参）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlDesignChange {
     pub table: String,
     /// true = 新建表（生成 CREATE TABLE），false = 修改既有表（生成 ALTER TABLE）

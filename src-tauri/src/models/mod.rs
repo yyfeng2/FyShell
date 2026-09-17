@@ -12,3 +12,4 @@ pub mod mysql_user;
 pub mod mysql_objects;
 pub mod mysql_db;
 pub mod mysql_backup;
+pub mod key_mapping;

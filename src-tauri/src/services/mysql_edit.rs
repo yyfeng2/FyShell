@@ -1,17 +1,19 @@
-//! MySQL 数据编辑服务（P2 阶段）：按主键行编辑、批量编辑、预览 -> 确认 -> 执行管道。
+//! MySQL 数据编辑服务（P2 阶段）：按主键行编辑、批量编辑、预览 -> 确认 -> 执行管道、
+//! 原生插入。
 //!
 //! 防注入关键设计：
 //! - 表名/列名/主键列来自前端，属 SQL 标识符（无法参数化），统一用反引号包裹
 //!   并校验非空、不含反引号字符，杜绝标识符逃逸出上下文；
 //! - 值统一按字符串字面量写入（单引号成对转义、反斜杠转义），
 //!   NULL 由 is_null 显式表达，不依赖空串猜测。
+//! - 原生插入（insert_rows）例外：值经 `?` 占位符由二进制协议参数化传输。
 //!
 //! 事务语义：批量执行时若连接已处于用户显式事务内（mysql_begin 开启），
 //! 则加入该事务执行（不重复开、不代为提交/回滚）；否则开隐式事务包裹整批，
 //! 任一条失败整体回滚，成功后统一提交。
 
 use mysql_async::prelude::*;
-use mysql_async::Conn;
+use mysql_async::{Conn, Value};
 
 use crate::error::AppError;
 use crate::models::mysql_edit::{MySqlEditPreview, MySqlRowUpdate, MySqlRowUpdateBatch};
@@ -219,4 +221,115 @@ async fn exec_write(conn: &mut Conn, sql: &str) -> Result<u64, AppError> {
     // 写操作可能附带额外结果集（如多语句），统一消费掉
     result.drop_result().await.map_err(mysql_err)?;
     Ok(affected)
+}
+
+// ---------------------------------------------------------------------------
+// 原生插入：逐行参数化 INSERT（预览 -> 确认 -> 执行管道）
+// ---------------------------------------------------------------------------
+
+/// mysql_insert_rows：逐行参数化 INSERT，返回插入行数。
+///
+/// 防注入：表名/列名统一反引号包裹并校验（见 quote_ident）；值经 `?` 占位符
+/// 由 exec_iter 二进制协议传输（参照 mysql_io::import_csv，Value::Bytes 承接
+/// 字符串，NULL 由 Option 显式表达），不做字面量拼接。
+///
+/// 事务包裹策略与批量更新一致：
+/// - 连接已处于用户事务内（mysql_begin）：加入该事务执行，不重复开、不代为提交/回滚；
+/// - 无活跃事务：开隐式事务包裹整批，任一条失败整体回滚，成功后统一提交。
+///
+/// columns 为空时按 `INSERT INTO {table} () VALUES ()` 逐行插入（全默认值，
+/// 由数据库生成），对齐前端"插入 N 行空行"的语义。
+pub async fn insert_rows(
+    conn_id: &str,
+    table: &str,
+    columns: &[String],
+    rows: &[Vec<Option<String>>],
+) -> Result<u64, AppError> {
+    if rows.is_empty() {
+        return Err(AppError::general("插入行列表为空"));
+    }
+    let table_quoted = quote_ident(table)?;
+
+    // 列数校验：每行值个数必须与列数一致（防错位写入）；columns 为空表示全默认值行
+    if !columns.is_empty() {
+        for (i, row) in rows.iter().enumerate() {
+            if row.len() != columns.len() {
+                return Err(AppError::general(format!(
+                    "第 {} 行的值个数 {} 与列数 {} 不一致",
+                    i + 1,
+                    row.len(),
+                    columns.len()
+                )));
+            }
+        }
+    }
+
+    // 构造 INSERT 骨架（占位符与列数一致）
+    let sql = match columns.is_empty() {
+        true => format!("INSERT INTO {table_quoted} () VALUES ()"),
+        false => {
+            let cols = columns
+                .iter()
+                .map(|c| quote_ident(c))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(", ");
+            let placeholders = vec!["?"; columns.len()].join(", ");
+            format!("INSERT INTO {table_quoted} ({cols}) VALUES ({placeholders})")
+        }
+    };
+
+    // 逐行参数：Some -> Bytes（字符串按参数传输），None -> NULL
+    let param_rows: Vec<Vec<Value>> = rows
+        .iter()
+        .map(|row| {
+            row.iter()
+                .map(|v| match v {
+                    Some(v) => Value::Bytes(v.as_bytes().to_vec()),
+                    None => Value::NULL,
+                })
+                .collect()
+        })
+        .collect();
+
+    // 已有活跃事务：加入该事务执行，用完放回独占表
+    if let Some(mut conn) = take_tx_conn(conn_id) {
+        let outcome = exec_inserts(&mut conn, &sql, &param_rows).await;
+        give_tx_conn(conn_id, conn);
+        return outcome;
+    }
+
+    // 无活跃事务：开隐式事务包裹整批
+    let mut conn = pool_of(conn_id)?.get_conn().await.map_err(mysql_err)?;
+    if let Err(e) = conn.query_drop("START TRANSACTION").await {
+        // START TRANSACTION 失败时事务未开，无需回滚，连接随 drop 归还池
+        return Err(mysql_err(e));
+    }
+    match exec_inserts(&mut conn, &sql, &param_rows).await {
+        Ok(total) => {
+            conn.query_drop("COMMIT").await.map_err(mysql_err)?;
+            Ok(total)
+        }
+        Err(e) => {
+            // 任一条失败：回滚整批（隐式事务保证原子性）
+            let _ = conn.query_drop("ROLLBACK").await;
+            Err(e)
+        }
+    }
+}
+
+/// 逐行参数化执行主体：任一条失败则中止，错误信息带上失败行号与已执行条数
+async fn exec_inserts(conn: &mut Conn, sql: &str, rows: &[Vec<Value>]) -> Result<u64, AppError> {
+    let stmt = conn.prep(sql).await.map_err(mysql_err)?;
+    let mut total = 0u64;
+    for (i, params) in rows.iter().enumerate() {
+        let result = conn
+            .exec_iter(&stmt, params)
+            .await
+            .map_err(|e| AppError::general(format!("第 {} 行插入失败 —— {e}", i + 1)))?;
+        let affected = result.affected_rows();
+        // 消费剩余结果集（保持与 exec_write 一致的清理语义）
+        result.drop_result().await.map_err(mysql_err)?;
+        total += affected;
+    }
+    Ok(total)
 }

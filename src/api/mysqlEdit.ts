@@ -101,6 +101,27 @@ export function mysqlDeleteRow(
 }
 
 /**
+ * 原生插入：逐行参数化 INSERT（事务包裹，失败整体回滚），返回插入行数。
+ * columns 为空表示逐行插入全默认值行（后端生成 `INSERT INTO t () VALUES ()`）；
+ * rows 每行值个数须与 columns 一致（null = NULL）。
+ */
+export function mysqlInsertRows(
+  connId: string,
+  table: string,
+  columns: string[],
+  rows: (string | null)[][],
+  confirmed?: boolean,
+): Promise<number> {
+  return invoke<number>('mysql_insert_rows', {
+    connId,
+    table,
+    columns,
+    rows,
+    confirmed: confirmed ?? null,
+  });
+}
+
+/**
  * mysql_table_design_get：拉取指定表的设计快照，用于解析主键列。
  * 与 design 模块（@/api/mysqlDesign.ts）同源——同一后端命令，此处独立封装
  * 一个最小子集类型，避免数据编辑模块依赖表设计器模块的完整 API。

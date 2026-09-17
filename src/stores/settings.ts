@@ -24,7 +24,23 @@ export const SETTING_KEYS = {
   terminalScrollback: 'terminal_scrollback',
   terminalCursorBlink: 'terminal_cursor_blink',
   sftpDownloadDir: 'sftp_download_dir',
+  mouseMiddleButton: 'mouse_middle_button',
+  mouseRightButton: 'mouse_right_button',
+  mouseCtrlClickMoveCursor: 'mouse_ctrl_click_move_cursor',
+  mouseUrlHyperlink: 'mouse_url_hyperlink',
+  mouseUrlPrefixes: 'mouse_url_prefixes',
+  mouseCtrlClickOpenHyperlink: 'mouse_ctrl_click_open_hyperlink',
+  selectionWordSeparators: 'selection_word_separators',
+  selectionShiftDoubleClick: 'selection_shift_double_click',
+  selectionAutoCopy: 'selection_auto_copy',
+  selectionSoftTabs: 'selection_soft_tabs',
+  selectionCopyIncludeNewline: 'selection_copy_include_newline',
+  selectionCopyTrimWhitespace: 'selection_copy_trim_whitespace',
+  selectionCopyNonblankOnly: 'selection_copy_nonblank_only',
 } as const
+
+/** 鼠标中/右键行为：没做什么 / 粘贴剪贴板内容 */
+export type MouseButtonAction = 'nothing' | 'paste'
 
 /** 设置项默认值（与 useXterm 原始默认保持一致，加载失败时同样生效） */
 const DEFAULTS = {
@@ -35,6 +51,19 @@ const DEFAULTS = {
   terminal_scrollback: 10000,
   terminal_cursor_blink: true,
   sftp_download_dir: '',
+  mouse_middle_button: 'nothing' as MouseButtonAction,
+  mouse_right_button: 'paste' as MouseButtonAction,
+  mouse_ctrl_click_move_cursor: true,
+  mouse_url_hyperlink: false,
+  mouse_url_prefixes: 'http://|https://|ftp://|ssh://|telnet://|sftp://',
+  mouse_ctrl_click_open_hyperlink: false,
+  selection_word_separators: '\\:\\~\\-!@#$%^&*()-=+[]{}',
+  selection_shift_double_click: false,
+  selection_auto_copy: true,
+  selection_soft_tabs: false,
+  selection_copy_include_newline: true,
+  selection_copy_trim_whitespace: false,
+  selection_copy_nonblank_only: false,
 }
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -54,6 +83,32 @@ export const useSettingsStore = defineStore('settings', () => {
   const terminalCursorBlink = ref(DEFAULTS.terminal_cursor_blink)
   /** SFTP 默认下载目录（空 = 使用系统下载目录） */
   const sftpDownloadDir = ref(DEFAULTS.sftp_download_dir)
+  /** 鼠标中键行为 */
+  const mouseMiddleButton = ref<MouseButtonAction>(DEFAULTS.mouse_middle_button)
+  /** 鼠标右键行为 */
+  const mouseRightButton = ref<MouseButtonAction>(DEFAULTS.mouse_right_button)
+  /** Ctrl+左单击移动终端光标 */
+  const mouseCtrlClickMoveCursor = ref(DEFAULTS.mouse_ctrl_click_move_cursor)
+  /** 使用 URL 超链接 */
+  const mouseUrlHyperlink = ref(DEFAULTS.mouse_url_hyperlink)
+  /** URL 前缀（| 分隔） */
+  const mouseUrlPrefixes = ref(DEFAULTS.mouse_url_prefixes)
+  /** [Ctrl+单击] 以打开超链接 */
+  const mouseCtrlClickOpenHyperlink = ref(DEFAULTS.mouse_ctrl_click_open_hyperlink)
+  /** 双击选择分隔符 */
+  const selectionWordSeparators = ref(DEFAULTS.selection_word_separators)
+  /** Shift+双击按分隔符而非空格选择 */
+  const selectionShiftDoubleClick = ref(DEFAULTS.selection_shift_double_click)
+  /** 选中文本自动复制到剪贴板 */
+  const selectionAutoCopy = ref(DEFAULTS.selection_auto_copy)
+  /** 复制时制表符转空格 */
+  const selectionSoftTabs = ref(DEFAULTS.selection_soft_tabs)
+  /** 复制包含最后一个换行字符 */
+  const selectionCopyIncludeNewline = ref(DEFAULTS.selection_copy_include_newline)
+  /** 复制时删除尾部空白 */
+  const selectionCopyTrimWhitespace = ref(DEFAULTS.selection_copy_trim_whitespace)
+  /** 复制时排除仅含空白的行 */
+  const selectionCopyNonblankOnly = ref(DEFAULTS.selection_copy_nonblank_only)
   /** 是否已完成首次后端加载 */
   const loaded = ref(false)
 
@@ -85,6 +140,36 @@ export const useSettingsStore = defineStore('settings', () => {
         if (blink !== undefined) terminalCursorBlink.value = blink === 'true'
         const downloadDir = map[SETTING_KEYS.sftpDownloadDir]
         if (downloadDir !== undefined) sftpDownloadDir.value = downloadDir
+        const middleBtn = map[SETTING_KEYS.mouseMiddleButton]
+        if (middleBtn === 'nothing' || middleBtn === 'paste') {
+          mouseMiddleButton.value = middleBtn
+        }
+        const rightBtn = map[SETTING_KEYS.mouseRightButton]
+        if (rightBtn === 'nothing' || rightBtn === 'paste') {
+          mouseRightButton.value = rightBtn
+        }
+        const ctrlMove = map[SETTING_KEYS.mouseCtrlClickMoveCursor]
+        if (ctrlMove !== undefined) mouseCtrlClickMoveCursor.value = ctrlMove === 'true'
+        const urlLink = map[SETTING_KEYS.mouseUrlHyperlink]
+        if (urlLink !== undefined) mouseUrlHyperlink.value = urlLink === 'true'
+        const urlPrefixes = map[SETTING_KEYS.mouseUrlPrefixes]
+        if (urlPrefixes !== undefined && urlPrefixes !== '') mouseUrlPrefixes.value = urlPrefixes
+        const ctrlOpen = map[SETTING_KEYS.mouseCtrlClickOpenHyperlink]
+        if (ctrlOpen !== undefined) mouseCtrlClickOpenHyperlink.value = ctrlOpen === 'true'
+        const wordSeps = map[SETTING_KEYS.selectionWordSeparators]
+        if (wordSeps !== undefined) selectionWordSeparators.value = wordSeps
+        const shiftDbl = map[SETTING_KEYS.selectionShiftDoubleClick]
+        if (shiftDbl !== undefined) selectionShiftDoubleClick.value = shiftDbl === 'true'
+        const autoCopy = map[SETTING_KEYS.selectionAutoCopy]
+        if (autoCopy !== undefined) selectionAutoCopy.value = autoCopy === 'true'
+        const softTabs = map[SETTING_KEYS.selectionSoftTabs]
+        if (softTabs !== undefined) selectionSoftTabs.value = softTabs === 'true'
+        const copyNewline = map[SETTING_KEYS.selectionCopyIncludeNewline]
+        if (copyNewline !== undefined) selectionCopyIncludeNewline.value = copyNewline === 'true'
+        const trimWs = map[SETTING_KEYS.selectionCopyTrimWhitespace]
+        if (trimWs !== undefined) selectionCopyTrimWhitespace.value = trimWs === 'true'
+        const nonblankOnly = map[SETTING_KEYS.selectionCopyNonblankOnly]
+        if (nonblankOnly !== undefined) selectionCopyNonblankOnly.value = nonblankOnly === 'true'
         loaded.value = true
         // 加载完成后应用主题模式（SQLite 优先于 localStorage 的启动缓存）
         applyThemeMode()
@@ -179,6 +264,84 @@ export const useSettingsStore = defineStore('settings', () => {
     persist(SETTING_KEYS.sftpDownloadDir, dir)
   }
 
+  /** 鼠标中键行为 */
+  function setMouseMiddleButton(action: MouseButtonAction): void {
+    mouseMiddleButton.value = action
+    persist(SETTING_KEYS.mouseMiddleButton, action)
+  }
+
+  /** 鼠标右键行为 */
+  function setMouseRightButton(action: MouseButtonAction): void {
+    mouseRightButton.value = action
+    persist(SETTING_KEYS.mouseRightButton, action)
+  }
+
+  /** Ctrl+左单击移动终端光标 */
+  function setMouseCtrlClickMoveCursor(enabled: boolean): void {
+    mouseCtrlClickMoveCursor.value = enabled
+    persist(SETTING_KEYS.mouseCtrlClickMoveCursor, enabled ? 'true' : 'false')
+  }
+
+  /** 使用 URL 超链接 */
+  function setMouseUrlHyperlink(enabled: boolean): void {
+    mouseUrlHyperlink.value = enabled
+    persist(SETTING_KEYS.mouseUrlHyperlink, enabled ? 'true' : 'false')
+  }
+
+  /** URL 前缀 */
+  function setMouseUrlPrefixes(prefixes: string): void {
+    mouseUrlPrefixes.value = prefixes
+    persist(SETTING_KEYS.mouseUrlPrefixes, prefixes)
+  }
+
+  /** [Ctrl+单击] 以打开超链接 */
+  function setMouseCtrlClickOpenHyperlink(enabled: boolean): void {
+    mouseCtrlClickOpenHyperlink.value = enabled
+    persist(SETTING_KEYS.mouseCtrlClickOpenHyperlink, enabled ? 'true' : 'false')
+  }
+
+  /** 双击选择分隔符 */
+  function setSelectionWordSeparators(seps: string): void {
+    selectionWordSeparators.value = seps
+    persist(SETTING_KEYS.selectionWordSeparators, seps)
+  }
+
+  /** Shift+双击按分隔符而非空格选择 */
+  function setSelectionShiftDoubleClick(enabled: boolean): void {
+    selectionShiftDoubleClick.value = enabled
+    persist(SETTING_KEYS.selectionShiftDoubleClick, enabled ? 'true' : 'false')
+  }
+
+  /** 选中文本自动复制到剪贴板 */
+  function setSelectionAutoCopy(enabled: boolean): void {
+    selectionAutoCopy.value = enabled
+    persist(SETTING_KEYS.selectionAutoCopy, enabled ? 'true' : 'false')
+  }
+
+  /** 复制时制表符转空格 */
+  function setSelectionSoftTabs(enabled: boolean): void {
+    selectionSoftTabs.value = enabled
+    persist(SETTING_KEYS.selectionSoftTabs, enabled ? 'true' : 'false')
+  }
+
+  /** 复制包含最后一个换行字符 */
+  function setSelectionCopyIncludeNewline(enabled: boolean): void {
+    selectionCopyIncludeNewline.value = enabled
+    persist(SETTING_KEYS.selectionCopyIncludeNewline, enabled ? 'true' : 'false')
+  }
+
+  /** 复制时删除尾部空白 */
+  function setSelectionCopyTrimWhitespace(enabled: boolean): void {
+    selectionCopyTrimWhitespace.value = enabled
+    persist(SETTING_KEYS.selectionCopyTrimWhitespace, enabled ? 'true' : 'false')
+  }
+
+  /** 复制时排除仅含空白的行 */
+  function setSelectionCopyNonblankOnly(enabled: boolean): void {
+    selectionCopyNonblankOnly.value = enabled
+    persist(SETTING_KEYS.selectionCopyNonblankOnly, enabled ? 'true' : 'false')
+  }
+
   return {
     // 状态
     themeMode,
@@ -187,6 +350,19 @@ export const useSettingsStore = defineStore('settings', () => {
     terminalScrollback,
     terminalCursorBlink,
     sftpDownloadDir,
+    mouseMiddleButton,
+    mouseRightButton,
+    mouseCtrlClickMoveCursor,
+    mouseUrlHyperlink,
+    mouseUrlPrefixes,
+    mouseCtrlClickOpenHyperlink,
+    selectionWordSeparators,
+    selectionShiftDoubleClick,
+    selectionAutoCopy,
+    selectionSoftTabs,
+    selectionCopyIncludeNewline,
+    selectionCopyTrimWhitespace,
+    selectionCopyNonblankOnly,
     loaded,
     // 动作
     ensureLoaded,
@@ -196,5 +372,18 @@ export const useSettingsStore = defineStore('settings', () => {
     setTerminalScrollback,
     setTerminalCursorBlink,
     setSftpDownloadDir,
+    setMouseMiddleButton,
+    setMouseRightButton,
+    setMouseCtrlClickMoveCursor,
+    setMouseUrlHyperlink,
+    setMouseUrlPrefixes,
+    setMouseCtrlClickOpenHyperlink,
+    setSelectionWordSeparators,
+    setSelectionShiftDoubleClick,
+    setSelectionAutoCopy,
+    setSelectionSoftTabs,
+    setSelectionCopyIncludeNewline,
+    setSelectionCopyTrimWhitespace,
+    setSelectionCopyNonblankOnly,
   }
 })

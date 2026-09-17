@@ -7,12 +7,12 @@
     class="history-drawer"
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
-    <!-- 顶部：标题 + 清空按钮 -->
+    <!-- 顶部：标题 + 清空按钮（仅历史 tab） -->
     <div class="history-drawer__header">
       <v-icon size="small" class="mr-1">mdi-history</v-icon>
-      <span class="history-drawer__title">查询历史</span>
+      <span class="history-drawer__title">SQL 控制台</span>
       <v-spacer />
-      <v-tooltip text="清空历史" location="bottom">
+      <v-tooltip v-if="tab === 'history'" text="清空历史" location="bottom">
         <template #activator="{ props: activatorProps }">
           <v-btn
             v-bind="activatorProps"
@@ -26,49 +26,125 @@
       </v-tooltip>
     </div>
 
-    <!-- 搜索框：走 mysql_history_search -->
-    <div class="history-drawer__search">
-      <v-text-field
-        v-model="keyword"
-        placeholder="搜索 SQL 关键词"
-        prepend-inner-icon="mdi-magnify"
-        density="compact"
-        variant="outlined"
-        hide-details
-        clearable
-        autofocus
-        @update:model-value="onSearchInput"
-        @keyup.enter="doSearch"
-      />
-    </div>
+    <!-- tab 切换：查询历史 / 已保存查询 -->
+    <v-tabs v-model="tab" density="compact" color="primary">
+      <v-tab value="history" class="text-caption">查询历史</v-tab>
+      <v-tab value="saved" class="text-caption">已保存查询</v-tab>
+    </v-tabs>
+    <v-divider />
 
-    <!-- 历史列表 -->
-    <div class="history-drawer__body">
+    <!-- 历史 tab：搜索框 + 列表 -->
+    <template v-if="tab === 'history'">
+      <div class="history-drawer__search">
+        <v-text-field
+          v-model="keyword"
+          placeholder="搜索 SQL 关键词"
+          prepend-inner-icon="mdi-magnify"
+          density="compact"
+          variant="outlined"
+          hide-details
+          clearable
+          autofocus
+          @update:model-value="onSearchInput"
+          @keyup.enter="doSearch"
+        />
+      </div>
+
+      <div class="history-drawer__body">
+        <v-list density="compact" class="history-drawer__list">
+          <v-list-item
+            v-for="item in items"
+            :key="item.id"
+            class="history-drawer__item"
+            @click="emit('recall', item.sql)"
+          >
+            <template #prepend>
+              <v-icon size="small" :color="item.success ? 'success' : 'error'">
+                {{ item.success ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline' }}
+              </v-icon>
+            </template>
+            <v-list-item-title class="history-drawer__sql">{{ sqlPreview(item.sql) }}</v-list-item-title>
+            <v-list-item-subtitle class="history-drawer__meta">
+              {{ formatTime(item.created_at) }} · {{ formatDuration(item.duration_ms) }}
+            </v-list-item-subtitle>
+          </v-list-item>
+          <v-list-item v-if="!loading && items.length === 0">
+            <v-list-item-title class="text-caption text-medium-emphasis">
+              {{ keyword.trim() ? '无匹配记录' : '暂无查询历史' }}
+            </v-list-item-title>
+          </v-list-item>
+        </v-list>
+        <div v-if="error" class="history-drawer__error text-caption">{{ error }}</div>
+      </div>
+    </template>
+
+    <!-- 已保存 tab：命名查询列表（点击召回 / 重命名 / 删除） -->
+    <div v-else class="history-drawer__body">
       <v-list density="compact" class="history-drawer__list">
         <v-list-item
-          v-for="item in items"
-          :key="item.id"
+          v-for="q in savedItems"
+          :key="q.id"
           class="history-drawer__item"
-          @click="emit('recall', item.sql)"
+          @click="emit('recall', q.sql)"
         >
           <template #prepend>
-            <v-icon size="small" :color="item.success ? 'success' : 'error'">
-              {{ item.success ? 'mdi-check-circle-outline' : 'mdi-alert-circle-outline' }}
-            </v-icon>
+            <v-icon size="small" color="primary">mdi-bookmark-outline</v-icon>
           </template>
-          <v-list-item-title class="history-drawer__sql">{{ sqlPreview(item.sql) }}</v-list-item-title>
+          <v-list-item-title class="history-drawer__name">{{ q.name }}</v-list-item-title>
           <v-list-item-subtitle class="history-drawer__meta">
-            {{ formatTime(item.created_at) }} · {{ formatDuration(item.duration_ms) }}
+            {{ sqlPreview(q.sql) }}
           </v-list-item-subtitle>
+          <v-list-item-subtitle class="history-drawer__meta">
+            {{ q.conn_id ? `绑定连接 · ${q.conn_id}` : '全局' }} · {{ formatTime(q.created_at) }}
+          </v-list-item-subtitle>
+          <template #append>
+            <v-btn
+              icon="mdi-pencil-outline"
+              size="x-small"
+              variant="text"
+              title="重命名"
+              @click.stop="openRename(q)"
+            />
+            <v-btn
+              icon="mdi-delete-outline"
+              size="x-small"
+              variant="text"
+              title="删除"
+              @click.stop="doDeleteSaved(q)"
+            />
+          </template>
         </v-list-item>
-        <v-list-item v-if="!loading && items.length === 0">
+        <v-list-item v-if="!savedLoading && savedItems.length === 0">
           <v-list-item-title class="text-caption text-medium-emphasis">
-            {{ keyword.trim() ? '无匹配记录' : '暂无查询历史' }}
+            暂无已保存查询
           </v-list-item-title>
         </v-list-item>
       </v-list>
-      <div v-if="error" class="history-drawer__error text-caption">{{ error }}</div>
+      <div v-if="savedError" class="history-drawer__error text-caption">{{ savedError }}</div>
     </div>
+
+    <!-- 重命名对话框（已保存查询） -->
+    <v-dialog v-model="renameDialog" max-width="380">
+      <v-card>
+        <v-card-title class="text-subtitle-1">重命名查询</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="renameName"
+            label="查询名称"
+            density="compact"
+            variant="outlined"
+            autofocus
+            counter="100"
+            @keyup.enter="confirmRename"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="renameDialog = false">取消</v-btn>
+          <v-btn color="primary" prepend-icon="mdi-check" @click="confirmRename">确认</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </v-navigation-drawer>
 </template>
 
@@ -78,6 +154,10 @@ import {
   mysqlHistoryClear,
   mysqlHistoryList,
   mysqlHistorySearch,
+  mysqlSavedQueryDelete,
+  mysqlSavedQueryList,
+  mysqlSavedQueryRename,
+  type MySqlSavedQueryItem,
   type MySqlQueryHistoryItem,
 } from '@/api/mysqlConsole'
 import { useUiStore } from '@/stores/ui'
@@ -90,13 +170,16 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 显隐变化（v-model） */
   (e: 'update:modelValue', value: boolean): void
-  /** 快召回：点击历史条目，由父级将 SQL 插入编辑器 */
+  /** 快召回：点击历史/已保存条目，由父级将 SQL 插入编辑器 */
   (e: 'recall', sql: string): void
 }>()
 
 const uiStore = useUiStore()
 
 const DEFAULT_LIMIT = 100
+
+// ---------- tab 切换（查询历史 / 已保存查询） ----------
+const tab = ref<'history' | 'saved'>('history')
 
 // ---------- 列表加载与搜索 ----------
 const items = ref<MySqlQueryHistoryItem[]>([])
@@ -133,13 +216,81 @@ async function doSearch(): Promise<void> {
   }
 }
 
-/** 打开抽屉时加载历史（默认 100 条倒序） */
+/** 打开抽屉时加载当前 tab 的列表 */
 watch(
   () => props.modelValue,
   (open) => {
-    if (open) void doSearch()
+    if (open) {
+      if (tab.value === 'history') void doSearch()
+      else void loadSaved()
+    }
   },
 )
+
+/** 切到已保存 tab 时加载列表 */
+watch(tab, (t) => {
+  if (t === 'saved') void loadSaved()
+})
+
+// ---------- 已保存查询：列表 / 重命名 / 删除 ----------
+const savedItems = ref<MySqlSavedQueryItem[]>([])
+const savedLoading = ref(false)
+const savedError = ref('')
+const renameDialog = ref(false)
+const renameTarget = ref<MySqlSavedQueryItem | null>(null)
+const renameName = ref('')
+
+async function loadSaved(): Promise<void> {
+  savedLoading.value = true
+  savedError.value = ''
+  try {
+    savedItems.value = await mysqlSavedQueryList()
+  } catch (err) {
+    savedError.value = `加载已保存查询失败: ${String(err)}`
+  } finally {
+    savedLoading.value = false
+  }
+}
+
+/** 打开重命名对话框（预填当前名称） */
+function openRename(q: MySqlSavedQueryItem): void {
+  renameTarget.value = q
+  renameName.value = q.name
+  renameDialog.value = true
+}
+
+async function confirmRename(): Promise<void> {
+  const target = renameTarget.value
+  const name = renameName.value.trim()
+  if (!target || !name) return
+  try {
+    await mysqlSavedQueryRename(target.id, name)
+    uiStore.toast(`已重命名为：${name}`, 'success')
+    renameDialog.value = false
+    await loadSaved()
+  } catch (err) {
+    console.error('[history-drawer] 重命名失败:', err)
+    uiStore.toast(String(err), 'error')
+  }
+}
+
+/** 删除已保存查询（uiStore 二次确认） */
+async function doDeleteSaved(q: MySqlSavedQueryItem): Promise<void> {
+  try {
+    const ok = await uiStore.confirm({
+      title: '删除确认',
+      message: `确定要删除已保存查询「${q.name}」吗？此操作不可恢复。`,
+      danger: true,
+    })
+    if (!ok) return
+    await mysqlSavedQueryDelete(q.id)
+    uiStore.toast('已删除', 'success')
+    await loadSaved()
+  } catch (err) {
+    console.error('[history-drawer] 删除失败:', err)
+    uiStore.toast('删除失败，请重试', 'error')
+  }
+}
 
 // ---------- 清空（ui store 二次确认） ----------
 async function doClear(): Promise<void> {
@@ -225,6 +376,12 @@ function formatDuration(durationMs: number | null): string {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* 已保存查询名称 */
+.history-drawer__name {
+  font-weight: 500;
+  font-size: 0.85rem;
 }
 
 .history-drawer__meta {

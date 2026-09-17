@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 备份档案（自动运行任务的持久化配置）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlBackupProfile {
     /// 档案 id（TEXT uuid，新建由服务层生成）
     pub id: String,
@@ -26,7 +26,7 @@ pub struct MySqlBackupProfile {
 }
 
 /// 备份运行历史单条记录
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlBackupRun {
     /// 运行记录 id（SQLite 自增）
     pub id: i64,

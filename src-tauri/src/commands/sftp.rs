@@ -10,6 +10,7 @@ use crate::state::AppState;
 
 /// 目录列表：`Vec<FileEntry>`
 #[tauri::command]
+#[specta::specta]
 pub async fn sftp_list(
     state: State<'_, AppState>,
     id: String,
@@ -20,6 +21,7 @@ pub async fn sftp_list(
 
 /// 创建目录
 #[tauri::command]
+#[specta::specta]
 pub async fn sftp_mkdir(
     state: State<'_, AppState>,
     id: String,
@@ -30,6 +32,7 @@ pub async fn sftp_mkdir(
 
 /// 删除（前端二次确认；目录递归删除）
 #[tauri::command]
+#[specta::specta]
 pub async fn sftp_delete(
     state: State<'_, AppState>,
     id: String,
@@ -41,6 +44,7 @@ pub async fn sftp_delete(
 
 /// 重命名
 #[tauri::command]
+#[specta::specta]
 pub async fn sftp_rename(
     state: State<'_, AppState>,
     id: String,
@@ -52,6 +56,7 @@ pub async fn sftp_rename(
 
 /// 设置文件/目录权限（chmod）：`mode` 为八进制语义数值（如 0o644 = 420）
 #[tauri::command]
+#[specta::specta]
 pub async fn sftp_chmod(
     state: State<'_, AppState>,
     id: String,
@@ -63,24 +68,28 @@ pub async fn sftp_chmod(
 
 /// SFTP 收藏路径列表（按收藏时间倒序）
 #[tauri::command]
+#[specta::specta]
 pub fn sftp_favorite_list() -> Result<Vec<sftp_store::SftpFavorite>, AppError> {
     sftp_store::list()
 }
 
 /// 收藏路径：按 (side, path) 幂等，返回含 id 的收藏记录
 #[tauri::command]
+#[specta::specta]
 pub fn sftp_favorite_add(side: String, path: String) -> Result<sftp_store::SftpFavorite, AppError> {
     sftp_store::add(&side, &path)
 }
 
 /// 取消收藏：按侧 + 路径删除（未收藏时幂等）
 #[tauri::command]
+#[specta::specta]
 pub fn sftp_favorite_remove(side: String, path: String) -> Result<(), AppError> {
     sftp_store::remove(&side, &path)
 }
 
 /// 入队上传，进度走 Channel（返回含 id 的任务快照，前端可凭其取消）
 #[tauri::command]
+#[specta::specta]
 pub async fn sftp_upload(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -102,6 +111,7 @@ pub async fn sftp_upload(
 
 /// 入队下载，进度走 Channel
 #[tauri::command]
+#[specta::specta]
 pub async fn sftp_download(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
@@ -123,6 +133,7 @@ pub async fn sftp_download(
 
 /// 传输队列快照：`Vec<TransferTask>`
 #[tauri::command]
+#[specta::specta]
 pub fn transfer_list(state: State<'_, AppState>) -> Vec<TransferTask> {
     state
         .transfer_tasks
@@ -133,6 +144,7 @@ pub fn transfer_list(state: State<'_, AppState>) -> Vec<TransferTask> {
 
 /// 取消任务：写入取消集合，传输循环每批检查命中即中止
 #[tauri::command]
+#[specta::specta]
 pub fn transfer_cancel(state: State<'_, AppState>, task_id: String) -> Result<(), AppError> {
     state
         .cancelled_transfers
@@ -144,6 +156,7 @@ pub fn transfer_cancel(state: State<'_, AppState>, task_id: String) -> Result<()
 
 /// 清除已完成 / 失败 / 已取消记录（Queued / Running 保留）
 #[tauri::command]
+#[specta::specta]
 pub fn transfer_clear(state: State<'_, AppState>) -> Result<(), AppError> {
     let removed: Vec<String> = {
         let tasks = state.transfer_tasks.lock().expect("transfer_tasks 锁被污染");
@@ -169,6 +182,7 @@ pub fn transfer_clear(state: State<'_, AppState>) -> Result<(), AppError> {
 
 /// 本地目录列表（供双栏左侧使用）；路径为 ".." 时返回上级目录列表
 #[tauri::command]
+#[specta::specta]
 pub fn local_list(path: String) -> Result<Vec<FileEntry>, AppError> {
     // ".." 返回上级：基于进程当前目录解析
     let target = if path == ".." {
@@ -228,6 +242,7 @@ pub fn local_list(path: String) -> Result<Vec<FileEntry>, AppError> {
 
 /// 本地新建文件夹（fe-sftp 双栏本地侧）
 #[tauri::command]
+#[specta::specta]
 pub fn local_mkdir(path: String) -> Result<(), AppError> {
     std::fs::create_dir_all(&path)?;
     Ok(())
@@ -235,6 +250,7 @@ pub fn local_mkdir(path: String) -> Result<(), AppError> {
 
 /// 本地重命名
 #[tauri::command]
+#[specta::specta]
 pub fn local_rename(old_path: String, new_path: String) -> Result<(), AppError> {
     std::fs::rename(&old_path, &new_path)?;
     Ok(())
@@ -242,6 +258,7 @@ pub fn local_rename(old_path: String, new_path: String) -> Result<(), AppError> 
 
 /// 本地删除：is_dir 为 true 时递归删除目录，否则删除文件
 #[tauri::command]
+#[specta::specta]
 pub fn local_delete(path: String, is_dir: bool) -> Result<(), AppError> {
     if is_dir {
         std::fs::remove_dir_all(&path)?;

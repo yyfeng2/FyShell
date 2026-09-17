@@ -89,7 +89,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
-import { sshWrite } from '@/api/ssh'
 import QuickCommandTree from './QuickCommandTree.vue'
 import { useSessionStore } from '@/stores/session'
 import { useTerminalStore } from '@/stores/terminal'
@@ -197,7 +196,7 @@ function targetSessionIds(): string[] {
   return pickedIds.value.filter((id) => terminalStore.isConnected(id))
 }
 
-// ---------- 发送（sshWrite 逐会话发送，末尾自动补换行） ----------
+// ---------- 发送（writeToSession 按会话类型路由，逐会话发送，末尾自动补换行） ----------
 async function send(): Promise<void> {
   const sessionIds = targetSessionIds()
   if (!draft.value.trim() || sessionIds.length === 0) return
@@ -205,7 +204,9 @@ async function send(): Promise<void> {
   try {
     const text = draft.value.endsWith('\n') ? draft.value : `${draft.value}\n`
     const payload = new TextEncoder().encode(text)
-    const results = await Promise.allSettled(sessionIds.map((id) => sshWrite(id, payload)))
+    const results = await Promise.allSettled(
+      sessionIds.map((id) => terminalStore.writeToSession(id, payload)),
+    )
     const failed = sessionIds.filter((_, i) => results[i].status === 'rejected')
     if (failed.length === 0) {
       uiStore.toast(`已发送到 ${sessionIds.length} 个会话`, 'success')

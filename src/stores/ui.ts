@@ -132,6 +132,16 @@ export const useUiStore = defineStore('ui', () => {
   /** 快速命令栏可见性（查看菜单切换） */
   const quickBarVisible = ref(true)
 
+  // ---------------- 菜单命令分发（终端内键位映射触发） ----------------
+
+  /** 待分发的菜单命令（seq 递增保证同一命令连续触发也能被 watch 到） */
+  const menuActionRequest = ref<{ action: string; seq: number }>({ action: '', seq: 0 })
+
+  /** 终端内请求执行菜单命令（WorkspaceView watch 后调用 onMenuAction） */
+  function requestMenuAction(action: string): void {
+    menuActionRequest.value = { action, seq: menuActionRequest.value.seq + 1 }
+  }
+
   // ---------------- 左导航宽度（可拖拽调整，持久化） ----------------
 
   const NAV_WIDTH_KEY = 'fyshell.navWidth'
@@ -227,6 +237,9 @@ export const useUiStore = defineStore('ui', () => {
     navWidth,
     setNavWidth,
     quickBarVisible,
+    menuActionRequest,
+    requestMenuAction,
+    shortcutOf,
     shortcutHandlers,
     registerShortcut,
     handleKeydown,

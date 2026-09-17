@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 /// MySQL 连接配置（契约 5.1 节）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlConnection {
     pub host: String,
     pub port: u16,
@@ -16,7 +16,7 @@ pub struct MySqlConnection {
 }
 
 /// 表信息（表列表命令返回）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlTableInfo {
     pub name: String,
     /// 预估行数（InnoDB 下为估算值，来自 information_schema.TABLES.TABLE_ROWS）
@@ -26,7 +26,7 @@ pub struct MySqlTableInfo {
 }
 
 /// 查询结果（分页 + 列名 + 行数据）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlQueryResult {
     pub columns: Vec<String>,
     /// None = SQL NULL（值统一序列化为字符串，前端按 NULL 标识渲染）

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// host 与 current_db 一并回传：前端「复制 Host」按钮与数据库切换下拉共用，
 /// 避免再起一条命令。host 取自连接池 Opts（ip_or_hostname）。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlDatabaseList {
     pub host: String,
     /// 当前默认数据库（None = 连接时未指定且未 USE，需先选择库）
@@ -18,7 +18,7 @@ pub struct MySqlDatabaseList {
 }
 
 /// 表结构 DDL（mysql_table_show_create 返回，SHOW CREATE TABLE 结果）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct MySqlTableDdl {
     pub table: String,
     pub sql: String,

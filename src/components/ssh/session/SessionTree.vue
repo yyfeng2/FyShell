@@ -146,6 +146,13 @@
       :folder-id="presetFolderId"
       @saved="onSaved"
     />
+
+    <!-- Telnet / 串口连接表单（byte-stream 终端，不持久化到会话树） -->
+    <ByteStreamForm
+      v-model="byteStreamFormVisible"
+      :type="byteStreamFormType"
+      @saved="onByteStreamSaved"
+    />
   </div>
 </template>
 
@@ -158,8 +165,10 @@ import {
   type SessionConfig,
   type SessionNode,
 } from '@/stores/session'
+import { useTerminalStore } from '@/stores/terminal'
 import { useUiStore } from '@/stores/ui'
 import SessionForm from './SessionForm.vue'
+import ByteStreamForm from './ByteStreamForm.vue'
 
 const emit = defineEmits<{
   /** 双击会话：发起连接（由父级对接 terminal store 的 openTerminal） */
@@ -168,6 +177,8 @@ const emit = defineEmits<{
 
 const store = useSessionStore()
 const uiStore = useUiStore()
+/** 终端连接管理：本地终端新建入口直接经 store 打开 byte-stream 终端 */
+const terminalStore = useTerminalStore()
 
 const isFolder = isFolderNode
 
@@ -244,6 +255,7 @@ function buildMenuItems(node: SessionNode | null): { title: string; icon: string
     return [
       { title: '新建会话', icon: 'mdi-plus', action: () => openNewSession(null) },
       { title: '新建文件夹', icon: 'mdi-folder-plus-outline', action: () => openNewFolder(null) },
+      ...byteStreamMenuItems(),
     ]
   }
   if (isFolder(node)) {
@@ -252,12 +264,76 @@ function buildMenuItems(node: SessionNode | null): { title: string; icon: string
       { title: '新建文件夹', icon: 'mdi-folder-plus-outline', action: () => openNewFolder(node.id) },
       { title: '重命名', icon: 'mdi-pencil-outline', action: () => startRename(node) },
       { title: '删除', icon: 'mdi-delete-outline', action: () => removeNode(node) },
+      ...byteStreamMenuItems(),
     ]
   }
   return [
     { title: '重命名', icon: 'mdi-pencil-outline', action: () => startRename(node) },
     { title: '删除', icon: 'mdi-delete-outline', action: () => removeNode(node) },
   ]
+}
+
+/** 新建连接子菜单项：本地终端 / Telnet / 串口（byte-stream 终端） */
+function byteStreamMenuItems(): { title: string; icon: string; action: () => void }[] {
+  return [
+    { title: '新建本地终端', icon: 'mdi-console-line', action: openLocalTerminal },
+    { title: 'Telnet 连接', icon: 'mdi-lan', action: () => openByteStreamForm('telnet') },
+    { title: '串口终端', icon: 'mdi-serial-port', action: () => openByteStreamForm('serial') },
+  ]
+}
+
+// ---------- 新建连接（byte-stream 终端入口） ----------
+/** Telnet / 串口连接表单可见性与类型 */
+const byteStreamFormVisible = ref(false)
+const byteStreamFormType = ref<'telnet' | 'serial'>('telnet')
+
+/** 新建本地终端：无需表单与持久会话，直接创建 byte-stream 终端 Tab */
+function openLocalTerminal(): void {
+  const connKey = `local-${crypto.randomUUID()}`
+  void terminalStore
+    .openTerminal({ id: connKey, name: '本地终端', sessionType: 'local' }, connKey)
+    .catch((err) => {
+      console.error('[session-tree] 打开本地终端失败:', err)
+      uiStore.toast(`打开本地终端失败：${String(err)}`, 'error')
+    })
+}
+
+/** 新建 Telnet / 串口连接：打开最小表单 */
+function openByteStreamForm(type: 'telnet' | 'serial'): void {
+  byteStreamFormType.value = type
+  byteStreamFormVisible.value = true
+}
+
+/** Telnet / 串口表单提交：直接打开 byte-stream 终端 Tab（不持久化到会话树） */
+function onByteStreamSaved(params: {
+  type: 'telnet' | 'serial'
+  host?: string
+  port?: number
+  serialPort?: string
+  baudRate?: number
+}): void {
+  const connKey = `byte-${crypto.randomUUID()}`
+  const title =
+    params.type === 'telnet'
+      ? `Telnet ${params.host}:${params.port}`
+      : `串口 ${params.serialPort}@${params.baudRate}`
+  void terminalStore
+    .openTerminal(
+      {
+        id: connKey,
+        name: title,
+        sessionType: params.type,
+        host: params.host,
+        port: params.port,
+        serialPort: params.serialPort,
+        baudRate: params.baudRate,
+      },
+      connKey,
+    )
+    .catch((err) => {
+      console.error('[session-tree] 连接失败:', err)
+      uiStore.toast(`连接失败：${String(err)}`, 'error')
+    })
 }
 
 // ---------- 新建 / 重命名 ----------

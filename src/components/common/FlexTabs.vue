@@ -52,6 +52,8 @@ const emit = defineEmits<{
   (e: 'drag-out', id: string): void
   /** 右键菜单重命名，携带目标 tab id 与新标题 */
   (e: 'rename', id: string, title: string): void
+  /** 右键菜单打开 SSH 会话设置，携带目标 tab id */
+  (e: 'session-settings', id: string): void
 }>()
 
 /** 全局 UI store：右键菜单操作反馈走全局 toast */
@@ -220,6 +222,13 @@ function openInWindow(): void {
   const id = menu.value.tabId
   if (!id || isFixed(id)) return
   emit('drag-out', id)
+}
+
+/** 会话设置：打开 SSH 选项对话框（全局生效） */
+function openSessionSettings(): void {
+  const id = menu.value.tabId
+  if (!id) return
+  emit('session-settings', id)
 }
 
 // 菜单禁用态：按当前 tabs 快照计算各关闭项是否可执行
@@ -436,6 +445,9 @@ function onDragEnd(e: DragEvent): void {
           @click="openInWindow"
         >
           <v-list-item-title>新窗口打开</v-list-item-title>
+        </v-list-item>
+        <v-list-item prepend-icon="mdi-tune-vertical" @click="openSessionSettings">
+          <v-list-item-title>会话设置</v-list-item-title>
         </v-list-item>
         <v-divider />
         <v-list-item

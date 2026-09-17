@@ -9,6 +9,7 @@ use crate::services;
 
 /// `mysql_table_design_get` (conn_id: String, table: String) -> MySqlTableDesign
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_table_design_get(
     conn_id: String,
     table: String,
@@ -20,6 +21,7 @@ pub async fn mysql_table_design_get(
 ///
 /// 先经 validate_change 基础校验，再逐条执行 DDL；返回的 DDL 文本供前端展示预览。
 #[tauri::command]
+#[specta::specta]
 pub async fn mysql_table_design_save(
     conn_id: String,
     change: MySqlDesignChange,
