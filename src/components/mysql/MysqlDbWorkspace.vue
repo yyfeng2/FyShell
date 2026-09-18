@@ -206,9 +206,6 @@
       </div>
     </div>
 
-    <!-- 凭据保险库解锁对话框（已存连接被主密码保护时） -->
-    <VaultUnlockDialog v-model="showUnlockDialog" />
-
     <!-- 表：直接嵌入现有数据网格（不修改 MysqlDataGrid） -->
     <div v-else-if="activeTab === 'table'" class="mysql-ws__grid-wrap">
       <MysqlDataGrid />
@@ -705,6 +702,9 @@
 
     <!-- 新建连接对话框：复用现有 MysqlConnectionForm（v-model + @connected，接口不变） -->
     <MysqlConnectionForm v-model="showConnForm" @connected="onFormConnected" />
+
+    <!-- 凭据保险库解锁对话框（已存连接被主密码保护时） -->
+    <VaultUnlockDialog v-model="showUnlockDialog" />
   </v-card>
 </template>
 
