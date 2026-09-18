@@ -490,6 +490,27 @@ function toggleFolder(id: string): void {
   expanded.value = set
 }
 
+/**
+ * 树节点图标着色：自定义色优先，未设置按会话类型给 Navicat 式分类色。
+ * 返回 Vuetify 语义色名（双主题自适应）；文件头/分区不着色（null）。
+ */
+function treeIconColor(node: FlatNode): string | null {
+  if (node.isSection) return null
+  if (node.isFolder) return 'amber'
+  if (node.color) return node.color
+  if (node.isDbLeaf || node.isMysql) return 'primary'
+  switch (node.sessionType) {
+    case 'telnet':
+      return 'warning'
+    case 'rlogin':
+      return 'accent'
+    case 'serial':
+      return 'info'
+    default:
+      return 'success'
+  }
+}
+
 function onNodeClick(node: FlatNode): void {
   // 分区头：单击折叠/展开
   if (node.isSection) {
@@ -1447,7 +1468,7 @@ onUnmounted(() => {
                               : 'mdi-console'"
                 size="14"
                 class="mr-1"
-                :style="!node.isFolder && !node.isSection && node.color ? { color: node.color } : undefined"
+                :color="treeIconColor(node) ?? undefined"
               />
               <!-- 会话节点单行：以主机地址显示（Navicat 风格） -->
               <div class="workspace__node-text">

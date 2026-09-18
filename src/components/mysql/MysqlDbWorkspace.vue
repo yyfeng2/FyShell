@@ -22,7 +22,7 @@
         :disabled="!store.isConnected"
         @click="activeTab = tab.key"
       >
-        <v-icon size="small" class="mr-1">{{ tab.icon }}</v-icon>
+        <v-icon size="small" class="mr-1" :color="TAB_COLORS[tab.key] ?? undefined">{{ tab.icon }}</v-icon>
         {{ tab.label }}
       </v-btn>
       <v-divider vertical inset class="mx-1" />
@@ -30,6 +30,7 @@
       <v-btn
         size="small"
         variant="text"
+        color="error"
         prepend-icon="mdi-lan-disconnect"
         :disabled="!store.isConnected"
         title="断开当前 MySQL 连接"
@@ -55,6 +56,7 @@
       <v-btn
         size="small"
         variant="text"
+        color="primary"
         prepend-icon="mdi-database-plus"
         :disabled="!store.isConnected"
         title="新建数据库"
@@ -65,6 +67,7 @@
       <v-btn
         size="small"
         variant="text"
+        color="error"
         prepend-icon="mdi-database-remove"
         :disabled="!store.isConnected || !currentDb"
         title="删除当前选中的数据库"
@@ -125,7 +128,7 @@
     <div v-if="!store.isConnected" class="mysql-ws__placeholder">
       <div class="mysql-ws__connect-entry">
         <div class="text-subtitle-1">
-          <v-icon size="small" class="mr-1">mdi-database-outline</v-icon>MySQL 连接
+          <v-icon size="small" class="mr-1" color="primary">mdi-database-outline</v-icon>MySQL 连接
         </div>
         <div class="text-caption text-medium-emphasis mt-1">
           选择已有连接进入对象工作台，或新建连接
@@ -147,7 +150,7 @@
             :key="c.id"
           >
             <template #prepend>
-              <v-icon size="small">mdi-database-outline</v-icon>
+              <v-icon size="small" color="primary">mdi-database-outline</v-icon>
             </template>
             <v-list-item-title class="text-body-2">{{ c.name }}</v-list-item-title>
             <v-list-item-subtitle class="text-caption">
@@ -258,7 +261,7 @@
               @click="selectObject(obj.name)"
             >
               <template #prepend>
-                <v-icon size="small">{{ kindIcon }}</v-icon>
+                <v-icon size="small" :color="kindColor">{{ kindIcon }}</v-icon>
               </template>
               <v-list-item-title class="text-body-2">{{ obj.name }}</v-list-item-title>
               <v-list-item-subtitle v-if="obj.comment" class="text-caption">
@@ -283,7 +286,7 @@
       <!-- 主区：DDL 查看 + 新建/编辑/删除 -->
       <div class="mysql-ws__main">
         <div class="d-flex align-center mb-1">
-          <v-icon size="small" class="mr-1">{{ kindIcon }}</v-icon>
+          <v-icon size="small" class="mr-1" :color="kindColor">{{ kindIcon }}</v-icon>
           <span class="text-body-2 mr-2 text-medium-emphasis">
             {{ selectedObject || `选择${kindLabel}` }}
           </span>
@@ -362,7 +365,7 @@
               @click="selectUser(u)"
             >
               <template #prepend>
-                <v-icon size="small">mdi-account-outline</v-icon>
+                <v-icon size="small" color="teal">mdi-account-outline</v-icon>
               </template>
               <v-list-item-title class="text-body-2">{{ u.user }}@{{ u.host }}</v-list-item-title>
               <v-list-item-subtitle v-if="u.comment" class="text-caption">
@@ -386,7 +389,7 @@
 
       <div class="mysql-ws__main">
         <div class="d-flex align-center mb-1">
-          <v-icon size="small" class="mr-1">mdi-account-outline</v-icon>
+          <v-icon size="small" class="mr-1" color="teal">mdi-account-outline</v-icon>
           <span class="text-body-2 mr-2 text-medium-emphasis">
             {{ selectedUser ? `${selectedUser.user}@${selectedUser.host}` : '选择用户' }}
           </span>
@@ -488,7 +491,7 @@
             :style="{ left: `${t.x}px`, top: `${t.y}px`, width: `${MODEL_CARD_W}px`, height: `${MODEL_CARD_H}px` }"
           >
             <div class="mysql-ws__model-card-title">
-              <v-icon size="x-small" class="mr-1">mdi-table</v-icon>{{ t.table }}
+              <v-icon size="x-small" class="mr-1" color="primary">mdi-table</v-icon>{{ t.table }}
             </div>
             <div class="mysql-ws__model-card-sub text-caption">
               {{ t.columns }} 字段 · {{ t.fkCount }} 外键
@@ -505,7 +508,7 @@
     <v-dialog v-model="showDdlDialog" width="640" persistent>
       <v-card>
         <v-card-title class="d-flex align-center">
-          <v-icon size="small" class="mr-2">{{ kindIcon }}</v-icon>
+          <v-icon size="small" class="mr-2" :color="kindColor">{{ kindIcon }}</v-icon>
           {{ dialogMode === 'create' ? `新建${kindLabel}` : `编辑${kindLabel}` }}
         </v-card-title>
         <v-divider />
@@ -770,6 +773,15 @@ const TABS: WorkspaceTabItem[] = [
   { key: 'model', label: '模型', icon: 'mdi-sitemap' },
 ]
 
+/** 顶栏对象类型图标语义色（Navicat 式分类色；未登记项不着色） */
+const TAB_COLORS: Partial<Record<WorkspaceTab, string>> = {
+  table: 'primary',
+  view: 'success',
+  function: 'warning',
+  user: 'teal',
+  model: 'accent',
+}
+
 const activeTab = ref<WorkspaceTab>('table')
 const showBackup = ref(false)
 const showAutoRun = ref(false)
@@ -793,6 +805,14 @@ const KIND_ICONS: Record<MySqlObjectKind, string> = {
   trigger: 'mdi-flash-outline',
   event: 'mdi-clock-outline',
 }
+/** 对象类型 -> 图标语义色（Navicat 式分类，双主题自适应） */
+const KIND_COLORS: Record<MySqlObjectKind, string> = {
+  view: 'success',
+  function: 'warning',
+  procedure: 'accent',
+  trigger: 'error',
+  event: 'info',
+}
 
 /** 新建查询：toast 提示（父级无监听方，仅作引导） */
 function onNewQuery(): void {
@@ -811,6 +831,8 @@ const currentKind = computed<MySqlObjectKind | null>(() => {
 
 const kindLabel = computed(() => (currentKind.value ? KIND_LABELS[currentKind.value] : ''))
 const kindIcon = computed(() => (currentKind.value ? KIND_ICONS[currentKind.value] : ''))
+/** 当前对象面板图标语义色（Navicat 式分类色，双主题自适应） */
+const kindColor = computed(() => (currentKind.value ? KIND_COLORS[currentKind.value] : ''))
 
 const objects = ref<MySqlObjectInfo[]>([])
 const objectsLoading = ref(false)

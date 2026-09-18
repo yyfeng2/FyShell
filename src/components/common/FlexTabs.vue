@@ -380,7 +380,7 @@ function onDragEnd(e: DragEvent): void {
       >
         <v-icon v-if="tab.icon" :icon="tab.icon" size="14" class="flex-tabs__icon" />
         <!-- 固定标识：图钉图标（固定后关闭按钮隐藏，标签受关闭保护） -->
-        <v-icon v-if="isFixed(tab.id)" icon="mdi-pin" size="12" class="flex-tabs__pin" />
+        <v-icon v-if="isFixed(tab.id)" icon="mdi-pin" color="warning" size="12" class="flex-tabs__pin" />
         <span class="flex-tabs__title" :title="tab.title">{{ tab.title }}</span>
         <v-btn
           v-if="(tab.closable ?? showClose) && !isFixed(tab.id)"

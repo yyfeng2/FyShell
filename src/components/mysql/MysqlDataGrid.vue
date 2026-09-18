@@ -12,6 +12,7 @@
       <v-btn
         size="small"
         variant="outlined"
+        color="primary"
         prepend-icon="mdi-database-plus"
         :disabled="store.isConnected"
         :title="store.isConnected ? '已连接，请先断开' : '建立连接'"
@@ -22,6 +23,7 @@
       <v-btn
         size="small"
         variant="text"
+        color="error"
         prepend-icon="mdi-lan-disconnect"
         :disabled="!store.isConnected"
         @click="doDisconnect"
@@ -32,6 +34,7 @@
       <v-btn
         size="small"
         variant="text"
+        color="primary"
         prepend-icon="mdi-table-edit"
         :disabled="!store.isConnected || !selectedTable"
         title="设计选中表"
@@ -42,6 +45,7 @@
       <v-btn
         size="small"
         variant="text"
+        color="primary"
         prepend-icon="mdi-table-plus"
         :disabled="!store.isConnected"
         title="新建表"
@@ -169,6 +173,7 @@
             <v-btn
               size="small"
               variant="outlined"
+              color="primary"
               prepend-icon="mdi-plus-circle-outline"
               :disabled="!store.isConnected || store.inTransaction"
               @click="doBegin"
@@ -179,6 +184,7 @@
               size="small"
               class="ml-1"
               variant="outlined"
+              color="success"
               prepend-icon="mdi-check"
               :disabled="!store.isConnected || !store.inTransaction"
               @click="doCommit"
