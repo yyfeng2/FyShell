@@ -136,7 +136,7 @@ const mysqlTreeDbs = ref<{
 } | null>(null)
 
 /** 导航分区展开态（SSH 服务 / 数据库服务，单击分区头收缩） */
-const openSections = ref(new Set(['section-ssh', 'section-db']))
+const openSections = ref(new Set(['section-ssh', 'section-db', 'section-redis']))
 
 // 连接状态变化：任意入口（会话树/工作台）连接成功后，把数据库子节点挂到
 // 匹配的会话节点（按 host 匹配，MySQL 类型与用户名一致者优先）；断开时清空。
@@ -277,18 +277,21 @@ const flatNodes = computed<FlatNode[]>(() => {
   const kw = keyword.value.trim().toLowerCase()
   const forceExpand = kw.length > 0
   const out: FlatNode[] = []
-  const walk = (list: SessionNode[], depth: number, section: 'ssh' | 'db') => {
+  const walk = (list: SessionNode[], depth: number, section: 'ssh' | 'db' | 'redis') => {
     for (const n of list) {
-      // mysql 或 redis 的数据库会话（分区挂靠、树图标与连接路由共用此判定）
-      const isMysqlSession = !n.is_folder && (n.config?.session_type === 'mysql' || n.config?.session_type === 'redis')
-      // 分区过滤：SSH 区跳过数据库会话；数据库区只保留数据库会话（MySQL/Redis）
-      //（数据库区不显示文件夹，扁平列出其中嵌套的数据库会话）
-      if (section === 'ssh' && isMysqlSession) continue
-      if (section === 'db' && n.is_folder) {
+      // mysql 与 redis 数据库会话分别挂数据库区/Redis 区（树图标与连接路由共用判定）
+      const isMysqlSession = !n.is_folder && n.config?.session_type === 'mysql'
+      const isRedisSession = !n.is_folder && n.config?.session_type === 'redis'
+      const isDbSession = isMysqlSession || isRedisSession
+      // 分区过滤：SSH 区跳过数据库会话；数据库区只保留 MySQL；Redis 区只保留 Redis
+      //（数据库/Redis 区不显示文件夹，扁平列出其中嵌套的会话）
+      if (section === 'ssh' && isDbSession) continue
+      if ((section === 'db' || section === 'redis') && n.is_folder) {
         walk(n.children ?? [], depth, section)
         continue
       }
       if (section === 'db' && !isMysqlSession) continue
+      if (section === 'redis' && !isRedisSession) continue
       out.push({
         id: n.id,
         // 主机显示（Navicat 风格单行）：会话节点以主机地址为主，名称兜底
@@ -299,7 +302,7 @@ const flatNodes = computed<FlatNode[]>(() => {
         isOpen: !!n.is_folder && (forceExpand || expanded.value.has(n.id)),
         hostLabel: '',
         encoding: (n.config?.encoding as string | undefined) ?? null,
-        isMysql: isMysqlSession,
+        isMysql: isDbSession,
         sessionType: n.config?.session_type ?? null,
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
@@ -347,7 +350,7 @@ const flatNodes = computed<FlatNode[]>(() => {
   }
 
   // SSH 服务分区：文件夹 + SSH 会话（会话/文件夹缩进一级，不与分区头齐平）
-  sectionHeader('section-ssh', 'SSH 服务')
+  sectionHeader('section-ssh', 'SSH')
   if (openSections.value.has('section-ssh')) {
     walk(filterTree(nodes.value, kw), 1, 'ssh')
   }
@@ -367,7 +370,7 @@ const flatNodes = computed<FlatNode[]>(() => {
   })
 
   // 数据库服务分区：数据库（MySQL/Redis）会话 + 已保存连接常驻节点 + 库列表（会话缩进一级，不与分区头齐平）
-  sectionHeader('section-db', '数据库服务')
+  sectionHeader('section-db', '数据库')
   if (openSections.value.has('section-db')) {
     walk(filterTree(nodes.value, kw), 1, 'db')
     const dbs = mysqlTreeDbs.value
@@ -449,6 +452,36 @@ const flatNodes = computed<FlatNode[]>(() => {
     }
   }
 
+  // Redis 独立分区：Redis 会话 + 已存连接常驻节点（对齐数据库服务的 Navicat 模式）
+  sectionHeader('section-redis', 'Redis')
+  if (openSections.value.has('section-redis')) {
+    walk(filterTree(nodes.value, kw), 1, 'redis')
+    // Redis 已存连接常驻节点（与同 host 的 Redis 会话去重；库管理在工作台 Tab 内）
+    const redisSessionHosts = new Set<string>()
+    for (const n of nodes.value) {
+      if (!n.is_folder && n.config?.session_type === 'redis' && n.config.host) {
+        redisSessionHosts.add(n.config.host)
+      }
+    }
+    for (const c of useRedisStore().savedConnections) {
+      if (redisSessionHosts.has(c.host)) continue
+      out.push({
+        id: `redisconn-${c.id}`,
+        name: c.host,
+        depth: 1,
+        isFolder: false,
+        color: null,
+        isOpen: false,
+        hostLabel: '',
+        encoding: null,
+        isMysql: false,
+        sessionType: 'redis',
+        isSavedConn: true,
+        savedConnId: c.id,
+      })
+    }
+  }
+
   return out
 })
 
@@ -509,6 +542,8 @@ function treeIconColor(node: FlatNode): string | null {
   // Redis 不额外换色，避免同图标靠颜色区分反而不易辨别
   if (node.isDbLeaf || node.isMysql) return 'primary'
   switch (node.sessionType) {
+    case 'redis':
+      return 'primary'
     case 'telnet':
       return 'warning'
     case 'rlogin':
@@ -556,9 +591,14 @@ function onNodeClick(node: FlatNode): void {
     void switchMysqlDbFromTree(node)
     return
   }
-  // 已保存连接节点：打开 MySQL 工作台并按保存配置建连
+  // 已保存连接节点：打开对应工作台并按保存配置建连（MySQL/Redis）
   if (node.isSavedConn) {
-    void connectMysqlSaved(node.savedConnId ?? '')
+    if (node.isMysql) {
+      void connectMysqlSaved(node.savedConnId ?? '')
+    } else {
+      openRedisTab()
+      void useRedisStore().connectSaved(node.savedConnId ?? '')
+    }
     return
   }
   // 会话单击即连接：已有该会话终端 Tab 时直接激活，不重复建连（双击也不会开两个 Tab）
@@ -1534,14 +1574,14 @@ onUnmounted(() => {
                 'workspace__tree-node--session': !node.isFolder,
                 'workspace__tree-node--section': node.isSection,
               }"
-              :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
+              :style="{ paddingLeft: `${8 + node.depth * 14 + (node.isDbLeaf ? 14 : 0)}px` }"
               @click="onNodeClick(node)"
               @keydown="onNodeKeydown(node, $event)"
               @contextmenu.prevent="onTreeContextmenu(node, $event)"
             >
               <!-- 数据库 host 节点收缩箭头：点击折叠/展开库列表（@click.stop 不触发连接） -->
               <v-icon
-                v-if="node.isSavedConn || node.id === 'db-standalone'"
+                v-if="(node.isSavedConn && node.isMysql) || node.id === 'db-standalone'"
                 :icon="node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right'"
                 size="14"
                 class="mr-1"
@@ -1557,7 +1597,9 @@ onUnmounted(() => {
                       ? 'mdi-database-outline'
                       : node.isMysql
                         ? 'mdi-database'
-                        : node.sessionType === 'telnet'
+                        : node.sessionType === 'redis'
+                          ? 'mdi-database'
+                          : node.sessionType === 'telnet'
                           ? 'mdi-console-network'
                           : node.sessionType === 'rlogin'
                             ? 'mdi-send'
