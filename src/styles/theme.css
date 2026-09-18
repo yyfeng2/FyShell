@@ -318,6 +318,41 @@ body {
   font-size: 14px;
 }
 
+/* ---------- 右键菜单/下拉菜单放宽 + 字号降 2（2026-09-19 用户反馈 28px 太窄） ---------- */
+
+/* 右键菜单与下拉菜单项：28px → 32px（Vuetify compact 档标准），解除拥挤；
+   MenuBar 顶栏弹出菜单（.menubar__list）维持此前验收的紧凑风格（靠后规则覆盖回 0） */
+.v-overlay-container .v-menu .v-list-item {
+  min-height: 32px !important;
+}
+
+/* 菜单容器上下留呼吸感：2px → 4px */
+.v-overlay-container .v-menu .v-list {
+  padding: 4px 0;
+}
+
+/* 菜单文字降 2 个字号：14px → 12px；图标随字号缩放 */
+.v-overlay-container .v-menu .v-list-item-title {
+  font-size: 12px;
+}
+
+.v-overlay-container .v-menu .v-list-item .v-icon {
+  font-size: 12px;
+}
+
+/* MenuBar 顶栏弹出菜单保持紧凑（13px 字号 + 最小行高），排除在本次放宽之外 */
+.v-overlay-container .menubar__list .v-list-item {
+  min-height: 0 !important;
+}
+
+.v-overlay-container .menubar__list .v-list-item-title {
+  font-size: 13px;
+}
+
+.v-overlay-container .menubar__list {
+  padding: 2px 0;
+}
+
 /* ---------- 终端区 ---------- */
 
 /* xterm 终端容器：占满父级、无内边距，避免终端区周围出现白边 */
