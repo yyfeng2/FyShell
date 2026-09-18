@@ -118,11 +118,27 @@ defineEmits<{ (e: 'action', action: string): void }>()
 .menubar {
   display: flex;
   align-items: center;
-  height: 20px;
+  height: 18px;
   padding: 0 4px;
   border-bottom: 1px solid var(--fy-chrome-border, #d5d9de);
   background: var(--fy-chrome-bg, #f0f2f5);
   user-select: none;
+}
+
+/* 下拉菜单项行距压缩到最小（0.1 字符级）：覆盖 Vuetify v-list-item 默认行高/padding */
+.menubar :deep(.v-list-item) {
+  min-height: 0;
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.menubar :deep(.v-list-item-title) {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.menubar :deep(.v-divider) {
+  margin: 2px 0;
 }
 
 .menubar__shortcut {
@@ -133,13 +149,13 @@ defineEmits<{ (e: 'action', action: string): void }>()
 
 .menubar__item {
   font-size: 14px;
-  padding: 2px 8px;
+  padding: 0 6px;
   border-radius: 3px;
   cursor: pointer;
   color: inherit;
   background: transparent;
   border: none;
-  line-height: 1.4;
+  line-height: 18px;
 }
 
 .menubar__item:hover {

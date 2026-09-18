@@ -236,8 +236,10 @@ async function loadTree(): Promise<void> {
 }
 
 /** 启动恢复历史库（localStorage）：未连接状态下树中仍以灰色展示上次连接的库列表（Navicat 风格）。
-    挂靠分流：同 host MySQL 会话节点 → 挂会话节点；已存连接同 host → 由常驻节点 host 匹配展示；
-    都无 → 走独立节点兜底分支 */
+    挂靠分流（三选一，避免重复展示）：
+    a) 同 host MySQL 会话节点 → 挂会话节点（sessionId）；
+    b) 无会话节点但已存连接同 host → 挂已存连接常驻节点（savedId）；
+    c) 都无 → 双 null 走独立节点兜底分支 */
 function restoreMysqlTreeHistory(): void {
   if (useMysqlStore().connId || mysqlTreeDbs.value) return
   const raw = localStorage.getItem('mysql_tree_history')
@@ -249,14 +251,17 @@ function restoreMysqlTreeHistory(): void {
     return
   }
   if (!history?.host || !Array.isArray(history.databases)) return
+  // a) 同 host MySQL 会话节点优先（与 refreshMysqlTreeDbs 的挂靠规则一致）
   const sessionMatch = nodes.value.find(
     (n) => !n.is_folder && n.config?.session_type === 'mysql' && n.config.host === history.host,
   )
+  // b) 无会话节点时落到已存连接常驻节点（savedconn 分支按 host 匹配展示历史库）
+  const savedConn = useMysqlStore().savedConnections.find((c) => c.host === history.host) ?? null
   mysqlTreeDbs.value = {
     sessionId: sessionMatch?.id ?? null,
     host: history.host,
     databases: history.databases,
-    savedId: null,
+    savedId: savedConn?.id ?? null,
     connected: false,
   }
 }
