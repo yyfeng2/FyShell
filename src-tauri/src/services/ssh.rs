@@ -496,6 +496,12 @@ pub async fn connect(
         config.keepalive_interval =
             Some(Duration::from_secs(u64::from(cfg.keepalive_interval.max(1))));
     }
+    // 压缩：SSH 选项「连接 → 启用压缩」（russh 需 flate2 feature；默认关闭）
+    config.preferred.compression = if settings_flag("sshopt_compression", false) {
+        std::borrow::Cow::Borrowed(&[russh::compression::ZLIB])
+    } else {
+        std::borrow::Cow::Borrowed(&[russh::compression::NONE])
+    };
 
     let handler = SshClientHandler {
         app: app.clone(),
@@ -577,6 +583,24 @@ pub async fn connect(
             write_tx,
         },
     );
+
+    // SSH 选项自启（连接成功后触发，不阻塞 connect 返回）：
+    // ① 隧道自启：该会话启用中的规则逐个后台启动
+    //    （已在运行 / 远程转发等错误静默跳过，不影响会话本身）
+    if settings_flag("sshopt_tunnel_auto_start", true) {
+        let rules = crate::services::tunnel::list_rules(Some(&cfg.id)).unwrap_or_default();
+        for rule in rules.into_iter().filter(|r| r.enabled) {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::services::tunnel::start_tunnel(&app, rule);
+            });
+        }
+    }
+    // ② 日志自启：开启该会话输出落盘（read_loop 未启用时 write_log 立即返回）
+    if settings_flag("sshopt_log_auto_start", false) {
+        let _ = crate::services::session_log::toggle(key, true);
+    }
+
     emit_status(app, key, STATUS_CONNECTED);
     Ok(())
 }
