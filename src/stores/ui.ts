@@ -4,7 +4,8 @@
  * 负责：
  * - 全局确认弹层队列（confirm 返回 Promise<boolean>，供危险操作二次确认）
  * - 全局 toast 提示队列
- * - 主题（深色/浅色）切换，持久化到 localStorage
+ * - 主题（深色/浅色）运行时两态值：持久化唯一来源是 settings store 的
+ *   theme_mode（SQLite），本 store 只持有 GlobalDialog 写入 Vuetify 用的当前色
  * - 左导航折叠 / 自动隐藏状态
  * - 全局快捷键注册辅助（Ctrl+T / Ctrl+Tab / Alt+1~9 等）
  */
@@ -101,20 +102,16 @@ export const useUiStore = defineStore('ui', () => {
 
   // ---------------- 主题 ----------------
 
-  const THEME_KEY = 'fyshell.theme'
-
-  function loadTheme(): 'dark' | 'light' {
-    const saved = localStorage.getItem(THEME_KEY)
-    // 经典浅灰为默认基调（与 vuetify.ts defaultTheme 保持一致）
-    return saved === 'dark' ? 'dark' : 'light'
-  }
-
-  /** 当前主题，默认深色（架构红线：深色主题全覆盖） */
-  const theme = ref<'dark' | 'light'>(loadTheme())
+  /**
+   * 当前主题实际颜色（仅运行时两态载体，不做持久化）。
+   * 权威来源：settings store 的 theme_mode（light/dark/auto，SQLite 持久化），
+   * 启动后由 settings.ensureLoaded → applyThemeMode → setTheme 覆盖本值。
+   * 初始 'light' 与 Vuetify defaultTheme 一致，避免首帧闪烁差异。
+   */
+  const theme = ref<'dark' | 'light'>('light')
 
   function setTheme(value: 'dark' | 'light'): void {
     theme.value = value
-    localStorage.setItem(THEME_KEY, value)
   }
 
   function toggleTheme(): void {

@@ -39,6 +39,7 @@ import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore, type SessionConfig } from '@/stores/session'
+import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useTerminalStore } from '@/stores/terminal'
 import { debugLog } from '@/api/channels'
 import { useDragOutWindow } from '@/composables/useDragOutWindow'
@@ -49,6 +50,8 @@ const ui = useUiStore()
 const sessionStore = useSessionStore()
 /** 高功能设置（主题模式/终端项/SFTP 目录），持久化到后端 SQLite settings 表 */
 const settings = useSettingsStore()
+/** SSH 会话级选项（默认标签色等设置兜底，见 openTerminal） */
+const sshOpts = useSshOptionsStore()
 /** 终端连接管理：openTerminal/closeBySessionId 由 store 统一管理连接生命周期 */
 const terminalStore = useTerminalStore()
 /** 标签拖出新窗口（P1）：创建 WebviewWindow 展示会话终端 */
@@ -105,6 +108,12 @@ interface FlatNode {
   isSection?: boolean
   /** 分区虚线分隔 */
   isSeparator?: boolean
+  /** 已保存连接常驻节点（数据库服务分区，未连接也显示主机名） */
+  isSavedConn?: boolean
+  /** 已保存连接节点对应的 savedConnections.id */
+  savedConnId?: string
+  /** 库名（isDbLeaf 节点的目标库，切换时直接使用，免解析 id 前缀） */
+  dbName?: string
 }
 
 // ---------------- 会话树 ----------------
@@ -115,10 +124,14 @@ const expanded = ref(new Set<string>())
 
 /** 已连接 MySQL 会话的数据库子节点（Navicat 风格：库作为会话子节点展示）。
     sessionId 为 null 表示树中无 MySQL 会话，库列表挂到数据库服务分区的独立节点下
-    （host 为连接主机，作为独立节点显示名） */
-const mysqlTreeDbs = ref<{ sessionId: string | null; host: string; databases: string[] } | null>(
-  null,
-)
+    （host 为连接主机，作为独立节点显示名）；savedId 为当前活动连接对应的已保存连接 id
+    （已保存连接常驻节点优先挂载） */
+const mysqlTreeDbs = ref<{
+  sessionId: string | null
+  host: string
+  databases: string[]
+  savedId: string | null
+} | null>(null)
 
 /** 导航分区展开态（SSH 服务 / 数据库服务，单击分区头收缩） */
 const openSections = ref(new Set(['section-ssh', 'section-db']))
@@ -153,9 +166,15 @@ async function refreshMysqlTreeDbs(): Promise<void> {
     const match =
       candidates.sort((a, b) => scoreOf(b, cfg) - scoreOf(a, cfg))[0] ??
       nodes.value.find((n) => !n.is_folder && n.config?.session_type === 'mysql')
-    mysqlTreeDbs.value = { sessionId: match?.id ?? null, host: result.host, databases }
+    // 当前活动连接来自已保存连接（工作台入口）时优先挂到对应常驻节点
+    const activeSavedId = store.activeSavedId
+    const savedId =
+      activeSavedId && store.savedConnections.some((c) => c.id === activeSavedId)
+        ? activeSavedId
+        : null
+    mysqlTreeDbs.value = { sessionId: match?.id ?? null, host: result.host, databases, savedId }
     debugLog(
-      `[mysql-tree] conn=${id} databases=${databases.length} target=${match?.id ?? 'standalone'}`,
+      `[mysql-tree] conn=${id} databases=${databases.length} saved=${savedId ?? '-'} target=${match?.id ?? 'standalone'}`,
     )
     if (match) {
       expanded.value = new Set([...expanded.value, match.id])
@@ -281,8 +300,13 @@ const flatNodes = computed<FlatNode[]>(() => {
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
         walk(n.children ?? [], depth + 1, section)
-      } else if (section === 'db' && mysqlTreeDbs.value?.sessionId === n.id) {
+      } else if (
+        section === 'db' &&
+        mysqlTreeDbs.value?.savedId === null &&
+        mysqlTreeDbs.value?.sessionId === n.id
+      ) {
         // 已连接的 MySQL 会话：数据库作为子节点展示（Navicat 风格）
+        // （savedId 非空时库列表挂已保存连接常驻节点，避免同一库挂两处）
         for (const dbName of mysqlTreeDbs.value.databases) {
           out.push({
             id: `db-${n.id}-${dbName}`,
@@ -295,6 +319,7 @@ const flatNodes = computed<FlatNode[]>(() => {
             encoding: null,
             isMysql: false,
             isDbLeaf: true,
+            dbName,
           })
         }
       }
@@ -337,15 +362,59 @@ const flatNodes = computed<FlatNode[]>(() => {
     isSeparator: true,
   })
 
-  // 数据库服务分区：MySQL 会话 + 库列表
+  // 数据库服务分区：MySQL 会话 + 已保存连接常驻节点 + 库列表
   sectionHeader('section-db', '数据库服务')
   if (openSections.value.has('section-db')) {
     walk(filterTree(nodes.value, kw), 0, 'db')
-    // 树中无 MySQL 会话时：独立节点显示连接主机 + 库列表（Navicat 风格）
-    if (mysqlTreeDbs.value && mysqlTreeDbs.value.sessionId === null) {
+    const dbs = mysqlTreeDbs.value
+    // 已保存连接常驻节点（Navicat 风格：未连接也显示主机名，点击连接，连接后展开库列表）。
+    // 与 session 树中同 host 的 MySQL 会话去重（session 树已有该 host 则不重复出现）
+    const sessionHosts = new Set<string>()
+    for (const n of nodes.value) {
+      if (!n.is_folder && n.config?.session_type === 'mysql' && n.config.host) {
+        sessionHosts.add(n.config.host)
+      }
+    }
+    for (const c of useMysqlStore().savedConnections) {
+      if (sessionHosts.has(c.host)) continue
+      const isActive = dbs?.savedId === c.id
+      out.push({
+        id: `savedconn-${c.id}`,
+        name: c.host,
+        depth: 0,
+        isFolder: false,
+        color: null,
+        isOpen: isActive,
+        hostLabel: '',
+        encoding: null,
+        isMysql: true,
+        isSavedConn: true,
+        savedConnId: c.id,
+      })
+      // 该常驻节点是当前活动连接：库列表挂其下（Navicat 展开效果）
+      if (isActive && dbs) {
+        for (const dbName of dbs.databases) {
+          out.push({
+            id: `savdb-${c.id}-${dbName}`,
+            name: dbName,
+            depth: 1,
+            isFolder: false,
+            color: null,
+            isOpen: false,
+            hostLabel: '',
+            encoding: null,
+            isMysql: false,
+            isDbLeaf: true,
+            dbName,
+          })
+        }
+      }
+    }
+    // 兜底：既无已保存连接匹配也无 session 树匹配时的独立节点（连接主机 + 库列表）
+    if (dbs && dbs.savedId === null && dbs.sessionId === null) {
       out.push({
         id: 'db-standalone',
-        name: mysqlTreeDbs.value.host || 'MySQL 数据库',
+        name: dbs.host || 'MySQL 数据库',
         depth: 0,
         isFolder: false,
         color: null,
@@ -355,7 +424,7 @@ const flatNodes = computed<FlatNode[]>(() => {
         isMysql: true,
         isDbLeaf: false,
       })
-      for (const dbName of mysqlTreeDbs.value.databases) {
+      for (const dbName of dbs.databases) {
         out.push({
           id: `db-standalone-${dbName}`,
           name: dbName,
@@ -367,6 +436,7 @@ const flatNodes = computed<FlatNode[]>(() => {
           encoding: null,
           isMysql: false,
           isDbLeaf: true,
+          dbName,
         })
       }
     }
@@ -442,6 +512,11 @@ function onNodeClick(node: FlatNode): void {
     void switchMysqlDbFromTree(node)
     return
   }
+  // 已保存连接节点：打开 MySQL 工作台并按保存配置建连
+  if (node.isSavedConn) {
+    void connectMysqlSaved(node.savedConnId ?? '')
+    return
+  }
   // 会话单击即连接：已有该会话终端 Tab 时直接激活，不重复建连（双击也不会开两个 Tab）
   const existing = tabs.value.find((t) => t.type === 'terminal' && t.sessionId === node.id)
   if (existing) {
@@ -470,7 +545,7 @@ function onNodeKeydown(node: FlatNode, e: KeyboardEvent): void {
 const treeMenu = reactive({ visible: false, x: 0, y: 0, node: null as FlatNode | null })
 
 function onTreeContextmenu(node: FlatNode, e: MouseEvent): void {
-  if (node.isDbLeaf || node.isSection || node.id === 'db-standalone') return
+  if (node.isDbLeaf || node.isSection || node.isSavedConn || node.id === 'db-standalone') return
   selectedId.value = node.id
   treeMenu.x = e.clientX
   treeMenu.y = e.clientY
@@ -535,6 +610,20 @@ async function connectMysqlSession(target: SessionNode): Promise<void> {
   }
 }
 
+/** 点击已保存连接常驻节点：激活 MySQL 工作台 + 按保存配置建连 */
+async function connectMysqlSaved(savedId: string): Promise<void> {
+  const mysqlStore = useMysqlStore()
+  if (!savedId) return
+  // 已在连接同一保存配置时直接复用（双击连发 click 不反复重连）
+  if (mysqlStore.activeSavedId === savedId && mysqlStore.connId) return
+  openMysqlTab()
+  try {
+    await mysqlStore.connectSaved(savedId)
+  } catch {
+    // 连接失败由 MySQL 工作台 v-alert 展示（store.connError）
+  }
+}
+
 /** 树中最近一次切库（时间戳去重：双击会连发 click+dblclick，800ms 内重复点击同一库直接跳过） */
 let lastDbSwitchId = ''
 let lastDbSwitchAt = 0
@@ -543,12 +632,8 @@ let lastDbSwitchAt = 0
 async function switchMysqlDbFromTree(node: FlatNode): Promise<void> {
   const mysqlStore = useMysqlStore()
   const connId = mysqlStore.connId
-  if (!connId) return
-  // 节点 id 格式 `db-${sessionId}-${dbName}` 或 `db-standalone-${dbName}`，库名取尾部
-  const sessionId = mysqlTreeDbs.value?.sessionId
-  const prefix = sessionId === null ? 'db-standalone-' : `db-${sessionId}-`
-  if (!node.id.startsWith(prefix)) return
-  const dbName = node.id.slice(prefix.length)
+  const dbName = node.dbName
+  if (!connId || !dbName) return
   if (dbName === lastDbSwitchId && Date.now() - lastDbSwitchAt < 800) return
   lastDbSwitchId = dbName
   lastDbSwitchAt = Date.now()
@@ -633,20 +718,22 @@ function genTabId(): string {
 
 /** 打开会话终端 Tab（Xshell 多标签：同一会话可重复开 Tab，每标签一条独立连接） */
 function openTerminal(node: { id: string; name: string; color?: string | null }): void {
+  // 标签色：会话节点自定义色优先，未设置时回退 SSH 选项默认标签色（sshopt_default_tab_color）
+  const tabColor: string | null = node.color || sshOpts.defaultTabColor || null
   const tab: WorkTab = {
     id: genTabId(),
     type: 'terminal',
     sessionId: node.id,
     connId: genTabId(),
     title: node.name,
-    color: node.color ?? null,
+    color: tabColor,
   }
   tabs.value.push(tab)
   activeId.value = tab.id
   debugLog(`workspace openTerminal: tab=${tab.id} session=${node.id} tabs=${tabs.value.length}`)
   // 委托 terminalStore.openTerminal 建立 SSH 连接并把输出流绑到 TerminalPane
   void terminalStore
-    .openTerminal({ id: node.id, name: node.name, color: node.color ?? null }, tab.connId)
+    .openTerminal({ id: node.id, name: node.name, color: tabColor }, tab.connId)
     .catch((e) => {
       // 连接失败：移除 UI Tab（store 侧已回滚），展示错误信息
       ui.toast(`连接「${node.name}」失败：${e instanceof Error ? e.message : String(e)}`, 'error')
@@ -1229,7 +1316,7 @@ onMounted(async () => {
     console.error('注册事件监听失败', e)
   }
 
-  await Promise.allSettled([loadTree(), loadTransferSnapshot()])
+  await Promise.allSettled([loadTree(), useMysqlStore().loadSavedConnections(), loadTransferSnapshot()])
 
   // 标签拖出新窗口（P1）：新窗口 URL 带 ?session=<id>，启动后自动打开对应会话终端
   const urlSessionId = new URLSearchParams(window.location.search).get('session')
@@ -1663,7 +1750,7 @@ onUnmounted(() => {
   outline: none;
   background: transparent;
   color: rgb(var(--v-theme-on-surface));
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .workspace__search-input:focus-visible {
@@ -1697,7 +1784,7 @@ onUnmounted(() => {
   padding-right: 6px;
   cursor: pointer;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
   user-select: none;
 }
@@ -1717,7 +1804,7 @@ onUnmounted(() => {
 
 .workspace__node-host {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1758,7 +1845,7 @@ onUnmounted(() => {
 
 .workspace__tree-empty {
   padding: 12px 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
 }
 

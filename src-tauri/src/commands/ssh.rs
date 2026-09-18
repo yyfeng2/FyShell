@@ -56,14 +56,6 @@ pub fn ssh_resize(
     ssh::resize(state.inner(), &id, cols, rows)
 }
 
-/// 会话存活查询：Rust 侧是否持有该会话连接句柄（dev 重启/HMR 后
-/// 前端状态可能残留，以 Rust 侧为真源校正，避免"以为已连接"而黑屏）
-#[tauri::command]
-#[specta::specta]
-pub fn ssh_alive(id: String, state: State<'_, AppState>) -> bool {
-    ssh::alive(state.inner(), &id)
-}
-
 /// HostKey 首次确认：前端确认后取出 AppState::pending_hostkey 中的
 /// oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
 #[tauri::command]

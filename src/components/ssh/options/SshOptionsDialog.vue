@@ -167,7 +167,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options__nav-group {
   padding: 8px 10px 4px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   color: rgb(var(--v-theme-on-surface) / 0.85);
   user-select: none;
@@ -181,7 +181,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;
@@ -215,7 +215,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 /* 副标题 */
 .ssh-options__subtitle {
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
 }
 
@@ -224,7 +224,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   display: flex;
   align-items: center;
   padding: 6px 16px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.6);
   background: rgb(var(--v-theme-primary) / 0.06);
 }
@@ -244,7 +244,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options .settings-dialog__hint {
   margin-top: 10px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
 }
 
@@ -261,12 +261,12 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options .settings-dialog__row-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
 }
 
 .ssh-options .settings-dialog__row-desc {
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   margin-top: 2px;
 }

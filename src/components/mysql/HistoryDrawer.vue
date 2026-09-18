@@ -372,7 +372,7 @@ function formatDuration(durationMs: number | null): string {
 /* SQL 单行摘要：等宽字体 + 溢出省略 */
 .history-drawer__sql {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -381,11 +381,11 @@ function formatDuration(durationMs: number | null): string {
 /* 已保存查询名称 */
 .history-drawer__name {
   font-weight: 400;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .history-drawer__meta {
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .history-drawer__error {

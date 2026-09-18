@@ -9,7 +9,6 @@
 import { computed, onMounted } from 'vue'
 import { useQuickCommandStore } from '@/stores/quickCommand'
 import { useUiStore } from '@/stores/ui'
-import { useSessionStore } from '@/stores/session'
 import { useTerminalStore } from '@/stores/terminal'
 
 const props = withDefaults(
@@ -22,17 +21,10 @@ const props = withDefaults(
 
 const qcStore = useQuickCommandStore()
 const ui = useUiStore()
-const sessionStore = useSessionStore()
 const terminalStore = useTerminalStore()
 
 /** 根级快捷命令（Xshell 快速命令栏仅展示根级命令，分组命令在树内管理） */
 const rootCommands = computed(() => qcStore.nodes.filter((n) => n.kind === 'command'))
-
-/** 会话名（提示用） */
-const sessionName = computed(() => {
-  if (!props.sessionId) return ''
-  return sessionStore.getSessionById(props.sessionId)?.name ?? ''
-})
 
 onMounted(() => {
   // 快捷命令列表未加载时拉取一次（store 内部有 loading 防重）
@@ -111,10 +103,10 @@ async function sendCommand(text: string): Promise<void> {
 .quick-bar__cmd-btn {
   flex: none;
   max-width: 160px;
-  height: 22px;
-  padding: 0 10px;
-  font-size: 12px;
-  line-height: 20px;
+  height: 26px;
+  padding: 0 12px;
+  font-size: 14px;
+  line-height: 24px;
   color: rgb(var(--v-theme-primary, 46 111 219));
   background: rgba(var(--v-theme-primary), 0.08);
   border: 1px solid rgba(var(--v-theme-primary), 0.25);
@@ -135,7 +127,7 @@ async function sendCommand(text: string): Promise<void> {
 }
 
 .quick-bar__empty {
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   padding: 0 8px;
   white-space: nowrap;

@@ -65,6 +65,29 @@
             </template>
           </v-list-item>
           <v-list-item v-if="!favoriteForSide.length" title="暂无收藏路径" disabled />
+          <v-divider />
+          <!-- 收藏入口：无激活器时的添加/取消动作（此前只有下拉且无添加入口，收藏功能不可用） -->
+          <v-list-item
+            :title="isFavorited ? '取消收藏当前路径' : '收藏当前路径'"
+            :prepend-icon="isFavorited ? 'mdi-star-off' : 'mdi-star-plus-outline'"
+            @click="toggleFavorite()"
+          />
+        </v-list>
+      </v-menu>
+      <!-- 路径栏右键菜单（收藏 / 取消收藏；openPathMenu 置坐标后由 v-model 打开） -->
+      <v-menu
+        v-model="pathMenu.visible"
+        :position-x="pathMenu.x"
+        :position-y="pathMenu.y"
+        :close-on-content-click="false"
+        absolute
+      >
+        <v-list density="compact" min-width="200">
+          <v-list-item
+            :title="isFavorited ? '取消收藏当前路径' : '收藏当前路径'"
+            :prepend-icon="isFavorited ? 'mdi-star-off' : 'mdi-star-plus-outline'"
+            @click="toggleFavorite()"
+          />
         </v-list>
       </v-menu>
     </div>
@@ -544,6 +567,12 @@ async function actionUnfavorite(): Promise<void> {
   }
 }
 
+/** 收藏/取消收藏切换（下拉动作项与右键菜单共用，幂等） */
+function toggleFavorite(): void {
+  if (isFavorited.value) void actionUnfavorite()
+  else void actionFavorite()
+}
+
 /** 收藏下拉点击条目：跳转到该路径 */
 function jumpFavorite(fav: SftpFavorite): void {
   if (fav.side !== props.side) return
@@ -854,7 +883,7 @@ onUnmounted(() => {
 
 .file-pane__head {
   height: 30px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.7);
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
@@ -867,7 +896,7 @@ onUnmounted(() => {
 
 .file-pane__arrow {
   margin-left: 2px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .file-pane__body {
@@ -893,7 +922,7 @@ onUnmounted(() => {
 
 .file-pane__row {
   height: 28px;
-  font-size: 12px;
+  font-size: 14px;
   cursor: default;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
@@ -946,14 +975,14 @@ onUnmounted(() => {
 }
 
 .chmod-grid__row--head {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.6);
   user-select: none;
 }
 
 .chmod-grid__label {
-  font-size: 12px;
+  font-size: 14px;
   color: rgba(var(--v-theme-on-surface), 0.85);
 }
 
@@ -963,7 +992,7 @@ onUnmounted(() => {
   justify-content: center;
   height: 100%;
   min-height: 120px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgba(var(--v-theme-on-surface), 0.5);
 }
 </style>

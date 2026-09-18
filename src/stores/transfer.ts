@@ -85,6 +85,8 @@ export const useTransferStore = defineStore('transfer', {
     unlisten: null as UnlistenFn | null,
     /** 引用计数：多视图同时监听时按计数启停 */
     listenerCount: 0,
+    /** listen await 在途标志：防 start() 重入（unlisten 未赋值前第二个 start 会复用 await） */
+    starting: false,
   }),
 
   getters: {
@@ -133,9 +135,10 @@ export const useTransferStore = defineStore('transfer', {
 
     /** 入队上传（进度经 api 层 Channel 实时回调 upsert） */
     async enqueueUpload(sessionId: string, localPath: string, remotePath: string): Promise<void> {
-      await sftpUpload(sessionId, localPath, remotePath, (task) => this.upsert(task))
-      // 后端入队后拉一次快照，拿到后端生成的真实任务 id
-      await this.refresh()
+      // 入队返回后端生成的实时任务快照（含真实任务 id）立即入列；
+      // Channel 回调用 upsert 继续驱动进度，不再每次全量 refresh
+      const task = await sftpUpload(sessionId, localPath, remotePath, (t) => this.upsert(t))
+      this.upsert(task)
     },
 
     /** 入队下载（同上传） */
@@ -144,8 +147,8 @@ export const useTransferStore = defineStore('transfer', {
       remotePath: string,
       localPath: string,
     ): Promise<void> {
-      await sftpDownload(sessionId, remotePath, localPath, (task) => this.upsert(task))
-      await this.refresh()
+      const task = await sftpDownload(sessionId, remotePath, localPath, (t) => this.upsert(t))
+      this.upsert(task)
     },
 
     /** 取消任务（乐观更新状态，最终以后端广播为准） */
@@ -167,11 +170,22 @@ export const useTransferStore = defineStore('transfer', {
     /** 开始监听 transfer-status（幂等，引用计数） */
     async start(): Promise<void> {
       this.listenerCount++
-      if (this.unlisten) return
-      this.unlisten = await listen<unknown>('transfer-status', (event) => {
-        const payload = event.payload as { task?: unknown } | undefined
-        if (payload?.task) this.upsert(payload.task)
-      })
+      if (this.unlisten || this.starting) return
+      this.starting = true
+      try {
+        this.unlisten = await listen<unknown>('transfer-status', (event) => {
+          const payload = event.payload as { task?: unknown } | undefined
+          if (payload?.task) this.upsert(payload.task)
+        })
+      } finally {
+        this.starting = false
+      }
+      // await listen 期间若已被 stop() 把计数归零（unlisten 尚未建立、stop 无事可反注册），
+      // 需在此补一次注销，否则监听器永久泄漏（此后计数为 0 且无人再调用 stop）
+      if (this.listenerCount === 0) {
+        this.unlisten()
+        this.unlisten = null
+      }
     },
 
     /** 停止监听：组件卸载时调用，计数归零才真正 unlisten */

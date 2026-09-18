@@ -35,11 +35,6 @@ export const commands = {
 	/**  终端尺寸变更（按会话 ID 路由 resize） */
 	sshResize: (id: string, cols: number, rows: number) => __TAURI_INVOKE<null>("ssh_resize", { id, cols, rows }),
 	/**
-	 *  会话存活查询：Rust 侧是否持有该会话连接句柄（dev 重启/HMR 后
-	 *  前端状态可能残留，以 Rust 侧为真源校正，避免"以为已连接"而黑屏）
-	 */
-	sshAlive: (id: string) => __TAURI_INVOKE<boolean>("ssh_alive", { id }),
-	/**
 	 *  HostKey 首次确认：前端确认后取出 AppState::pending_hostkey 中的
 	 *  oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
 	 */
@@ -171,8 +166,6 @@ export const commands = {
 	 *  语句，后端仅允许 SELECT 开头的语句，写语句返回错误提示）。
 	 */
 	mysqlExplain: (connId: string, sql: string, analyze: boolean | null) => __TAURI_INVOKE<MySqlExplainResult>("mysql_explain", { connId, sql, analyze }),
-	/**  `mysql_query_multi` (conn_id: String, sql: String) -> Vec<MySqlQueryResult> */
-	mysqlQueryMulti: (connId: string, sql: string) => __TAURI_INVOKE<MySqlQueryResult[]>("mysql_query_multi", { connId, sql }),
 	/**  `mysql_saved_query_list` () -> Vec<MySqlSavedQueryItem> */
 	mysqlSavedQueryList: () => __TAURI_INVOKE<MySqlSavedQueryItem[]>("mysql_saved_query_list"),
 	/**
@@ -193,14 +186,6 @@ export const commands = {
 	mysqlSavedQueryDelete: (id: number) => __TAURI_INVOKE<null>("mysql_saved_query_delete", { id }),
 	/**  `mysql_edit_preview` (conn_id: String, update: MySqlRowUpdate) -> MySqlEditPreview */
 	mysqlEditPreview: (connId: string, update: MySqlRowUpdate) => __TAURI_INVOKE<MySqlEditPreview>("mysql_edit_preview", { connId, update }),
-	/**
-	 *  `mysql_update_row` (conn_id: String, update: MySqlRowUpdate [, confirmed: bool]) -> u64 受影响行数
-	 * 
-	 *  执行前先走一次预览（同时完成标识符校验与 danger 判定），命中危险操作且
-	 *  未确认时返回带提示错误；确认后带 `confirmed: true` 重新调用（复用 P0 的
-	 *  confirm 流程）。
-	 */
-	mysqlUpdateRow: (connId: string, update: MySqlRowUpdate, confirmed: boolean | null) => __TAURI_INVOKE<number>("mysql_update_row", { connId, update, confirmed }),
 	/**
 	 *  `mysql_update_rows` (conn_id: String, batch: MySqlRowUpdateBatch [, confirmed: bool]) -> u64 总受影响行数
 	 * 

@@ -549,7 +549,7 @@ onMounted(async () => {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;
@@ -589,7 +589,7 @@ onMounted(async () => {
 
 .settings-dialog__hint {
   margin-top: 10px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
 }
 
@@ -607,12 +607,12 @@ onMounted(async () => {
 }
 
 .settings-dialog__row-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
 }
 
 .settings-dialog__row-desc {
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   margin-top: 2px;
 }
@@ -627,13 +627,13 @@ onMounted(async () => {
 
 /* 键盘和鼠标分区：分组小标题 + 字段列 + 分隔符行 */
 .key-mouse__group-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   margin: 12px 0 8px;
 }
 
 .key-mouse__hint-line {
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   margin-bottom: 8px;
 }

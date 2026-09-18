@@ -120,10 +120,10 @@ async fn do_list(
         return Ok(Vec::new());
     };
 
-    // 各类别的清单 SQL：第二列为注释占位（视图取 TABLE_COMMENT，其余统一空串）
+    // 各类别的清单 SQL：第二列为注释占位（VIEWS 表无 TABLE_COMMENT 列，视图注释统一空串）
     let sql = match kind {
         MySqlObjectKind::View => {
-            "SELECT TABLE_NAME, COALESCE(TABLE_COMMENT, '') \
+            "SELECT TABLE_NAME, '' \
              FROM information_schema.VIEWS \
              WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME"
         }

@@ -52,6 +52,16 @@ fn quote_table(name: &str) -> Result<String, AppError> {
 /// SELECT DATABASE()（事务连接与池连接同源，当前库上下文一致）。
 pub async fn list_databases(conn_id: &str) -> Result<MySqlDatabaseList, AppError> {
     let (mut conn, from_tx) = take_tx_or_pool(conn_id).await?;
+    // outcome 捕获模式：即使中途出错也归还事务连接，避免用户显式事务失去句柄
+    let outcome = do_list_databases(&mut conn).await;
+    if from_tx {
+        crate::services::mysql::give_tx_conn(conn_id, conn);
+    }
+    outcome
+}
+
+/// 列表主体（拆出以便错误早退时仍归还事务连接）
+async fn do_list_databases(conn: &mut Conn) -> Result<MySqlDatabaseList, AppError> {
     // host 从连接 Opts 取（Opts 在建池时由 ip_or_hostname 构造，前端「复制 Host」复用）
     let host = conn.opts().ip_or_hostname().to_string();
 
@@ -75,9 +85,6 @@ pub async fn list_databases(conn_id: &str) -> Result<MySqlDatabaseList, AppError
         .map_err(mysql_err)?
         .flatten();
 
-    if from_tx {
-        crate::services::mysql::give_tx_conn(conn_id, conn);
-    }
     databases.sort();
     Ok(MySqlDatabaseList {
         host,

@@ -257,7 +257,7 @@ watch(
 /* 补全面板：跟随浅色主题（默认白底，覆盖暗色变量风险） */
 .sql-editor :deep(.cm-tooltip.cm-tooltip-autocomplete > ul) {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* 编辑器右键菜单覆盖层与菜单本体（fixed 定位，跟随鼠标坐标） */

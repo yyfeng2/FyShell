@@ -124,13 +124,13 @@ defineEmits<{ (e: 'action', action: string): void }>()
 }
 
 .menubar__shortcut {
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
   font-family: var(--fy-font);
 }
 
 .menubar__item {
-  font-size: 12px;
+  font-size: 14px;
   padding: 2px 8px;
   border-radius: 3px;
   cursor: pointer;

@@ -13,6 +13,8 @@
         size="small"
         variant="outlined"
         prepend-icon="mdi-database-plus"
+        :disabled="store.isConnected"
+        :title="store.isConnected ? '已连接，请先断开' : '建立连接'"
         @click="showConnForm = true"
       >
         连接
@@ -62,7 +64,7 @@
 
     <div class="mysql-grid__body">
       <!-- 左侧：表列表侧栏（表名/行数/引擎/注释） -->
-      <div class="mysql-grid__sidebar">
+      <div class="mysql-grid__sidebar" :style="{ width: sidebarWidth + 'px', flexBasis: sidebarWidth + 'px' }">
         <div class="d-flex align-center px-2 py-1">
           <v-text-field
             v-model="tableFilter"
@@ -92,11 +94,7 @@
               :key="t.name"
               :active="t.name === selectedTable"
               @click="selectTable(t.name)"
-              @dblclick="dblClickTable(t.name)"
             >
-              <template #prepend>
-                <v-icon size="small">mdi-table-outline</v-icon>
-              </template>
               <v-list-item-title class="text-body-2">{{ t.name }}</v-list-item-title>
               <v-list-item-subtitle class="text-caption">
                 {{ t.rows.toLocaleString() }} 行 · {{ t.engine || '-' }}<template v-if="t.comment"> · {{ t.comment }}</template>
@@ -110,6 +108,14 @@
           </v-list>
         </div>
       </div>
+
+      <!-- 侧栏拖拽手柄：左右拖动调宽，双击恢复默认 -->
+      <div
+        class="mysql-grid__resizer"
+        title="拖动调整宽度，双击恢复默认"
+        @mousedown="startSideResize"
+        @dblclick="sidebarWidth = 240"
+      />
 
       <!-- 右侧：SQL 编辑区 + 结果网格 -->
       <div class="mysql-grid__main">
@@ -326,7 +332,8 @@
                 </td>
               </tr>
               <tr v-if="!displayRows.length">
-                <td :colspan="columnCount" class="text-caption text-medium-emphasis text-center py-2">
+                <!-- 表头含复选框列，共 columnCount + 1 列 -->
+                <td :colspan="columnCount + 1" class="text-caption text-medium-emphasis text-center py-2">
                   空结果集
                 </td>
               </tr>
@@ -483,7 +490,7 @@
 
           <!-- 列锁定/解锁：sticky 列冻结 -->
           <v-list-item
-            prepend-icon="mdi-columns"
+            prepend-icon="mdi-table-column"
             @click="ctxAction('toggleLock')"
           >{{ isLocked(ctxMenu.ci) ? '解锁此列' : '锁定到此列' }}</v-list-item>
 
@@ -748,6 +755,7 @@ async function confirmSaveQuery(): Promise<void> {
   try {
     // 同名覆盖确认：先查列表判重（本地 SQLite，开销可忽略）
     const saved = await mysqlSavedQueryList()
+    let willOverwrite = false
     if (saved.some((q) => q.name === name)) {
       const ok = await ui.confirm({
         title: '覆盖确认',
@@ -755,11 +763,14 @@ async function confirmSaveQuery(): Promise<void> {
         confirmText: '覆盖',
       })
       if (!ok) return
+      willOverwrite = true
     }
+    // 覆盖时带 overwrite=true（后端 exists>0 && !overwrite 会 reject，确认后必须传）
     const overwritten = await mysqlSavedQuerySave(
       name,
       saveBindConn.value ? (store.connId ?? null) : null,
       text,
+      willOverwrite,
     )
     ui.toast(overwritten ? `已覆盖同名查询：${name}` : `已保存查询：${name}`, 'success')
     showSaveQuery.value = false
@@ -788,16 +799,37 @@ async function refreshTables(): Promise<void> {
   }
 }
 
-/** 点击表：选中并填入 SELECT 语句（不执行，双击才自动查询） */
+/** 点击表：选中并填入 SELECT 语句；400ms 内重复点击视为双击，自动执行该表查询。
+    （v-list-item 不透传 dblclick 事件，双击检测放在 click 内按时间戳判断） */
+let lastClickName = ''
+let lastClickAt = 0
 function selectTable(name: string): void {
   selectedTable.value = name
   sql.value = `SELECT * FROM \`${name}\``
+  const now = Date.now()
+  const isDblClick = lastClickName === name && now - lastClickAt < 400
+  lastClickName = name
+  lastClickAt = now
+  if (isDblClick) void runQuery(1, pageSize.value, sql.value)
 }
 
-/** 双击表：自动执行该表查询（填入 SELECT 并查第一页） */
-function dblClickTable(name: string): void {
-  selectTable(name)
-  void runQuery(1, pageSize.value)
+/** 侧栏宽度可拖拽（Navicat 风格：拖手柄调宽，双击恢复默认 240px） */
+const sidebarWidth = ref(240)
+
+/** 按下手柄开始拖拽：跟随鼠标横移更新侧栏宽度（160-420px），松开结束 */
+function startSideResize(e: MouseEvent): void {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = sidebarWidth.value
+  const onMove = (ev: MouseEvent): void => {
+    sidebarWidth.value = Math.min(420, Math.max(160, startW + (ev.clientX - startX)))
+  }
+  const onUp = (): void => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
 }
 
 // ---------- SQL 编辑与执行 ----------
@@ -1713,7 +1745,9 @@ async function deleteSelected(): Promise<void> {
   for (const ri of selectedRows.value) {
     const pv = pkValueOf(ri)
     const predicate =
-      pv === null ? 'IS NULL' : `= '${pv.replace('\\', '\\\\').replace('\'', '\'\'')}'`
+      pv === null
+        ? 'IS NULL'
+        : `= '${pv.replace(/\\/g, '\\\\').replace(/'/g, "''")}'`
     items.push({
       sql: `DELETE FROM \`${table}\` WHERE \`${pkColumn.value}\` ${predicate}`,
       estimate: 1,
@@ -1858,12 +1892,16 @@ async function runSql(): Promise<void> {
   }
 }
 
+/** 查询序列号：会话级单例，快速换页/双击表并发时丢弃过期响应，结果与页码始终一致 */
+let querySeq = 0
 /** 分页查询：page 从 1 开始 */
 async function runQuery(p: number, size: number, querySql?: string): Promise<void> {
   const text = querySql ?? lastQuerySql.value
   if (!text) return
+  const seq = ++querySeq
   try {
     await store.query(text, p, size)
+    if (seq !== querySeq) return // 已有更新的查询在途/完成，丢弃本此过期结果
     lastQuerySql.value = text
     page.value = p
     pageSize.value = size
@@ -1981,6 +2019,17 @@ function onConnected(connLabel: string): void {
   min-height: 0;
 }
 
+/* 侧栏拖拽手柄：4px 竖条，悬停高亮，col-resize 光标 */
+.mysql-grid__resizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.mysql-grid__resizer:hover {
+  background: rgba(var(--v-theme-primary), 0.25);
+}
+
 .mysql-grid__table-list {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -2029,7 +2078,7 @@ function onConnected(connLabel: string): void {
 .mysql-grid__null {
   font-style: italic;
   opacity: 0.55;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* 待提交修改中的 NULL：额外加下划线与警告色边框强调 */
@@ -2097,7 +2146,7 @@ th[title='单击选中整列'] {
   border: 1px solid rgba(var(--v-theme-primary), 0.6);
   border-radius: 3px;
   padding: 2px 4px;
-  font-size: 12px;
+  font-size: 14px;
   background: transparent;
   color: rgb(var(--v-theme-on-surface));
   outline: none;
@@ -2125,7 +2174,7 @@ th[title='单击选中整列'] {
 
 .mysql-grid__sql-preview-sql {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   word-break: break-all;
   white-space: pre-wrap;
 }

@@ -12,7 +12,6 @@
 import { computed, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import { useUiStore } from '@/stores/ui'
-import { lockThemeToManual } from '@/plugins/vuetify'
 
 const ui = useUiStore()
 
@@ -20,22 +19,17 @@ const ui = useUiStore()
 const current = computed(() => ui.dialogs[0] ?? null)
 
 // ---- 主题同步：store 变化时应用到 Vuetify 全局主题 ----
-// 必须挂载在 v-app 内，useTheme 才可用
+// 必须挂载在 v-app 内，useTheme 才可用。
+// 唯一主题出口：theme_mode（settings store）→ ui.theme → 此处写入 Vuetify。
+// 注意：这里不做任何"手动锁定"处理——auto 模式由 settings 的 matchMedia 驱动，
+// 手动模式由 setThemeMode 驱动，均已在 settings store 内决策完毕。
 const vuetifyTheme = useTheme()
 
-/** 避免把 immediate 首次触发误判为用户手动切换 */
-let initialRun = true
 watch(
   () => ui.theme,
   (t) => {
     try {
       vuetifyTheme.global.name.value = t
-      if (initialRun) {
-        initialRun = false
-      } else {
-        // 后续触发 = 用户手动切换主题 → 锁定，停止跟随系统
-        lockThemeToManual()
-      }
     } catch {
       /* 忽略主题应用失败 */
     }

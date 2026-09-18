@@ -247,7 +247,7 @@ function onRowClick(row: Record<string, unknown>, index: number): void {
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .adv-table__progress {

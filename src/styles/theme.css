@@ -12,20 +12,15 @@
 
 :root {
   /* 紧凑行高基线：信息密度优先 */
-  --fy-line-height: 1.35;
-  --fy-row-height: 28px;
-  --fy-font-size: 12px;
-
+  --fy-line-height: 1.4;
   /* 全局字体：免费开源宋体（思源宋体 Noto Serif SC / Source Han Serif SC，SIL OFL 许可；
      SimSun 为 Windows 内置兜底，保证未安装开源字体时仍渲染宋体风格） */
   --fy-font: 'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif;
 
   /* 经典浅灰 chrome 区（Xshell 传统桌面风格）：浅灰分层 + 1px 分隔线 */
   --fy-chrome-bg: #f0f2f5;
-  --fy-chrome-bg-deep: #e8eaed;
   --fy-chrome-border: #d5d9de;
-  --fy-content-bg: #ffffff;
-  --fy-row-height-tree: 24px;
+  --fy-row-height-tree: 26px;
 }
 
 html,
@@ -130,34 +125,40 @@ body {
   }
 }
 
-/* ---------- 全局字号两档制（12px 基准，2026-09-18 起） ---------- */
+/* ---------- 全局字号两档制（标题 16px / 其他 14px，2026-09-18 起） ---------- */
 
-/* 根字号固定 12px：标题 14px / 其他 12px 两档，统一字号避免文字互相遮挡 */
+/* 根字号固定 14px：标题 16px / 其他 14px 两档，统一字号避免文字互相遮挡 */
 html,
 body {
-  font-size: 12px;
+  font-size: 14px;
 }
 
-/* 应用与弹层基准：正文 12px，覆盖 Vuetify 默认 0.875rem。
+/* 应用与弹层基准：正文 14px，覆盖 Vuetify 默认 0.875rem。
    注意：对话框/菜单经 Teleport 渲染到 body 下的 .v-overlay-container（.v-application 之外），
    因此所有覆盖必须同时命中两层，仅写 .v-application 前缀对弹层无效 */
 .v-application,
 .v-overlay-container {
-  font-size: 12px;
+  font-size: 14px;
 }
 
-/* 按钮统一 12px（Vuetify 尺寸类 10-14px 混杂；0,2,0 特异性覆盖尺寸类变量） */
+/* 按钮统一 14px（Vuetify 尺寸类 10-14px 混杂；0,2,0 特异性覆盖尺寸类变量） */
 .v-application .v-btn--size-x-small,
 .v-application .v-btn--size-small,
 .v-application .v-btn--size-default,
 .v-application .v-btn--size-large,
 .v-application .v-btn--size-x-large,
 .v-overlay-container .v-btn {
-  --v-btn-size: 12px;
+  --v-btn-size: 14px;
 }
 
-/* 表单字段高度：固定 34px（compact 紧凑基线，与 12px 字号匹配，不再随分辨率变化）。
-   覆盖全部密度变体：compact=34 / default=48 / comfortable=56 → 一律 34px 紧凑，
+/* x-small 按钮加高：14px 文字 + 1.4 行高（约 19.6px）在默认 20px 高度内太挤 */
+.v-application .v-btn--size-x-small,
+.v-overlay-container .v-btn--size-x-small {
+  --v-btn-height: 22px;
+}
+
+/* 表单字段高度：固定 36px（紧凑基线，与 14px 字号匹配，不再随分辨率变化）。
+   覆盖全部密度变体：compact=36 / default=48 / comfortable=56 → 一律 36px 紧凑，
    按钮/标签用 --v-btn-height 不受影响 */
 .v-application .v-input--density-compact .v-field,
 .v-overlay-container .v-input--density-compact .v-field,
@@ -165,8 +166,8 @@ body {
 .v-overlay-container .v-input--density-default .v-field,
 .v-application .v-input--density-comfortable .v-field,
 .v-overlay-container .v-input--density-comfortable .v-field {
-  --v-input-control-height: 34px;
-  --v-field-padding-bottom: 5px;
+  --v-input-control-height: 36px;
+  --v-field-padding-bottom: 6px;
 }
 
 /* 默认/舒适密度字段（未显式 density="compact" 的选择框/输入框）同样压到紧凑高度，
@@ -175,56 +176,56 @@ body {
 .v-application .v-input--density-comfortable,
 .v-overlay-container .v-input--density-default,
 .v-overlay-container .v-input--density-comfortable {
-  --v-input-control-height: 34px;
-  --v-field-padding-bottom: 5px;
+  --v-input-control-height: 36px;
+  --v-field-padding-bottom: 6px;
 }
 
-/* 字段内部字号：Vuetify .v-field 硬编码 16px 偏大，统一 12px（选择框选中值/输入框文字） */
+/* 字段内部字号：Vuetify .v-field 硬编码 16px，统一 14px（选择框选中值/输入框文字） */
 .v-application .v-field,
 .v-overlay-container .v-field {
-  font-size: 12px;
-}
-
-/* 字段下方 details（错误/提示文字）：Vuetify 默认 0.75rem 过小，统一 12px */
-.v-application .v-input__details,
-.v-overlay-container .v-input__details {
-  font-size: 12px;
-}
-
-/* 字段 label：与正文同基线（12px） */
-.v-application .v-label,
-.v-overlay-container .v-label {
-  font-size: 12px;
-}
-
-/* 卡片标题：统一 14px（标题档） */
-.v-application .v-card-title,
-.v-overlay-container .v-card-title {
   font-size: 14px;
 }
 
-/* 卡片正文：12px（覆盖 Vuetify 默认 0.875rem） */
+/* 字段下方 details（错误/提示文字）：Vuetify 默认 0.75rem 过小，统一 14px */
+.v-application .v-input__details,
+.v-overlay-container .v-input__details {
+  font-size: 14px;
+}
+
+/* 字段 label：与正文同基线（14px） */
+.v-application .v-label,
+.v-overlay-container .v-label {
+  font-size: 14px;
+}
+
+/* 卡片标题：统一 16px（标题档） */
+.v-application .v-card-title,
+.v-overlay-container .v-card-title {
+  font-size: 16px;
+}
+
+/* 卡片正文：14px（覆盖 Vuetify 默认 0.875rem） */
 .v-application .v-card-text,
 .v-overlay-container .v-card-text {
-  font-size: 12px;
+  font-size: 14px;
 }
 
-/* 列表项次级文字：12px（原 11px 微字并入正文小字档） */
+/* 列表项次级文字：14px（原 11px 微字并入正文小字档） */
 .v-application .v-list-item-subtitle,
 .v-overlay-container .v-list-item-subtitle {
-  font-size: 12px;
+  font-size: 14px;
 }
 
-/* Vuetify rem 字号类统一到 px 两档（根字号 12px 下 rem 计算会过小）：
-   标题类 14px（.text-subtitle-1/2 用于对话框标题、分区标题） */
+/* Vuetify rem 字号类统一到 px 两档（根字号 14px 下 rem 计算会过小）：
+   标题类 16px（.text-subtitle-1/2 用于对话框标题、分区标题） */
 .v-application .text-subtitle-1,
 .v-application .text-subtitle-2,
 .v-overlay-container .text-subtitle-1,
 .v-overlay-container .text-subtitle-2 {
-  font-size: 14px;
+  font-size: 16px;
 }
 
-/* 正文/辅助类 12px（.text-body-1/2、.text-caption、.text-overline） */
+/* 正文/辅助类 14px（.text-body-1/2、.text-caption、.text-overline） */
 .v-application .text-body-1,
 .v-application .text-body-2,
 .v-application .text-caption,
@@ -233,7 +234,7 @@ body {
 .v-overlay-container .text-body-2,
 .v-overlay-container .text-caption,
 .v-overlay-container .text-overline {
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* 全局不加粗：标题/按钮/标签字重统一 400（宋体加粗发虚，全部禁用） */
@@ -258,13 +259,13 @@ body {
 
 /* ---------- 子菜单 / 列表项紧凑化（2026-09-18 二次收紧） ---------- */
 
-/* 所有列表项（下拉菜单/右键菜单/选择器联动）统一 24px 最小高度。
+/* 所有列表项（下拉菜单/右键菜单/选择器联动）统一 28px 最小高度。
    !important 压过 Vuetify 密度类阶梯特异性（--one-line 40px / --two-line 56px，
    其中 .v-list-item--density-compact.v-list-item--one-line 高达 0,3,0，
    :not(.v-list-item--nav) padding 高达 0,4,0）；双行项由内容自然撑开不受影响 */
 .v-application .v-list-item,
 .v-overlay-container .v-list-item {
-  min-height: 24px !important;
+  min-height: 28px !important;
 }
 
 /* 菜单容器 padding 收紧（Vuetify 默认 8px 0 → 2px 0，菜单分组更紧密） */
@@ -279,17 +280,27 @@ body {
   padding-inline: 10px !important;
 }
 
-/* 菜单/列表图标：统一收紧为 14px，与 12px 文字匹配紧凑行高（显式 size 的图标不受影响） */
+/* 图标统一紧凑（三次收紧）：x-small 12px / small 与 default 14px，
+   与两档字号（14px 正文）匹配；显式数字 size 与空状态大图标不受影响 */
+.v-application .v-icon--size-x-small,
+.v-overlay-container .v-icon--size-x-small {
+  font-size: 12px;
+}
+
+.v-application .v-icon--size-small,
+.v-overlay-container .v-icon--size-small,
+.v-application .v-icon--size-default,
+.v-overlay-container .v-icon--size-default,
 .v-application .v-list-item .v-icon,
 .v-overlay-container .v-list-item .v-icon {
   font-size: 14px;
 }
 
-/* 菜单/列表文字与标签栏字号一致（标签栏 12px；注意 Vuetify 3 类名是单下划线 v-list-item-title；
+/* 菜单/列表文字与标签栏字号一致（标签栏 14px；注意 Vuetify 3 类名是单下划线 v-list-item-title；
    右键菜单/下拉经 Teleport 在 .v-overlay-container 内，需同时命中） */
 .v-application .v-list-item-title,
 .v-overlay-container .v-list-item-title {
-  font-size: 12px;
+  font-size: 14px;
 }
 
 /* ---------- 终端区 ---------- */

@@ -370,7 +370,7 @@ watch(dateContent, () => {
   display: flex;
   align-items: center;
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: 14px;
   border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
@@ -387,7 +387,7 @@ watch(dateContent, () => {
 
 .log-viewer__empty {
   padding: 12px 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
   text-align: center;
 }
@@ -404,7 +404,7 @@ watch(dateContent, () => {
   margin: 0;
   padding: 8px;
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;

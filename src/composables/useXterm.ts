@@ -465,7 +465,11 @@ export function useXterm(options: UseXtermOptions = {}) {
 
     // WebGL context lost：容器级兜底监听 + addon 级回调双保险
     container.addEventListener('webglcontextlost', handleContextLost)
-    loadWebgl()
+    // WebGL renderer：设置 sshopt_term_webgl 关闭时回退 DOM renderer
+    // （全局/会话级生效；关闭时根本不加载 Addon，自然无 contextlost 之虞）
+    if (sshOptOf('term_webgl', sshOpts.termWebgl)) {
+      loadWebgl()
+    }
 
     // 容器尺寸变化 → 防抖 fit → onResize（按会话 ID 路由 resize 由上层处理）
     resizeObserver = new ResizeObserver(() => scheduleFit())

@@ -101,7 +101,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   baseName,
   formatSize,
@@ -215,17 +215,26 @@ const listEl = ref<HTMLElement | null>(null)
 const listHeight = ref(400)
 let resizeObserver: ResizeObserver | null = null
 
-onMounted(() => {
-  if (typeof ResizeObserver === 'undefined') return
+function attachResizeObserver(): void {
+  if (typeof ResizeObserver === 'undefined' || !listEl.value) return
+  resizeObserver?.disconnect()
   // 观察列表容器自身高度，直接作为虚拟滚动高度，无需减去标题/表头
-  if (listEl.value) {
-    resizeObserver = new ResizeObserver((observed) => {
-      for (const entry of observed) {
-        listHeight.value = Math.max(160, Math.floor(entry.contentRect.height))
-      }
-    })
-    resizeObserver.observe(listEl.value)
-  }
+  resizeObserver = new ResizeObserver((observed) => {
+    for (const entry of observed) {
+      listHeight.value = Math.max(160, Math.floor(entry.contentRect.height))
+    }
+  })
+  resizeObserver.observe(listEl.value)
+}
+
+onMounted(() => {
+  attachResizeObserver()
+})
+
+// listEl 位于 tasks.length > 0 的 v-else 分支：首次挂载队列为空时不渲染、ref 为 null，
+// onMounted 无法 attach；任务异步加载进来后才赋值，须在此补挂 observer，否则高度恒为 400
+watch(listEl, (el) => {
+  if (el) attachResizeObserver()
 })
 
 onUnmounted(() => {
@@ -259,7 +268,7 @@ onUnmounted(() => {
 
 .transfer-queue__head {
   height: 32px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.7);
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
@@ -268,7 +277,7 @@ onUnmounted(() => {
 
 .transfer-queue__row {
   height: 56px;
-  font-size: 12px;
+  font-size: 14px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
 }
 
@@ -309,7 +318,7 @@ onUnmounted(() => {
 }
 
 .transfer-queue__bytes {
-  font-size: 12px;
+  font-size: 14px;
   color: rgba(var(--v-theme-on-surface), 0.6);
   flex: none;
 }
@@ -324,7 +333,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   height: 200px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgba(var(--v-theme-on-surface), 0.5);
 }
 </style>

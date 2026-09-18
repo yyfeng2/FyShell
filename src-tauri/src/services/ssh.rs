@@ -672,18 +672,3 @@ pub fn resize(state: &AppState, id: &str, cols: u32, rows: u32) -> Result<(), Ap
         .ok_or_else(|| AppError::Ssh(format!("会话 {id} 不存在或已断开")))?;
     handle.send_msg(SshWriteMsg::Resize { cols, rows })
 }
-
-/// 会话是否存活：Rust 侧是否持有该会话的连接句柄。
-/// 供前端在打开终端时做状态真伪校验 —— 解决 dev 重启 / HMR 后
-/// 前端 sessionStatus 残留 connected、但 Rust 侧实际无会话的状态错位
-/// （前端"以为已连接"而不发连接请求，导致终端黑屏）。
-pub fn alive(state: &AppState, id: &str) -> bool {
-    let sessions = match state.ssh_sessions.lock() {
-        Ok(s) => s,
-        Err(_) => return false, // 锁被污染/占用时按不存活处理，前端会走重连
-    };
-    sessions
-        .get(id)
-        .map(|h| h.is_alive())
-        .unwrap_or(false)
-}

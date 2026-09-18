@@ -1,11 +1,11 @@
-//! SQL 控制台命令（P2 阶段：查询历史 + 执行计划 + 多结果集 + 已保存查询）：
+//! SQL 控制台命令（P2 阶段：查询历史 + 执行计划 + 已保存查询）：
 //! 薄层转发到 services/mysql_console。
 //!
-//! 历史记录由 query_multi 执行成功后自动写入，命令层仅提供列表 / 搜索 / 清空；
-//! 已保存查询为用户命名的持久化查询，提供列表 / 保存（同名覆盖）/ 重命名 / 删除。
+//! 历史记录由 services/mysql.rs 的 query/execute 执行成功后自动写入（页首只记一次）；
+//! 命令层仅提供列表 / 搜索 / 清空；已保存查询为用户命名的持久化查询，
+//! 提供列表 / 保存（同名覆盖）/ 重命名 / 删除。
 
 use crate::error::AppError;
-use crate::models::mysql::MySqlQueryResult;
 use crate::models::mysql_console::{MySqlExplainResult, MySqlQueryHistoryItem, MySqlSavedQueryItem};
 use crate::services;
 
@@ -45,13 +45,6 @@ pub async fn mysql_explain(
     analyze: Option<bool>,
 ) -> Result<MySqlExplainResult, AppError> {
     services::mysql_console::explain(&conn_id, &sql, analyze.unwrap_or(false)).await
-}
-
-/// `mysql_query_multi` (conn_id: String, sql: String) -> Vec<MySqlQueryResult>
-#[tauri::command]
-#[specta::specta]
-pub async fn mysql_query_multi(conn_id: String, sql: String) -> Result<Vec<MySqlQueryResult>, AppError> {
-    services::mysql_console::query_multi(&conn_id, &sql).await
 }
 
 // ---------------------------------------------------------------------------

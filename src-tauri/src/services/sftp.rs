@@ -4,7 +4,7 @@
 //! 公开 API 形态：`pub async fn list(state: &AppState, id: &str, path: &str) -> Result<Vec<FileEntry>, AppError>` 等。
 
 use russh_sftp::client::SftpSession;
-use russh_sftp::protocol::{FileAttributes, OpenFlags};
+use russh_sftp::protocol::{FileAttributes, OpenFlags, StatusCode};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 
 use crate::error::AppError;
@@ -150,10 +150,17 @@ where
 {
     let sftp = open_sftp(state, id).await?;
 
-    // 断点续传：检测远端已存在文件大小，作为续传偏移
-    let resume_offset = match sftp.metadata(remote_path).await.map_err(sftp_err)?.size {
-        Some(remote_size) if remote_size > 0 => remote_size,
-        _ => 0,
+    // 断点续传：检测远端已存在文件大小，作为续传偏移。
+    // 注意：russh-sftp 的 metadata() 对不存在的文件返回 Err(Error::Status(NoSuchFile))
+    // 而非默认值——首次上传（远端无此文件）必须按 offset 0 处理，否则必然失败
+    let resume_offset = match sftp.metadata(remote_path).await {
+        Ok(meta) => meta.size.unwrap_or(0),
+        Err(russh_sftp::client::error::Error::Status(status))
+            if status.status_code == StatusCode::NoSuchFile =>
+        {
+            0
+        }
+        Err(err) => return Err(sftp_err(err)),
     };
 
     let mut local = tokio::fs::File::open(local_path).await?; // io::Error 经 From 归入 AppError::Io

@@ -24,9 +24,6 @@ import { telnetConnect, telnetDisconnect, telnetWrite } from '@/api/telnet'
 import { serialConnect, serialDisconnect, serialWrite } from '@/api/serial'
 import { debugLog } from '@/api/channels'
 
-/** 分屏方向 */
-export type SplitDirection = 'horizontal' | 'vertical'
-
 /** 会话传输类型：byte-stream 终端（本地/Telnet/串口）与 SSH 共用 TerminalPane 渲染，仅传输层命令不同 */
 export type SessionType = 'ssh' | 'local' | 'telnet' | 'serial'
 
@@ -37,21 +34,19 @@ export type SessionStatus =
   | 'disconnected'
   | 'hostkey-verify'
 
-/** 分屏窗格：一个窗格绑定一个 SSH 会话 */
+/** 终端窗格：一个窗格绑定一个会话（标签内当前恒为单窗格，结构保留便于后续扩展） */
 export interface TerminalPaneState {
   paneId: string
   sessionId: string
 }
 
-/** 终端标签：一个 Tab 内可再分屏（配合 SplitLayout 组件） */
+/** 终端标签 */
 export interface TerminalTab {
   tabId: string
   title: string
   /** Tab 着色（hex，来自会话配置 color） */
   color: string | null
   panes: TerminalPaneState[]
-  splitDirection: SplitDirection
-  activePaneId: string
 }
 
 /** 打开终端所需的最小会话信息（来自会话树或本地/Telnet/串口新建入口） */
@@ -187,7 +182,12 @@ export const useTerminalStore = defineStore('terminal', () => {
     outputHistory.delete(sessionId)
     return () => {
       set.delete(writer)
-      if (set!.size === 0) outputWriters.delete(sessionId)
+      // 防误删：若期间发生过 cleanupSession + 同一 connId 重新 bindPaneWriter，
+      // outputWriters 中的 Set 已是新实例，旧闭包把 captured set 清空后不得再删 Map 项
+      // （否则新窗格收不到任何输出 → 终端黑屏）。仅在仍是当前注册实例时清理
+      if (outputWriters.get(sessionId) === set && set.size === 0) {
+        outputWriters.delete(sessionId)
+      }
     }
   }
 
@@ -315,13 +315,11 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
-  /** 判断会话是否被其他窗格使用（关闭时避免误断开共享会话） */
-  function sessionUsedElsewhere(sessionId: string, excludePaneId?: string): boolean {
+  /** 判断会话是否被其他标签使用（关闭时避免误断开共享会话） */
+  function sessionUsedElsewhere(sessionId: string): boolean {
     for (const tab of tabs.value) {
       for (const pane of tab.panes) {
-        if (pane.sessionId === sessionId && pane.paneId !== excludePaneId) {
-          return true
-        }
+        if (pane.sessionId === sessionId) return true
       }
     }
     return false
@@ -341,8 +339,6 @@ export const useTerminalStore = defineStore('terminal', () => {
       title: session.name,
       color: session.color ?? null,
       panes: [{ paneId, sessionId: key }],
-      splitDirection: 'horizontal',
-      activePaneId: paneId,
     }
     tabs.value.push(tab)
     activeTabId.value = tabId
@@ -363,58 +359,9 @@ export const useTerminalStore = defineStore('terminal', () => {
     return tab
   }
 
-  /**
-   * 标签内分屏：在指定标签中再打开一个会话窗格
-   * SplitLayout 组件按 panes + splitDirection 渲染
-   */
-  async function splitPane(
-    tabId: string,
-    session: TerminalSessionRef,
-    direction?: SplitDirection,
-  ): Promise<TerminalTab | null> {
-    const tab = tabs.value.find((t) => t.tabId === tabId)
-    if (!tab) return null
-    // 同一标签内不允许重复绑定同一会话
-    if (tab.panes.some((p) => p.sessionId === session.id)) return null
-
-    const paneId = genId()
-    tab.panes.push({ paneId, sessionId: session.id })
-    tab.splitDirection = direction ?? tab.splitDirection
-    tab.activePaneId = paneId
-
-    try {
-      // 已连接的会话直接共享（不重复 ssh_connect，避免重建断开其他窗格）
-      if (!isConnected(session.id)) {
-        await connectSession(session)
-      }
-    } catch (e) {
-      // 连接失败：回滚新建窗格
-      tab.panes = tab.panes.filter((p) => p.paneId !== paneId)
-      if (tab.activePaneId === paneId) {
-        tab.activePaneId = tab.panes.at(-1)?.paneId ?? ''
-      }
-      throw e
-    }
-    return tab
-  }
-
-  /** 切换分屏方向（垂直/水平） */
-  function setSplitDirection(tabId: string, direction: SplitDirection): void {
-    const tab = tabs.value.find((t) => t.tabId === tabId)
-    if (tab) tab.splitDirection = direction
-  }
-
   /** 激活标签 */
   function activateTab(tabId: string): void {
     activeTabId.value = tabId
-  }
-
-  /** 激活标签内窗格 */
-  function setActivePane(tabId: string, paneId: string): void {
-    const tab = tabs.value.find((t) => t.tabId === tabId)
-    if (tab?.panes.some((p) => p.paneId === paneId)) {
-      tab.activePaneId = paneId
-    }
   }
 
   /** 激活相对偏移的标签（Ctrl+Tab / Ctrl+Shift+Tab 快捷键入口） */
@@ -429,32 +376,6 @@ export const useTerminalStore = defineStore('terminal', () => {
   function activateTabIndex(index: number): void {
     const tab = tabs.value[index]
     if (tab) activeTabId.value = tab.tabId
-  }
-
-  /**
-   * 关闭单个窗格：最后一个窗格等价于关闭标签；
-   * 会话若被其他窗格共享则保留连接
-   */
-  async function closePane(tabId: string, paneId: string): Promise<void> {
-    const tab = tabs.value.find((t) => t.tabId === tabId)
-    const pane = tab?.panes.find((p) => p.paneId === paneId)
-    if (!tab || !pane) return
-    if (tab.panes.length <= 1) {
-      await closeTerminal(tabId)
-      return
-    }
-
-    if (!sessionUsedElsewhere(pane.sessionId, pane.paneId)) {
-      // 架构红线：关闭终端必须断开连接，让 Rust 侧同步清理 session/PTY
-      await disconnectSession(pane.sessionId).catch((e) => {
-        console.warn('[terminal] disconnect 失败:', e)
-      })
-      cleanupSession(pane.sessionId)
-    }
-    tab.panes = tab.panes.filter((p) => p.paneId !== paneId)
-    if (tab.activePaneId === paneId) {
-      tab.activePaneId = tab.panes[0]!.paneId
-    }
   }
 
   /** 按 sessionId 关闭终端（供工作区本地 Tab 系统的关闭回调使用）：
@@ -515,14 +436,10 @@ export const useTerminalStore = defineStore('terminal', () => {
     sessionTypeOf,
     // 动作
     openTerminal,
-    splitPane,
     closeBySessionId,
     renameBySessionId,
-    closePane,
     closeTerminal,
     activateTab,
-    setActivePane,
-    setSplitDirection,
     activateNextTab,
     activateTabIndex,
     bindPaneWriter,

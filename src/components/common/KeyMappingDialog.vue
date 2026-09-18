@@ -271,7 +271,7 @@ onBeforeUnmount(() => {
 }
 
 .key-mapping-dialog__empty {
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
   padding: 8px 0;
 }

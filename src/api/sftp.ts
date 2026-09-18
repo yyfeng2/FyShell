@@ -69,9 +69,9 @@ export function sftpUpload(
   localPath: string,
   remotePath: string,
   onProgress: (task: TransferTask) => void,
-): Promise<void> {
+): Promise<TransferTask> {
   const onProgressChannel = createChannel<TransferTask>(onProgress);
-  return invoke<void>('sftp_upload', {
+  return invoke<TransferTask>('sftp_upload', {
     id,
     localPath,
     remotePath,
@@ -92,9 +92,9 @@ export function sftpDownload(
   remotePath: string,
   localPath: string,
   onProgress: (task: TransferTask) => void,
-): Promise<void> {
+): Promise<TransferTask> {
   const onProgressChannel = createChannel<TransferTask>(onProgress);
-  return invoke<void>('sftp_download', {
+  return invoke<TransferTask>('sftp_download', {
     id,
     remotePath,
     localPath,

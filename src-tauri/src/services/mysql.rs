@@ -177,7 +177,16 @@ pub async fn disconnect(conn_id: &str) -> Result<(), AppError> {
 /// mysql_list_tables：information_schema 单查询取所有表的行数/注释/引擎
 pub async fn list_tables(conn_id: &str) -> Result<Vec<MySqlTableInfo>, AppError> {
     let (mut conn, from_tx) = take_conn(conn_id).await?;
+    let outcome = do_list_tables(&mut conn).await;
+    if from_tx {
+        restore_tx_conn(conn_id, conn);
+    }
+    outcome
+}
 
+/// 表列表主体（拆出以便错误早退时仍归还事务连接：take 出的独占连接必须放回，
+/// 否则用户显式事务失去句柄，后续 commit/rollback 报「该连接无活跃事务」）
+async fn do_list_tables(conn: &mut Conn) -> Result<Vec<MySqlTableInfo>, AppError> {
     // 未显式指定 schema 时取当前默认数据库（SELECT DATABASE()；
     // 事务连接与池连接同源，当前库上下文一致，统一用此查询兜底）。
     // 无默认库（schema 为空）时不报错：information_schema 查询无法限定库，
@@ -221,8 +230,24 @@ pub async fn list_tables(conn_id: &str) -> Result<Vec<MySqlTableInfo>, AppError>
         });
     }
     result.drop_result().await.map_err(mysql_err)?;
-    if from_tx {
-        restore_tx_conn(conn_id, conn);
+    // 精确行数：TABLE_ROWS 是估算值（performance_schema 表显示固定估计数如 131072，
+    // 与实际不符），逐表 COUNT(*) 用 UNION ALL 合并单条查询得出
+    if !tables.is_empty() {
+        let count_sql = tables
+            .iter()
+            .map(|t| format!("SELECT COUNT(*) FROM `{}`", t.name.replace('`', "``")))
+            .collect::<Vec<_>>()
+            .join(" UNION ALL ");
+        let mut result = conn.query_iter(count_sql).await.map_err(mysql_err)?;
+        let mut idx = 0usize;
+        while let Some(mut row) = result.next().await.map_err(mysql_err)? {
+            if idx >= tables.len() {
+                break;
+            }
+            tables[idx].rows = row.take::<Option<u64>, _>(0).flatten().unwrap_or(0);
+            idx += 1;
+        }
+        result.drop_result().await.map_err(mysql_err)?;
     }
     Ok(tables)
 }
@@ -243,10 +268,19 @@ pub async fn query(
     let page_size = page_size.clamp(1, 1000);
     let offset = (page - 1) * page_size;
 
+    let started = std::time::Instant::now();
     let (mut conn, from_tx) = take_conn(conn_id).await?;
     let outcome = do_query(&mut conn, sql, page, page_size, offset).await;
     if from_tx {
         restore_tx_conn(conn_id, conn);
+    }
+    // 查询历史：仅首页记录一次（翻页 page>1 不重复写）；记录失败不影响查询结果
+    if outcome.is_ok() && page == 1 {
+        let _ = crate::services::mysql_console::history_add(
+            sql,
+            conn_id,
+            started.elapsed().as_millis() as u64,
+        );
     }
     outcome
 }
@@ -324,10 +358,19 @@ pub async fn execute(conn_id: &str, sql: &str) -> Result<u64, AppError> {
     if sql.trim().is_empty() {
         return Err(AppError::general("SQL 语句为空"));
     }
+    let started = std::time::Instant::now();
     let (mut conn, from_tx) = take_conn(conn_id).await?;
     let outcome = do_execute(&mut conn, sql).await;
     if from_tx {
         restore_tx_conn(conn_id, conn);
+    }
+    // 写操作成功后记录查询历史；记录失败不影响执行结果
+    if outcome.is_ok() {
+        let _ = crate::services::mysql_console::history_add(
+            sql,
+            conn_id,
+            started.elapsed().as_millis() as u64,
+        );
     }
     outcome
 }

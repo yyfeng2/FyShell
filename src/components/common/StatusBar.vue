@@ -142,7 +142,7 @@ const transferText = computed(() => {
   height: 26px;
   min-height: 26px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.75);
   background: var(--fy-chrome-bg, #f0f2f5);
   border-top: 1px solid var(--fy-chrome-border, #d5d9de);
@@ -178,7 +178,7 @@ const transferText = computed(() => {
 /* 等宽小字（IP/编码等字段） */
 .status-bar__mono {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .status-bar__name {
@@ -196,7 +196,7 @@ const transferText = computed(() => {
 
 .status-bar__path-text {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

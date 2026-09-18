@@ -14,7 +14,7 @@ const app = createApp(App)
 // 注册状态管理
 app.use(pinia)
 
-// 注册 Vuetify（深色主题默认基调，dark-light-auto 跟随系统切换在 App.vue 中完成）
+// 注册 Vuetify（经典浅灰默认基调，主题模式 light/dark/auto 由 settings store 驱动）
 app.use(vuetify)
 
 // 全局错误兜底：组件事件处理抛错时打印详情（否则表现为"按钮没反应"且无任何报错）

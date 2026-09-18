@@ -204,12 +204,12 @@ async function removeMapping(id: string): Promise<void> {
   padding: 1px 8px;
   border: 1px solid rgb(var(--v-theme-on-surface) / 0.2);
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 14px;
   margin-right: 8px;
   background: rgb(var(--v-theme-on-surface) / 0.04);
 }
 
 .mapping-action {
-  font-size: 12px;
+  font-size: 14px;
 }
 </style>

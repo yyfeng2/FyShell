@@ -44,7 +44,7 @@ export type MouseButtonAction = 'nothing' | 'paste'
 
 /** 设置项默认值（与 useXterm 原始默认保持一致，加载失败时同样生效） */
 const DEFAULTS = {
-  /** 跟随系统 = 现有 dark-light-auto 行为（vuetify.ts applyInitialTheme 一致语义） */
+  /** 跟随系统：经 matchMedia 实时同步系统深浅色偏好（唯一监听，见 ensureSystemThemeWatch） */
   theme_mode: 'auto' as ThemeMode,
   terminal_font_size: 14,
   terminal_font_family: '"Cascadia Mono", Consolas, "Microsoft YaHei", monospace',

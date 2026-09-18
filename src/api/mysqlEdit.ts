@@ -65,15 +65,6 @@ export function mysqlEditPreview(connId: string, update: MySqlRowUpdate): Promis
   return invoke<MySqlEditPreview>('mysql_edit_preview', { connId, update });
 }
 
-/** 单行更新：按主键定位写入新值，返回受影响行数 */
-export function mysqlUpdateRow(
-  connId: string,
-  update: MySqlRowUpdate,
-  confirmed?: boolean,
-): Promise<number> {
-  return invoke<number>('mysql_update_row', { connId, update, confirmed: confirmed ?? null });
-}
-
 /** 批量更新：逐条执行（隐式事务包裹，失败整体回滚），返回总受影响行数 */
 export function mysqlUpdateRows(
   connId: string,

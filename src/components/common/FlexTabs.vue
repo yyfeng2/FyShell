@@ -307,7 +307,9 @@ function onDrop(index: number): void {
   if (from == null || from === index) return
   const ids = props.tabs.map((t) => t.id)
   const [moved] = ids.splice(from, 1)
-  ids.splice(index, 0, moved)
+  // 右向拖动：splice(from) 删除源项后，目标 index 会前移一位，需先补偿；
+  // 例如 [A,B,C,D] 把 A 拖到 C 上，期望 [B,A,C,D]，不补偿会得到 [B,C,A,D]
+  ids.splice(from < index ? index - 1 : index, 0, moved)
   emit('reorder', ids)
 }
 
@@ -536,7 +538,7 @@ function onDragEnd(e: DragEvent): void {
   padding: 0 8px 0 10px;
   max-width: 220px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface));
   opacity: 0.75;
   border-left: 1px solid transparent;

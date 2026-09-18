@@ -409,7 +409,7 @@ function onDialogToggle(v: boolean): void {
 }
 
 .io-wizard__step {
-  font-size: 12px;
+  font-size: 14px;
   opacity: 0.55;
 }
 
@@ -431,7 +431,7 @@ function onDialogToggle(v: boolean): void {
 .io-wizard__summary-item {
   display: flex;
   gap: 8px;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.6;
   word-break: break-all;
 }

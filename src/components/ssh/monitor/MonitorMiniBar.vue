@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
   height: 24px;
   min-height: 24px;
   padding: 0 6px;
-  font-size: 12px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.75);
   user-select: none;
 }
@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
 .monitor-mini__value {
   white-space: nowrap;
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1;
 }
 

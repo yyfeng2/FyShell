@@ -5,7 +5,6 @@
  * 错误处理：Rust 侧 AppError 以字符串形式 reject，由调用方捕获处理。
  */
 import { invoke } from '@tauri-apps/api/core';
-import type { MySqlQueryResult } from './types';
 
 /** 查询历史条目（每次执行 SQL 后由 Rust 侧落库） */
 export interface MySqlQueryHistoryItem {
@@ -96,9 +95,4 @@ export function mysqlSavedQueryDelete(id: number): Promise<void> {
 /** 执行计划（EXPLAIN）；analyze=true 时执行 EXPLAIN ANALYZE */
 export function mysqlExplain(connId: string, sql: string, analyze?: boolean): Promise<MySqlExplainResult> {
   return invoke<MySqlExplainResult>('mysql_explain', { connId, sql, analyze: analyze ?? null });
-}
-
-/** 多结果集查询：一次执行多条 SELECT，逐条返回结果 */
-export function mysqlQueryMulti(connId: string, sql: string): Promise<MySqlQueryResult[]> {
-  return invoke<MySqlQueryResult[]>('mysql_query_multi', { connId, sql });
 }

@@ -9,7 +9,6 @@ import { createChannel } from './channels';
 import type {
   HostkeyPromptEvent,
   SessionStatusEvent,
-  TransferStatusEvent,
 } from './types';
 
 /** SSH 终端输出块：Rust 侧 Vec<u8> 序列化后为数字数组（可能被包装为 Uint8Array） */
@@ -60,15 +59,6 @@ export function sshResize(
   return invoke<void>('ssh_resize', { id, cols, rows });
 }
 
-/**
- * 会话存活查询：Rust 侧是否持有该会话连接句柄。
- * 前端打开终端时以 Rust 侧为真源做状态校正（避免 dev 重启/HMR
- * 后 sessionStatus 残留 connected 却不发连接请求导致黑屏）。
- */
-export function sshAlive(id: string): Promise<boolean> {
-  return invoke<boolean>('ssh_alive', { id });
-}
-
 /** HostKey 确认结果回传（收到 hostkey-prompt 事件后由前端调用） */
 export function sshHostkeyAccept(id: string, accept: boolean): Promise<void> {
   return invoke<void>('ssh_hostkey_accept', { id, accept });
@@ -94,18 +84,6 @@ export function listenHostkeyPrompt(
   handler: (event: HostkeyPromptEvent) => void,
 ): Promise<UnlistenFn> {
   return listen<HostkeyPromptEvent>('hostkey-prompt', (event) =>
-    handler(event.payload),
-  );
-}
-
-/**
- * 订阅 `transfer-status` 事件（传输队列变更广播）。
- * @returns Promise<UnlistenFn>，调用方在组件卸载时执行
- */
-export function listenTransferStatus(
-  handler: (event: TransferStatusEvent) => void,
-): Promise<UnlistenFn> {
-  return listen<TransferStatusEvent>('transfer-status', (event) =>
     handler(event.payload),
   );
 }

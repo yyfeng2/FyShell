@@ -98,8 +98,10 @@ const DANGEROUS_START_RE = /^\s*(DROP|TRUNCATE|ALTER)\b/i
 const DANGEROUS_NO_WHERE_RE = /^\s*(DELETE|UPDATE)\b/i
 const WHERE_RE = /\bWHERE\b/i
 
-/** 后端"危险 SQL 未确认"错误的宽松匹配（Rust 侧提示措辞可能变化，取关键词兜底） */
-const CONFIRM_HINT_RE = /confirm|确认|危险|dangerous/i
+/** 后端"危险 SQL 未确认"错误的匹配：取 commands/mysql.rs reject 文案的确切特征
+ *  "请确认后以 confirmed=true 重新执行"。此前宽松匹配危险/confirm 等单词，
+ *  会把普通错误里恰好含表名 dangerous_data / "确认" 等文本的报错误判为需二次确认 */
+const CONFIRM_HINT_RE = /请确认后以 confirmed=true 重新执行/i
 
 /** 危险 SQL 判定（供组件预检复用） */
 export function isDangerousSql(sql: string): boolean {
@@ -158,6 +160,9 @@ export const useMysqlStore = defineStore('mysql', {
     // ---------- 连接管理 ----------
     /** 建立连接并自动加载表列表；失败时抛出（组件可捕获展示） */
     async connect(config: MySqlConnection): Promise<void> {
+      // 已连接时先断开旧连接（切换语义，与 connectSaved 一致）：
+      // 避免直接覆盖 connId 导致后端旧连接池/事务独占连接滞留注册表
+      if (this.connId) await this.disconnect()
       this.connecting = true
       this.connError = ''
       this.lastConfig = config

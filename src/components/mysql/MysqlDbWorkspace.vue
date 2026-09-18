@@ -26,20 +26,7 @@
         {{ tab.label }}
       </v-btn>
       <v-divider vertical inset class="mx-1" />
-      <!-- 连接管理（仿 Navicat）：连接下拉 + 断开（未连接时下拉可用，其余按钮保持现有 disabled 逻辑） -->
-      <v-select
-        :model-value="store.activeSavedId"
-        :items="savedItems"
-        label="连接"
-        density="compact"
-        variant="outlined"
-        single-line
-        hide-details
-        :loading="store.connecting"
-        :disabled="store.savedConnections.length === 0"
-        class="mysql-ws__db-select mysql-ws__conn-select"
-        @update:model-value="connectFromSaved"
-      />
+      <!-- 连接管理：连接入口在导航树已保存连接节点（工作台不重复提供） -->
       <v-btn
         size="small"
         variant="text"
@@ -207,7 +194,7 @@
 
     <!-- 视图 / 函数 / 其它：通用对象列表面板（左侧列表 + 主区 DDL） -->
     <div v-else-if="currentKind" class="mysql-ws__body">
-      <div class="mysql-ws__sidebar">
+      <div class="mysql-ws__sidebar" :style="{ width: sidebarWidth + 'px', flexBasis: sidebarWidth + 'px' }">
         <!-- 函数 tab：函数 / 存储过程分组切换 -->
         <div v-if="activeTab === 'function'" class="d-flex px-2 pt-1 pb-1">
           <v-btn-toggle v-model="functionKind" density="compact" mandatory class="mysql-ws__kind-toggle">
@@ -266,6 +253,14 @@
         </div>
       </div>
 
+      <!-- 侧栏拖拽手柄：左右拖动调宽，双击恢复默认 -->
+      <div
+        class="mysql-ws__resizer"
+        title="拖动调整宽度，双击恢复默认"
+        @mousedown="startSideResize"
+        @dblclick="sidebarWidth = 240"
+      />
+
       <!-- 主区：DDL 查看 + 新建/编辑/删除 -->
       <div class="mysql-ws__main">
         <div class="d-flex align-center mb-1">
@@ -317,7 +312,7 @@
 
     <!-- 用户管理：左侧用户列表 + 主区权限（SHOW GRANTS） -->
     <div v-else-if="activeTab === 'user'" class="mysql-ws__body">
-      <div class="mysql-ws__sidebar">
+      <div class="mysql-ws__sidebar" :style="{ width: sidebarWidth + 'px', flexBasis: sidebarWidth + 'px' }">
         <div class="d-flex align-center px-2 py-1">
           <v-text-field
             v-model="userFilter"
@@ -361,6 +356,14 @@
           </v-list>
         </div>
       </div>
+
+      <!-- 侧栏拖拽手柄：左右拖动调宽，双击恢复默认 -->
+      <div
+        class="mysql-ws__resizer"
+        title="拖动调整宽度，双击恢复默认"
+        @mousedown="startSideResize"
+        @dblclick="sidebarWidth = 240"
+      />
 
       <div class="mysql-ws__main">
         <div class="d-flex align-center mb-1">
@@ -466,7 +469,7 @@
             :style="{ left: `${t.x}px`, top: `${t.y}px`, width: `${MODEL_CARD_W}px`, height: `${MODEL_CARD_H}px` }"
           >
             <div class="mysql-ws__model-card-title">
-              <v-icon size="x-small" class="mr-1">mdi-table-outline</v-icon>{{ t.table }}
+              <v-icon size="x-small" class="mr-1">mdi-table</v-icon>{{ t.table }}
             </div>
             <div class="mysql-ws__model-card-sub text-caption">
               {{ t.columns }} 字段 · {{ t.fkCount }} 外键
@@ -725,8 +728,6 @@ function errText(err: unknown): string {
   return typeof err === 'string' ? err : String(err)
 }
 
-const emit = defineEmits<{ (e: 'new-query'): void }>()
-
 // ---------- 顶部对象工具条（仿 Navicat） ----------
 type WorkspaceTab = 'table' | 'view' | 'function' | 'user' | 'other' | 'model'
 
@@ -738,7 +739,7 @@ interface WorkspaceTabItem {
 
 /** 对象类型切换项（新建查询为动作按钮，单独渲染） */
 const TABS: WorkspaceTabItem[] = [
-  { key: 'table', label: '表', icon: 'mdi-table-outline' },
+  { key: 'table', label: '表', icon: 'mdi-table' },
   { key: 'view', label: '视图', icon: 'mdi-eye-outline' },
   { key: 'function', label: '函数', icon: 'mdi-function-variant' },
   { key: 'user', label: '用户', icon: 'mdi-account-outline' },
@@ -770,9 +771,8 @@ const KIND_ICONS: Record<MySqlObjectKind, string> = {
   event: 'mdi-clock-outline',
 }
 
-/** 新建查询：交给父级处理（如切换 Tab / 聚焦 SQL 编辑器），并 toast 提示 */
+/** 新建查询：toast 提示（父级无监听方，仅作引导） */
 function onNewQuery(): void {
-  emit('new-query')
   ui.toast('已发出新建查询请求，可在 SQL 编辑区输入并执行', 'info')
 }
 
@@ -800,6 +800,10 @@ const ddlError = ref('')
 
 /** 已加载过的对象类型（避免重复拉取；保存/删除后失效） */
 const loadedKinds = ref(new Set<MySqlObjectKind>())
+
+/** 对象清单数据级缓存（kind -> 列表）：loadedKinds 只存"已加载"标记，真正数据必须
+ *  先落此缓存，否则切回已访问过的 tab 时列表被清空且不重载（显示"没有匹配的对象"） */
+const objectsCache = new Map<MySqlObjectKind, MySqlObjectInfo[]>()
 
 /** 对象类型对应的 CREATE 语句模板（新建对话框预填用） */
 function createTemplate(kind: MySqlObjectKind, name: string): string {
@@ -830,7 +834,9 @@ async function refreshObjects(): Promise<void> {
   objectsLoading.value = true
   objectError.value = ''
   try {
-    objects.value = await mysqlObjectList(connId, kind)
+    const list = await mysqlObjectList(connId, kind)
+    objectsCache.set(kind, list)
+    objects.value = list
     loadedKinds.value.add(kind)
   } catch (err) {
     objectError.value = errText(err)
@@ -839,19 +845,27 @@ async function refreshObjects(): Promise<void> {
   }
 }
 
-// 切换对象类型时按需加载（已缓存的不重复拉取）
+// 切换对象类型时按需加载（数据级缓存命中直接回填，未缓存才拉取）
 watch(currentKind, (kind) => {
+  if (!kind) return
+  const cached = objectsCache.get(kind)
+  if (cached) {
+    // 缓存命中：直接回填，保留已选对象与 DDL 浏览现场
+    objects.value = cached
+    return
+  }
   objects.value = []
   selectedObject.value = ''
   ddl.value = ''
   ddlError.value = ''
-  if (kind && store.connId && !loadedKinds.value.has(kind)) {
-    void refreshObjects()
-  }
+  if (store.connId) void refreshObjects()
 })
 
+/** DDL 拉取序列号：快速连点多个对象时丢弃过期响应，DDL 始终与最后选中一致 */
+let ddlSeq = 0
 /** 点击对象：拉取 DDL 展示到主区 */
 async function selectObject(name: string): Promise<void> {
+  const seq = ++ddlSeq
   selectedObject.value = name
   const connId = store.connId
   const kind = currentKind.value
@@ -860,12 +874,14 @@ async function selectObject(name: string): Promise<void> {
   ddlError.value = ''
   try {
     const result = await mysqlObjectDdl(connId, kind, name)
+    if (seq !== ddlSeq) return // 已被更新的选择覆盖，丢弃过期结果
     ddl.value = result.sql
   } catch (err) {
+    if (seq !== ddlSeq) return
     ddlError.value = errText(err)
     ddl.value = ''
   } finally {
-    ddlLoading.value = false
+    if (seq === ddlSeq) ddlLoading.value = false
   }
 }
 
@@ -1220,9 +1236,14 @@ async function loadDatabases(): Promise<void> {
  * store.connId 替换后触发本组件的 connId watch 清空会话级状态（对象树缓存等），
  * 再重新加载表列表，数据网格与对象树随之刷新。
  */
+/** 切库在途守卫：快速连点两次时，第二次在旧 connId 尚未写回前发起会命中已被
+ *  第一次 switch_database 断开的旧池而必然失败，这里直接丢弃（与 connectFromSaved
+ *  的 connecting 守卫同理） */
+let switchingDb = false
 async function switchDb(name: string | null): Promise<void> {
   const connId = store.connId
-  if (!connId || !name || name === currentDb.value) return
+  if (!connId || !name || name === currentDb.value || switchingDb) return
+  switchingDb = true
   databasesLoading.value = true
   try {
     const newId = await mysqlDbSwitch(connId, name)
@@ -1240,6 +1261,7 @@ async function switchDb(name: string | null): Promise<void> {
     // 切换失败（旧连接已断），刷新库列表以便用户重试或重新连接
     await loadDatabases()
   } finally {
+    switchingDb = false
     databasesLoading.value = false
   }
 }
@@ -1366,10 +1388,12 @@ async function runTableOp(): Promise<void> {
           ui.toast('表名非法（含反引号）', 'warning')
           return
         }
-        // 走现有危险 SQL 确认流程：TRUNCATE 命中前端预检后置 pendingConfirm，
-        // 确认框由 MysqlDataGrid（表 tab）或本组件的条件确认框弹出，
-        // 确认后 confirmExecute 带 confirmed 重发
-        await store.executeSql(`TRUNCATE TABLE \`${table}\``)
+        // 走现有危险 SQL 确认流程：TRUNCATE 命中前端预检后置 pendingConfirm 并返回
+        // { needsConfirm: true }（不发请求）。确认框由 MysqlDataGrid（表 tab）或本组件的
+        // 条件确认框弹出，confirmExecute 带 confirmed 重发失败时会抛错、成功则由确认框
+        // 侧提示。因此 needsConfirm 时只返回、不弹"已清空"，避免未确认就报成功
+        const outcome = await store.executeSql(`TRUNCATE TABLE \`${table}\``)
+        if (outcome.needsConfirm) return
         ui.toast(`表「${table}」已清空`, 'success')
         break
       }
@@ -1400,6 +1424,7 @@ watch(
   () => store.connId,
   () => {
     loadedKinds.value = new Set()
+    objectsCache.clear()
     objects.value = []
     objectError.value = ''
     selectedObject.value = ''
@@ -1422,10 +1447,24 @@ watch(
 // ---------- 连接入口与会话管理（已保存连接 + 新建连接） ----------
 const showConnForm = ref(false)
 
-/** 工具条连接下拉选项（已保存连接，含 host:port 说明） */
-const savedItems = computed(() =>
-  store.savedConnections.map((c) => ({ title: `${c.name}（${c.host}:${c.port}）`, value: c.id })),
-)
+// ---------- 侧栏宽度可拖拽（Navicat 风格：拖手柄调宽，双击恢复默认 240px） ----------
+const sidebarWidth = ref(240)
+
+/** 按下手柄开始拖拽：跟随鼠标横移更新侧栏宽度（160-420px），松开结束 */
+function startSideResize(e: MouseEvent): void {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = sidebarWidth.value
+  const onMove = (ev: MouseEvent): void => {
+    sidebarWidth.value = Math.min(420, Math.max(160, startW + (ev.clientX - startX)))
+  }
+  const onUp = (): void => {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 /**
  * 连接指定已保存连接（已连接时先断开再连，切换语义）。
@@ -1544,6 +1583,17 @@ onMounted(() => {
   padding: 8px;
 }
 
+/* 侧栏拖拽手柄：4px 竖条，悬停高亮，col-resize 光标 */
+.mysql-ws__resizer {
+  flex: 0 0 4px;
+  cursor: col-resize;
+  background: transparent;
+}
+
+.mysql-ws__resizer:hover {
+  background: rgba(var(--v-theme-primary), 0.25);
+}
+
 /* 对象分组切换按钮组 */
 .mysql-ws__kind-toggle {
   align-self: flex-start;
@@ -1557,13 +1607,6 @@ onMounted(() => {
   margin: 0 4px;
 }
 
-/* 工具条上的连接下拉：比数据库下拉略宽（容纳「名称（host:port）」文案） */
-.mysql-ws__conn-select {
-  /* 加宽到 260px：连接文案 `user@host（名称）` 较长，200px 时截断显示 `…` */
-  flex: 0 0 260px;
-  max-width: 260px;
-}
-
 /* DDL / 权限展示区：等宽字体，可滚动 */
 .mysql-ws__ddl {
   flex: 1 1 auto;
@@ -1575,7 +1618,7 @@ onMounted(() => {
 
 .mysql-ws__ddl-text {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   white-space: pre-wrap;
   word-break: break-all;
   padding: 6px 8px;
@@ -1583,12 +1626,12 @@ onMounted(() => {
 
 .mysql-ws__ddl-input {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .mysql-ws__grant-line {
   font-family: var(--fy-font);
-  font-size: 12px;
+  font-size: 14px;
   word-break: break-all;
   white-space: pre-wrap;
   padding: 2px 0;
@@ -1654,7 +1697,7 @@ onMounted(() => {
 }
 
 .mysql-ws__model-card-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 400;
   display: flex;
   align-items: center;

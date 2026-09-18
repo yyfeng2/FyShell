@@ -82,42 +82,35 @@ pub async fn preview_update(
         Some(conn) => conn,
         None => pool_of(conn_id)?.get_conn().await.map_err(mysql_err)?,
     };
-    let affected_estimate = conn
-        .query_first::<u64, _>(&count_sql)
-        .await
-        .map_err(mysql_err)?
-        .unwrap_or(0);
-    if from_tx {
-        give_tx_conn(conn_id, conn);
-    }
-
-    // danger 判定复用基础服务的词法检测（生成的 UPDATE 恒含 WHERE，
-    // 仅 DROP/TRUNCATE/ALTER 等前缀会命中，此字段为管道完整性保留）
-    let danger = is_dangerous_sql(&sql);
-    Ok(MySqlEditPreview {
-        sql,
-        affected_estimate,
-        danger,
-        danger_reason: danger.then_some("命中危险 SQL 词法特征".to_string()),
-    })
-}
-
-/// 单行更新：按主键定位写入新值，返回受影响行数
-pub async fn update_row(conn_id: &str, update: &MySqlRowUpdate) -> Result<u64, AppError> {
-    let (sql, _) = build_update_sql(update)?;
-
-    // 优先复用事务内独占连接（不重复开事务），否则从池中取
-    let tx_conn = take_tx_conn(conn_id);
-    let from_tx = tx_conn.is_some();
-    let mut conn = match tx_conn {
-        Some(conn) => conn,
-        None => pool_of(conn_id)?.get_conn().await.map_err(mysql_err)?,
-    };
-    let outcome = exec_write(&mut conn, &sql).await;
+    // outcome 捕获模式：即使查询失败也归还事务连接，避免用户显式事务失去句柄
+    let outcome = do_preview_update(&mut conn, &sql, &count_sql).await;
     if from_tx {
         give_tx_conn(conn_id, conn);
     }
     outcome
+}
+
+/// 预览主体（拆出以便错误早退时仍归还事务连接）
+async fn do_preview_update(
+    conn: &mut Conn,
+    sql: &str,
+    count_sql: &str,
+) -> Result<MySqlEditPreview, AppError> {
+    let affected_estimate = conn
+        .query_first::<u64, _>(count_sql)
+        .await
+        .map_err(mysql_err)?
+        .unwrap_or(0);
+
+    // danger 判定复用基础服务的词法检测（生成的 UPDATE 恒含 WHERE，
+    // 仅 DROP/TRUNCATE/ALTER 等前缀会命中，此字段为管道完整性保留）
+    let danger = is_dangerous_sql(sql);
+    Ok(MySqlEditPreview {
+        sql: sql.to_string(),
+        affected_estimate,
+        danger,
+        danger_reason: danger.then_some("命中危险 SQL 词法特征".to_string()),
+    })
 }
 
 /// 批量更新：逐条执行，返回总受影响行数。
@@ -190,7 +183,7 @@ async fn exec_batch(conn: &mut Conn, sqls: &[String]) -> Result<u64, AppError> {
     Ok(total)
 }
 
-/// 单行删除：按主键定位删除，返回受影响行数（事务连接复用逻辑同 update_row）
+/// 单行删除：按主键定位删除，返回受影响行数（事务连接复用逻辑同 update_rows）
 pub async fn delete_row(
     conn_id: &str,
     table: &str,

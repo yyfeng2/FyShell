@@ -18,7 +18,6 @@ use mysql_async::{Conn, Value};
 use rusqlite::{params, Connection};
 
 use crate::error::AppError;
-use crate::models::mysql::MySqlQueryResult;
 use crate::models::mysql_console::{MySqlExplainResult, MySqlQueryHistoryItem, MySqlSavedQueryItem};
 
 // ---------------------------------------------------------------------------
@@ -357,80 +356,6 @@ async fn fetch_tree_text(conn: &mut Conn, sql: &str) -> Option<String> {
     }
     result.drop_result().await.ok()?;
     tree
-}
-
-// ---------------------------------------------------------------------------
-// 多结果集
-// ---------------------------------------------------------------------------
-
-/// mysql_query_multi：多语句执行，返回每个结果集。
-///
-/// 本项目连接池未开启 multi_statements（见 services/mysql.rs），因此用拆分后的
-/// 语句逐条执行：行返回型语句（SELECT / WITH 开头）复用 mysql::query 分页
-/// （page=1、page_size=200，已含 LIMIT 不重复包装）；其余语句走 mysql::execute，
-/// 结果构造为受影响行数提示（columns=["affected_rows"]）。
-///
-/// 简化说明：SHOW / DESC 等行返回型语句会落入 execute 分支（其结果无法用
-/// COUNT(*) 包装分页），仅返回受影响行数提示——属可接受的边界情况。
-pub async fn query_multi(conn_id: &str, sql: &str) -> Result<Vec<MySqlQueryResult>, AppError> {
-    let stmts = split_statements(sql);
-    if stmts.is_empty() {
-        return Err(AppError::general("SQL 语句为空"));
-    }
-    let started = std::time::Instant::now();
-    let mut results = Vec::with_capacity(stmts.len());
-    for stmt in &stmts {
-        if starts_with_keyword(stmt, "select") || starts_with_keyword(stmt, "with") {
-            // 行返回型语句：复用 mysql::query 的分页逻辑（page 1，200 行）
-            results.push(crate::services::mysql::query(conn_id, stmt, 1, 200).await?);
-        } else {
-            // 非 SELECT：执行并返回受影响行数提示
-            let affected = crate::services::mysql::execute(conn_id, stmt).await?;
-            results.push(MySqlQueryResult {
-                columns: vec!["affected_rows".to_string()],
-                rows: vec![vec![Some(affected.to_string())]],
-                total: 0,
-                page: 1,
-                page_size: 1,
-            });
-        }
-    }
-    // 历史按一次执行整体记录（多语句块为一条，总耗时）；记录失败不影响执行结果
-    let _ = history_add(sql, conn_id, started.elapsed().as_millis() as u64);
-    Ok(results)
-}
-
-/// 多语句拆分（简化实现）。
-///
-/// 仅把"行尾"（`;` + 换行）或"行首"（换行 + `;`）处的分号视为语句分隔符，
-/// 尽量避免误拆字符串字面量内的分号（字面量内的分号通常不与换行相邻）；
-/// 同一行中间的分号不触发拆分——属可接受的边界情况。
-fn split_statements(sql: &str) -> Vec<String> {
-    let bytes = sql.as_bytes();
-    let mut stmts = Vec::new();
-    let mut start = 0;
-    for (i, b) in bytes.iter().enumerate() {
-        if *b != b';' {
-            continue;
-        }
-        // 行首分号（前一个字符是换行）或行尾分号（后一个是换行或文本结束）为分隔符
-        let at_line_start = i == 0 || bytes[i - 1] == b'\n';
-        let at_line_end = i + 1 == bytes.len() || bytes[i + 1] == b'\n';
-        if !at_line_start && !at_line_end {
-            continue;
-        }
-        let stmt = sql[start..i].trim();
-        if !stmt.is_empty() {
-            stmts.push(stmt.to_string());
-        }
-        start = i + 1;
-    }
-    // 末尾无分号的剩余语句
-    let rest = sql[start..].trim();
-    if !rest.is_empty() {
-        stmts.push(rest.to_string());
-    }
-    stmts
 }
 
 /// 检查 SQL 首词（大小写不敏感）是否等于给定关键字（词边界匹配）
