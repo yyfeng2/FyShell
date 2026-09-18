@@ -384,20 +384,20 @@ const flatNodes = computed<FlatNode[]>(() => {
         depth: 1,
         isFolder: false,
         color: null,
-        isOpen: isActive,
+        isOpen: isActive && !collapsedDbHosts.value.has(c.id),
         hostLabel: '',
         encoding: null,
         isMysql: true,
         isSavedConn: true,
         savedConnId: c.id,
       })
-      // 该常驻节点是当前活动连接：库列表挂其下（Navicat 展开效果）
-      if (isActive && dbs) {
+      // 该常驻节点是当前活动连接：库列表挂其下（Navicat 展开效果，可点击收缩箭头折叠）
+      if (isActive && dbs && !collapsedDbHosts.value.has(c.id)) {
         for (const dbName of dbs.databases) {
           out.push({
             id: `savdb-${c.id}-${dbName}`,
             name: dbName,
-            depth: 1,
+            depth: 2,
             isFolder: false,
             color: null,
             isOpen: false,
@@ -412,32 +412,35 @@ const flatNodes = computed<FlatNode[]>(() => {
     }
     // 兜底：既无已保存连接匹配也无 session 树匹配时的独立节点（连接主机 + 库列表）
     if (dbs && dbs.savedId === null && dbs.sessionId === null) {
+      const standaloneOpen = !collapsedDbHosts.value.has('db-standalone')
       out.push({
         id: 'db-standalone',
         name: dbs.host || 'MySQL 数据库',
-        depth: 0,
+        depth: 1,
         isFolder: false,
         color: null,
-        isOpen: false,
+        isOpen: standaloneOpen,
         hostLabel: '',
         encoding: null,
         isMysql: true,
         isDbLeaf: false,
       })
-      for (const dbName of dbs.databases) {
-        out.push({
-          id: `db-standalone-${dbName}`,
-          name: dbName,
-          depth: 1,
-          isFolder: false,
-          color: null,
-          isOpen: false,
-          hostLabel: '',
-          encoding: null,
-          isMysql: false,
-          isDbLeaf: true,
-          dbName,
-        })
+      if (standaloneOpen) {
+        for (const dbName of dbs.databases) {
+          out.push({
+            id: `db-standalone-${dbName}`,
+            name: dbName,
+            depth: 2,
+            isFolder: false,
+            color: null,
+            isOpen: false,
+            hostLabel: '',
+            encoding: null,
+            isMysql: false,
+            isDbLeaf: true,
+            dbName,
+          })
+        }
       }
     }
   }
@@ -509,6 +512,20 @@ function treeIconColor(node: FlatNode): string | null {
     default:
       return 'success'
   }
+}
+
+/** 数据库 host 节点库列表折叠开关（点击收缩箭头切换，不影响节点本身的连接行为） */
+const collapsedDbHosts = ref(new Set<string>())
+
+/** 切换数据库 host 节点的库列表折叠态 */
+function toggleDbHost(node: FlatNode): void {
+  const set = new Set(collapsedDbHosts.value)
+  if (set.has(node.id)) {
+    set.delete(node.id)
+  } else {
+    set.add(node.id)
+  }
+  collapsedDbHosts.value = set
 }
 
 function onNodeClick(node: FlatNode): void {
@@ -1450,6 +1467,15 @@ onUnmounted(() => {
               @keydown="onNodeKeydown(node, $event)"
               @contextmenu.prevent="onTreeContextmenu(node, $event)"
             >
+              <!-- 数据库 host 节点收缩箭头：点击折叠/展开库列表（@click.stop 不触发连接） -->
+              <v-icon
+                v-if="node.isSavedConn || node.id === 'db-standalone'"
+                :icon="node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right'"
+                size="14"
+                class="mr-1"
+                title="展开/收起数据库列表"
+                @click.stop="toggleDbHost(node)"
+              />
               <v-icon
                 :icon="node.isSection
                   ? (node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right')
