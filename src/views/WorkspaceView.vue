@@ -1116,9 +1116,10 @@ function onSessionSettings(tabId: string): void {
 }
 
 /** 活动终端 Tab 的连接路由键（监控/快速命令/日志均按连接键路由；无终端 Tab 时为 null） */
+/** 当前活动终端 Tab 的会话 id（日志按会话 id 落盘/查询；本地终端无持久会话，其值即路由键） */
 const activeTerminalId = computed(() => {
   const tab = activeTab.value
-  return tab?.type === 'terminal' && tab.connId ? tab.connId : null
+  return tab?.type === 'terminal' && tab.sessionId ? tab.sessionId : null
 })
 
 /** 最近打开的终端会话（SFTP 双栏远程栏默认浏览对象；无终端 Tab 时为空） */

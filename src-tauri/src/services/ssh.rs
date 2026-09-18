@@ -552,9 +552,11 @@ pub async fn connect(
         .await
         .map_err(|e| AppError::Ssh(format!("请求 shell 失败: {e}")))?;
 
-    // 拆分读写半，分别交给读循环与写转发任务
+    // 拆分读写半，分别交给读循环与写转发任务。
+    // 日志键用稳定会话 id（非 per-tab 路由键 key）：同一会话多标签/重连共享一份
+    // 落盘，关闭重开标签不产生孤儿日志目录（LogViewer 亦按会话 id 查询）。
     let (read_half, write_half) = channel.split();
-    tauri::async_runtime::spawn(read_loop(key.to_string(), read_half, on_output));
+    tauri::async_runtime::spawn(read_loop(cfg.id.clone(), read_half, on_output));
     let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
     tauri::async_runtime::spawn(write_forward(write_rx, write_half));
     ssh_trace!("[ssh] {key} pty/shell ready, read_loop spawned");
@@ -598,7 +600,7 @@ pub async fn connect(
     }
     // ② 日志自启：开启该会话输出落盘（read_loop 未启用时 write_log 立即返回）
     if settings_flag("sshopt_log_auto_start", false) {
-        let _ = crate::services::session_log::toggle(key, true);
+        let _ = crate::services::session_log::toggle(&cfg.id, true);
     }
 
     emit_status(app, key, STATUS_CONNECTED);
