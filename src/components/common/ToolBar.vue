@@ -34,17 +34,17 @@ function submit(): void {
 <template>
   <div class="toolbar">
     <!-- 新建组 -->
-    <v-btn icon="mdi-plus" size="20" variant="text" title="新建会话 (Ctrl+N)" @click="emit('new-session')" />
-    <v-btn icon="mdi-folder-plus-outline" size="20" variant="text" title="新建文件夹" @click="emit('new-folder')" />
+    <v-btn icon="mdi-plus" size="20" variant="text" color="primary" title="新建会话 (Ctrl+N)" @click="emit('new-session')" />
+    <v-btn icon="mdi-folder-plus-outline" size="20" variant="text" color="primary" title="新建文件夹" @click="emit('new-folder')" />
     <v-divider vertical inset class="mx-1 toolbar__divider" />
     <!-- 连接组 -->
-    <v-btn icon="mdi-lan-connect" size="20" variant="text" title="连接选中的会话" @click="emit('connect')" />
-    <v-btn icon="mdi-lan-disconnect" size="20" variant="text" title="断开当前会话" @click="emit('disconnect')" />
+    <v-btn icon="mdi-lan-connect" size="20" variant="text" color="success" title="连接选中的会话" @click="emit('connect')" />
+    <v-btn icon="mdi-lan-disconnect" size="20" variant="text" color="error" title="断开当前会话" @click="emit('disconnect')" />
     <v-divider vertical inset class="mx-1 toolbar__divider" />
     <!-- 传输 / 视图组 -->
-    <v-btn icon="mdi-magnify" size="20" variant="text" title="搜索会话" @click="emit('search')" />
-    <v-btn icon="mdi-swap-vertical" size="20" variant="text" title="传输队列" @click="emit('transfer')" />
-    <v-btn icon="mdi-folder-swap-outline" size="20" variant="text" title="SFTP 文件传输" @click="emit('sftp')" />
+    <v-btn icon="mdi-magnify" size="20" variant="text" color="info" title="搜索会话" @click="emit('search')" />
+    <v-btn icon="mdi-swap-vertical" size="20" variant="text" color="warning" title="传输队列" @click="emit('transfer')" />
+    <v-btn icon="mdi-folder-swap-outline" size="20" variant="text" color="accent" title="SFTP 文件传输" @click="emit('sftp')" />
     <v-divider vertical inset class="mx-1 toolbar__divider" />
 
     <v-spacer />

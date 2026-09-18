@@ -99,6 +99,9 @@
               :active="t.name === selectedTable"
               @click="selectTable(t.name)"
             >
+              <template #prepend>
+                <v-icon size="small" color="primary">mdi-table</v-icon>
+              </template>
               <v-list-item-title class="text-body-2">{{ t.name }}</v-list-item-title>
               <v-list-item-subtitle class="text-caption">
                 {{ t.rows.toLocaleString() }} 行 · {{ t.engine || '-' }}<template v-if="t.comment"> · {{ t.comment }}</template>
