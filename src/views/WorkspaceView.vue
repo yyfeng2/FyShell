@@ -438,13 +438,15 @@ const flatNodes = computed<FlatNode[]>(() => {
       const isActive = dbs?.savedId === c.id
       // 活动连接挂当前库；断开（灰色历史库）时按 host 匹配展示历史库
       const showDbs = !!dbs && (isActive || (!dbs.connected && dbs.host === c.host))
+      // 折叠判定必须用完整节点 id（与 toggleDbHost 写入的 node.id 一致）
+      const nodeId = `savedconn-${c.id}`
       out.push({
-        id: `savedconn-${c.id}`,
+        id: nodeId,
         name: c.host,
         depth: 1,
         isFolder: false,
         color: null,
-        isOpen: showDbs && !collapsedDbHosts.value.has(c.id),
+        isOpen: showDbs && !collapsedDbHosts.value.has(nodeId),
         hostLabel: '',
         encoding: null,
         isMysql: true,
@@ -453,7 +455,7 @@ const flatNodes = computed<FlatNode[]>(() => {
         hasDbChildren: showDbs,
       })
       // 该常驻节点是当前活动连接：库列表挂其下（断开后保留历史库以灰色展示，可点击收缩箭头折叠）
-      if (showDbs && !collapsedDbHosts.value.has(c.id)) {
+      if (showDbs && !collapsedDbHosts.value.has(nodeId)) {
         for (const dbName of dbs.databases) {
           out.push({
             id: `savdb-${c.id}-${dbName}`,
@@ -672,6 +674,32 @@ function toggleTreeExpand(node: FlatNode): void {
   toggleDbHost(node)
 }
 
+/** 单击/双击 host 行：打开对应数据库工作台并按节点建立连接（MySQL/Redis）。
+    独立兜底节点无 SessionConfig，仅打开 MySQL 工作台 */
+function openDbWorkspaceFromNode(node: FlatNode): void {
+  if (node.id === 'db-standalone') {
+    openMysqlTab()
+    return
+  }
+  if (node.isSavedConn) {
+    if (node.isMysql) void connectMysqlSaved(node.savedConnId ?? '')
+    else void useRedisStore().connectSaved(node.savedConnId ?? '')
+    return
+  }
+  const target = findNode(nodes.value, node.id)
+  if (!target) return
+  const stype = target.config?.session_type
+  if (stype === 'redis') {
+    void connectRedisSession(target)
+    return
+  }
+  if (stype === 'mysql') {
+    void connectMysqlSession(target)
+    return
+  }
+  openMysqlTab()
+}
+
 function onNodeClick(node: FlatNode): void {
   // 分区头：单击折叠/展开
   if (node.isSection) {
@@ -694,10 +722,10 @@ function onNodeClick(node: FlatNode): void {
     void switchMysqlDbFromTree(node)
     return
   }
-  // 数据库 host 行（已连接、库已挂载）：单击切换库列表展开/收缩（Navicat 行为）。
-  // 已连接 host 的连接动作走右键菜单/工作台；重复单击不再无响应
+  // 数据库 host 行：单击/双击打开对应数据库工作台并建连（MySQL/Redis）；
+  // 库列表展开/收缩只由收缩箭头负责
   if (node.hasDbChildren) {
-    toggleDbHost(node)
+    openDbWorkspaceFromNode(node)
     return
   }
   // 已保存连接节点：打开对应工作台并按保存配置建连（MySQL/Redis）
@@ -2022,17 +2050,6 @@ onUnmounted(() => {
         </v-list>
       </v-menu>
 
-      <!-- 折叠后的展开入口（独立兄弟层，避免随 aside 的 v-show 一并隐藏而无法重新展开） -->
-      <div v-if="ui.navCollapsed && !ui.navAutoHide" class="workspace__nav-expand">
-        <v-btn
-          icon="mdi-chevron-right"
-          size="20"
-          variant="text"
-          title="展开导航"
-          @click="ui.navCollapsed = false"
-        />
-      </div>
-
       <!-- 右侧多 Tab 工作区 -->
       <main class="workspace__main">
         <FlexTabs
@@ -2395,18 +2412,6 @@ onUnmounted(() => {
   padding: 12px 8px;
   font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
-}
-
-/* 停靠模式收起后的展开入口 */
-.workspace__nav-expand {
-  position: absolute;
-  left: 0;
-  top: 40px;
-  z-index: 9;
-  background: var(--fy-chrome-bg, #f0f2f5);
-  border: 1px solid var(--fy-chrome-border, #d5d9de);
-  border-left: none;
-  border-radius: 0 4px 4px 0;
 }
 
 /* 右侧多 Tab 工作区 */

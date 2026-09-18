@@ -218,8 +218,15 @@ async function disconnectCurrent(): Promise<void> {
   }
 }
 
-/** 新建连接成功（store 连接成功且未抛错）：提示，已存列表由 store 自行管理 */
+/**
+ * 新建连接成功（store 连接成功且未抛错）：按 host+port+username 去重回填已保存列表
+ * （store.lastConfig 由 connect 写入，saveConnection 返回 id 供主动态关联）
+ */
 function onFormConnected(): void {
+  if (store.lastConfig) {
+    const cfg = store.lastConfig
+    store.activeSavedId = store.saveConnection(`${cfg.username ?? ''}@${cfg.host}`, cfg)
+  }
   ui.toast(`已连接 ${store.connLabel}`, 'success')
 }
 
@@ -274,9 +281,9 @@ watch(
   min-height: 0;
 }
 
-/* 命令执行条：底部，默认 200px 高（与 keys 面板可互相压缩） */
+/* 命令执行条：底部固定高（与 keys 面板不争夺生长空间，超高内部滚动/可压缩） */
 .redis-ws__cmdbar {
-  flex: 0 1 200px;
+  flex: 0 1 220px;
   min-height: 0;
 }
 
