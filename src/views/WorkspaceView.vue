@@ -1791,7 +1791,6 @@ onUnmounted(() => {
                 'workspace__tree-node--session': !node.isFolder,
                 'workspace__tree-node--section': node.isSection,
               }"
-              <!-- 每级缩进 = 1 字符(14px) + 收缩箭头槽位(18px)，子级文本对齐父级箭头之后 -->
               :style="{ paddingLeft: `${8 + node.depth * 32}px` }"
               @click="onNodeClick(node)"
               @keydown="onNodeKeydown(node, $event)"
