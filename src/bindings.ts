@@ -137,6 +137,20 @@ export const commands = {
 	mysqlCommit: (connId: string) => __TAURI_INVOKE<null>("mysql_commit", { connId }),
 	/**  `mysql_rollback` (conn_id: String) -> 回滚事务 */
 	mysqlRollback: (connId: string) => __TAURI_INVOKE<null>("mysql_rollback", { connId }),
+	/**  `redis_connect` (config: RedisConnection) -> String connection_id */
+	redisConnect: (config: RedisConnection) => __TAURI_INVOKE<string>("redis_connect", { config }),
+	/**  `redis_disconnect` (conn_id: String) -> () */
+	redisDisconnect: (connId: string) => __TAURI_INVOKE<null>("redis_disconnect", { connId }),
+	/**  `redis_test` (config: RedisConnection) -> String 服务器版本摘要 */
+	redisTest: (config: RedisConnection) => __TAURI_INVOKE<string>("redis_test", { config }),
+	/**  `redis_info` (conn_id: String) -> Vec<(String, String)> 键值对 */
+	redisInfo: (connId: string) => __TAURI_INVOKE<([string, string])[]>("redis_info", { connId }),
+	/**  `redis_select_db` (conn_id: String, db: u8) -> 切换库 */
+	redisSelectDb: (connId: string, db: number) => __TAURI_INVOKE<null>("redis_select_db", { connId, db }),
+	/**  `redis_keys` (conn_id: String, pattern: String) -> Vec<String> */
+	redisKeys: (connId: string, pattern: string) => __TAURI_INVOKE<string[]>("redis_keys", { connId, pattern }),
+	/**  `redis_exec` (conn_id: String, args: Vec<String>) -> RedisExecResult */
+	redisExec: (connId: string, args: string[]) => __TAURI_INVOKE<RedisExecResult>("redis_exec", { connId, args }),
 	/**  `mysql_table_design_get` (conn_id: String, table: String) -> MySqlTableDesign */
 	mysqlTableDesignGet: (connId: string, table: string) => __TAURI_INVOKE<MySqlTableDesign>("mysql_table_design_get", { connId, table }),
 	/**
@@ -378,6 +392,20 @@ export const commands = {
 	serialWrite: (id: string, data: number[]) => __TAURI_INVOKE<null>("serial_write", { id, data }),
 	/**  串口会话存活查询：Rust 侧是否持有该会话连接句柄 */
 	serialAlive: (id: string) => __TAURI_INVOKE<boolean>("serial_alive", { id }),
+	/**  `redis_connect` (config: RedisConnection) -> String connection_id */
+	redisConnect: (config: RedisConnection) => __TAURI_INVOKE<string>("redis_connect", { config }),
+	/**  `redis_disconnect` (conn_id: String) -> () */
+	redisDisconnect: (connId: string) => __TAURI_INVOKE<null>("redis_disconnect", { connId }),
+	/**  `redis_test` (config: RedisConnection) -> String 服务器版本摘要 */
+	redisTest: (config: RedisConnection) => __TAURI_INVOKE<string>("redis_test", { config }),
+	/**  `redis_info` (conn_id: String) -> Vec<(String, String)> 键值对 */
+	redisInfo: (connId: string) => __TAURI_INVOKE<([string, string])[]>("redis_info", { connId }),
+	/**  `redis_select_db` (conn_id: String, db: u8) -> 切换库 */
+	redisSelectDb: (connId: string, db: number) => __TAURI_INVOKE<null>("redis_select_db", { connId, db }),
+	/**  `redis_keys` (conn_id: String, pattern: String) -> Vec<String> */
+	redisKeys: (connId: string, pattern: string) => __TAURI_INVOKE<string[]>("redis_keys", { connId, pattern }),
+	/**  `redis_exec` (conn_id: String, args: Vec<String>) -> RedisExecResult */
+	redisExec: (connId: string, args: string[]) => __TAURI_INVOKE<RedisExecResult>("redis_exec", { connId, args }),
 };
 
 /* Types */
@@ -795,6 +823,26 @@ export type QuickCommandNode =
 {
 	kind: "command",
 } & QuickCommand;
+
+/**  Redis 连接配置 */
+export type RedisConnection = {
+	host: string,
+	port: number,
+	/**  ACL 用户名（可空） */
+	username: string | null,
+	/**  密码（可空=无密码 Redis） */
+	password: string | null,
+	/**  默认库 index */
+	db: number,
+};
+
+/**  任意命令执行结果（前端按 kind 渲染） */
+export type RedisExecResult = {
+	/**  "nil" | "int" | "string" | "blob" | "array" | "map" | "status" | "error" */
+	kind: string,
+	/**  任意 JSON（递归的 serde_json::Value 无法被 specta-typescript 内联，映射为 TS any） */
+	value: any,
+};
 
 /**  串口信息（连接表单展示用） */
 export type SerialPortInfo = {

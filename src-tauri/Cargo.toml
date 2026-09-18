@@ -50,10 +50,12 @@ pbkdf2 = "0.12"
 sha2 = "0.10"
 
 # IPC 类型绑定自动生成（bindings.ts 编译期生成，类型权威来源）
-# specta 版本须与 tauri-specta 精确匹配（rc 阶段官方要求用 "=" 锁定）
-specta = "=2.0.0-rc.25"
+# specta 版本须与 tauri-specta 精确匹配（rc 阶段官方要求用 "=" 锁定）；
+# serde_json feature：为 serde_json::Value 提供 Type 实现（RedisExecResult.value）
+specta = { version = "=2.0.0-rc.25", features = ["serde_json"] }
 specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+redis = { version = "1.7.0", features = ["tokio-comp"] }
 
 [profile.release]
 strip = true

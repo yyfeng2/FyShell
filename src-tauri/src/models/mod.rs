@@ -1,6 +1,7 @@
 pub mod session;
 pub mod transfer;
 pub mod mysql;
+pub mod redis;
 pub mod tunnel;
 pub mod quick_command;
 pub mod auth_profile;

@@ -78,6 +78,14 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::mysql::mysql_begin,
             commands::mysql::mysql_commit,
             commands::mysql::mysql_rollback,
+            // Redis 连接管理（commands/redis.rs）
+            commands::redis::redis_connect,
+            commands::redis::redis_disconnect,
+            commands::redis::redis_test,
+            commands::redis::redis_info,
+            commands::redis::redis_select_db,
+            commands::redis::redis_keys,
+            commands::redis::redis_exec,
             // 表设计器（commands/mysql_design.rs，P2）
             commands::mysql_design::mysql_table_design_get,
             commands::mysql_design::mysql_table_design_save,
@@ -162,6 +170,14 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::serial::serial_disconnect,
             commands::serial::serial_write,
             commands::serial::serial_alive,
+            // Redis 终端（commands/redis.rs）
+            commands::redis::redis_connect,
+            commands::redis::redis_disconnect,
+            commands::redis::redis_test,
+            commands::redis::redis_info,
+            commands::redis::redis_select_db,
+            commands::redis::redis_keys,
+            commands::redis::redis_exec,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Throw)
         // 模型含 u64/i64 字段（字节数/耗时/时间戳），TS 侧统一为 number
@@ -268,6 +284,14 @@ pub fn run() {
             commands::mysql::mysql_begin,
             commands::mysql::mysql_commit,
             commands::mysql::mysql_rollback,
+            // Redis 连接管理（commands/redis.rs）
+            commands::redis::redis_connect,
+            commands::redis::redis_disconnect,
+            commands::redis::redis_test,
+            commands::redis::redis_info,
+            commands::redis::redis_select_db,
+            commands::redis::redis_keys,
+            commands::redis::redis_exec,
             // 表设计器（commands/mysql_design.rs，P2）
             commands::mysql_design::mysql_table_design_get,
             commands::mysql_design::mysql_table_design_save,
@@ -352,6 +376,14 @@ pub fn run() {
             commands::serial::serial_disconnect,
             commands::serial::serial_write,
             commands::serial::serial_alive,
+            // Redis 终端（commands/redis.rs）
+            commands::redis::redis_connect,
+            commands::redis::redis_disconnect,
+            commands::redis::redis_test,
+            commands::redis::redis_info,
+            commands::redis::redis_select_db,
+            commands::redis::redis_keys,
+            commands::redis::redis_exec,
         ])
         .setup(|app| {
             // 会话配置存储：数据库路径经 Tauri API 获取（setup 在任何命令之前运行）
@@ -367,6 +399,8 @@ pub fn run() {
             crate::services::quick_command_store::init(&data_dir)?;
             crate::services::tunnel::init(&data_dir)?;
             crate::services::mysql::init();
+            // Redis 连接注册表（模块级 OnceLock，无需参数）
+            crate::services::redis::init();
             // P2：SQL 控制台查询历史（SQLite，同 fyshell.db 独立 Connection）
             crate::services::mysql_console::init(&data_dir)?;
             // 备份档案 + 运行历史（SQLite，同 fyshell.db 独立 Connection）

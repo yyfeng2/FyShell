@@ -2,6 +2,7 @@ pub mod session;
 pub mod ssh;
 pub mod sftp;
 pub mod mysql;
+pub mod redis;
 pub mod session_log;
 pub mod auth_profile;
 pub mod quick_command;

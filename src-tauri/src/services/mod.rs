@@ -4,6 +4,7 @@ pub mod sftp_store;
 pub mod transfer;
 pub mod config_store;
 pub mod mysql;
+pub mod redis;
 pub mod auth_profile;
 pub mod session_log;
 pub mod quick_command_store;
