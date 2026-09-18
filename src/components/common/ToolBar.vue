@@ -73,7 +73,6 @@ function submit(): void {
   align-items: center;
   min-height: 30px;
   padding: 0 4px;
-  border-bottom: 1px solid var(--fy-chrome-border, #d5d9de);
   background: var(--fy-chrome-bg, #f0f2f5);
   user-select: none;
 }

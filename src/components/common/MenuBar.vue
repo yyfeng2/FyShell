@@ -26,6 +26,7 @@ const MENUS: MenuDef[] = [
     items: [
       { title: '新建会话', action: 'new-session', shortcut: 'Ctrl+N' },
       { title: '新建文件夹', action: 'new-folder' },
+      { title: '打开', action: 'open-session-list' },
       { title: '终端', action: 'local-terminal' },
       { title: '退出', action: 'quit', dividerBefore: true },
     ],
@@ -43,7 +44,7 @@ const MENUS: MenuDef[] = [
     title: '查看',
     accel: 'V',
     items: [
-      { title: '切换左导航', action: 'toggle-nav' },
+      { title: '会话', action: 'toggle-nav' },
       { title: '快速命令栏', action: 'toggle-quickbar' },
       { title: '切换主题（深色/浅色）', action: 'toggle-theme' },
     ],

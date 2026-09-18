@@ -119,6 +119,10 @@ interface FlatNode {
   dbName?: string
   /** 数据库 host 节点（已存连接/独立节点/已连接会话）：库列表已挂载（已连接态） */
   hasDbChildren?: boolean
+  /** 历史库（断开连接后保留展示，灰色弱化） */
+  grey?: boolean
+  /** 会话行：有打开的终端 Tab（显示关闭图标） */
+  closable?: boolean
 }
 
 // ---------------- 会话树 ----------------
@@ -130,12 +134,13 @@ const expanded = ref(new Set<string>())
 /** 已连接 MySQL 会话的数据库子节点（Navicat 风格：库作为会话子节点展示）。
     sessionId 为 null 表示树中无 MySQL 会话，库列表挂到数据库服务分区的独立节点下
     （host 为连接主机，作为独立节点显示名）；savedId 为当前活动连接对应的已保存连接 id
-    （已保存连接常驻节点优先挂载） */
+    （已保存连接常驻节点优先挂载）；connected=false（断开）时保留历史库以灰色展示 */
 const mysqlTreeDbs = ref<{
   sessionId: string | null
   host: string
   databases: string[]
   savedId: string | null
+  connected: boolean
 } | null>(null)
 
 /** 导航分区展开态（SSH 服务 / 数据库服务，单击分区头收缩） */
@@ -150,7 +155,8 @@ async function refreshMysqlTreeDbs(): Promise<void> {
   const store = useMysqlStore()
   const id = store.connId
   if (!id) {
-    mysqlTreeDbs.value = null
+    // 断开不清空：保留历史库以灰色展示（Navicat 风格）
+    if (mysqlTreeDbs.value) mysqlTreeDbs.value.connected = false
     return
   }
   try {
@@ -177,7 +183,13 @@ async function refreshMysqlTreeDbs(): Promise<void> {
       activeSavedId && store.savedConnections.some((c) => c.id === activeSavedId)
         ? activeSavedId
         : null
-    mysqlTreeDbs.value = { sessionId: match?.id ?? null, host: result.host, databases, savedId }
+    mysqlTreeDbs.value = {
+      sessionId: match?.id ?? null,
+      host: result.host,
+      databases,
+      savedId,
+      connected: true,
+    }
     debugLog(
       `[mysql-tree] conn=${id} databases=${databases.length} saved=${savedId ?? '-'} target=${match?.id ?? 'standalone'}`,
     )
@@ -185,17 +197,17 @@ async function refreshMysqlTreeDbs(): Promise<void> {
       expanded.value = new Set([...expanded.value, match.id])
     }
   } catch {
-    mysqlTreeDbs.value = null
+    if (mysqlTreeDbs.value) mysqlTreeDbs.value.connected = false
   }
 }
 
-// 连接状态变化：任意入口（会话树/工作台）连接成功后刷新树中库节点；断开时清空。
+// 连接状态变化：任意入口（会话树/工作台）连接成功后刷新树中库节点；断开时保留历史库（灰色）。
 // 切库会产生新 conn_id（非 null），库列表随之自动刷新，不会误清
 watch(
   () => useMysqlStore().connId,
   (id) => {
     if (!id) {
-      mysqlTreeDbs.value = null
+      if (mysqlTreeDbs.value) mysqlTreeDbs.value.connected = false
       return
     }
     void refreshMysqlTreeDbs()
@@ -316,6 +328,7 @@ const flatNodes = computed<FlatNode[]>(() => {
         isMysql: isDbSession,
         sessionType: n.config?.session_type ?? null,
         hasDbChildren,
+        closable: terminalStore.tabs.some((t) => t.panes.some((p) => p.sessionId === n.id)),
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
         walk(n.children ?? [], depth + 1, section)
@@ -333,6 +346,7 @@ const flatNodes = computed<FlatNode[]>(() => {
             isMysql: false,
             isDbLeaf: true,
             dbName,
+            grey: !mysqlTreeDbs.value!.connected,
           })
         }
       }
@@ -397,16 +411,16 @@ const flatNodes = computed<FlatNode[]>(() => {
         depth: 1,
         isFolder: false,
         color: null,
-        isOpen: isActive && !collapsedDbHosts.value.has(c.id),
+        isOpen: !!dbs && isActive && !collapsedDbHosts.value.has(c.id),
         hostLabel: '',
         encoding: null,
         isMysql: true,
         isSavedConn: true,
         savedConnId: c.id,
-        hasDbChildren: isActive,
+        hasDbChildren: !!dbs && isActive,
       })
-      // 该常驻节点是当前活动连接：库列表挂其下（Navicat 展开效果，可点击收缩箭头折叠）
-      if (isActive && dbs && !collapsedDbHosts.value.has(c.id)) {
+      // 该常驻节点是当前活动连接：库列表挂其下（断开后保留历史库以灰色展示，可点击收缩箭头折叠）
+      if (dbs && isActive && !collapsedDbHosts.value.has(c.id)) {
         for (const dbName of dbs.databases) {
           out.push({
             id: `savdb-${c.id}-${dbName}`,
@@ -420,6 +434,7 @@ const flatNodes = computed<FlatNode[]>(() => {
             isMysql: false,
             isDbLeaf: true,
             dbName,
+            grey: !dbs.connected,
           })
         }
       }
@@ -454,6 +469,7 @@ const flatNodes = computed<FlatNode[]>(() => {
             isMysql: false,
             isDbLeaf: true,
             dbName,
+            grey: !dbs.connected,
           })
         }
       }
@@ -578,7 +594,7 @@ function treeIconColor(node: FlatNode): string | null {
   if (node.isSection) return null
   if (node.isFolder) return 'amber'
   // 数据库 host：已连接 primary（与数据库图标配套），未连接不着色（灰化弱化视觉）
-  if (node.isDbLeaf) return 'primary'
+  if (node.isDbLeaf) return node.grey ? null : 'primary'
   if (node.isSavedConn || node.isMysql || node.sessionType === 'redis') {
     return dbHostConnected(node) ? 'primary' : null
   }
@@ -616,6 +632,13 @@ function toggleTreeExpand(node: FlatNode): void {
     return
   }
   toggleDbHost(node)
+}
+
+/** 树中会话行关闭图标：断开并关闭该会话的终端（关闭后连接态图标随动消失） */
+async function closeSessionNode(node: FlatNode): Promise<void> {
+  const existing = tabs.value.find((t) => t.type === 'terminal' && t.sessionId === node.id)
+  if (existing) closeTab(existing.id)
+  await terminalStore.closeBySessionId(node.id)
 }
 
 function onNodeClick(node: FlatNode): void {
@@ -1415,6 +1438,30 @@ async function onSessionSaved(config: SessionConfig): Promise<void> {
 const showFolderDialog = ref(false)
 const folderName = ref('')
 
+// ---------------- 文件菜单"打开"：已添加会话列表对话框 ----------------
+
+const showSessionListDialog = ref(false)
+
+/** 扁平化的已添加会话列表（非文件夹节点） */
+const sessionListFlat = computed(() => {
+  const out: SessionNode[] = []
+  const walkList = (list: SessionNode[]) => {
+    for (const n of list) {
+      if (n.is_folder) walkList(n.children ?? [])
+      else out.push(n)
+    }
+  }
+  walkList(nodes.value)
+  return out
+})
+
+/** 打开会话列表中选中的会话终端 */
+function openSessionFromList(target: SessionNode): void {
+  showSessionListDialog.value = false
+  selectedId.value = target.id
+  openTerminal(target)
+}
+
 async function createFolder(): Promise<void> {
   const name = folderName.value.trim()
   if (!name) return
@@ -1510,6 +1557,9 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'new-folder':
       showFolderDialog.value = true
+      break
+    case 'open-session-list':
+      showSessionListDialog.value = true
       break
     case 'local-terminal':
       openLocalTerminal()
@@ -1790,6 +1840,7 @@ onUnmounted(() => {
                 'workspace__node--selected': node.id === selectedId,
                 'workspace__tree-node--session': !node.isFolder,
                 'workspace__tree-node--section': node.isSection,
+                'workspace__tree-node--grey': !!node.grey,
               }"
               :style="{ paddingLeft: `${8 + node.depth * 32}px` }"
               @click="onNodeClick(node)"
@@ -1815,6 +1866,15 @@ onUnmounted(() => {
               <div class="workspace__node-text">
                 <span class="workspace__node-name" :title="node.name">{{ node.name }}</span>
               </div>
+              <!-- 会话关闭图标：断开并关闭该会话终端（关闭后连接态图标消失） -->
+              <v-icon
+                v-if="node.closable"
+                icon="mdi-close"
+                size="12"
+                class="workspace__node-close"
+                title="关闭会话"
+                @click.stop="closeSessionNode(node)"
+              />
             </div>
           </template>
           <div v-if="flatNodes.length === 0" class="workspace__tree-empty">无匹配会话</div>
@@ -2061,6 +2121,26 @@ onUnmounted(() => {
     <!-- 导入导出对话框（树右键"运行 SQL 文件..."入口；connId 挂当前活动 MySQL 连接） -->
     <ImportExportDialog v-model="ioDialogVisible" :conn-id="ioDialogConnId" />
 
+    <!-- 文件菜单"打开"：已添加会话列表（选择即打开终端） -->
+    <v-dialog v-model="showSessionListDialog" width="420">
+      <v-card>
+        <v-card-title class="text-subtitle-1">打开会话</v-card-title>
+        <v-divider />
+        <v-card-text style="max-height: 60vh; overflow-y: auto">
+          <v-list density="compact">
+            <v-list-item
+              v-for="s in sessionListFlat"
+              :key="s.id"
+              :title="(s.config?.host as string) || s.name"
+              :subtitle="s.name"
+              @click="openSessionFromList(s)"
+            />
+          </v-list>
+          <div v-if="sessionListFlat.length === 0" class="text-medium-emphasis">暂无已添加会话</div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
     <!-- 主密码设置对话框（首次设置 + 修改/校验） -->
     <MasterPasswordDialog v-model="showMasterPassword" />
 
@@ -2221,6 +2301,23 @@ onUnmounted(() => {
   font-size: 14px;
   white-space: nowrap;
   user-select: none;
+}
+
+/* 历史库（断开连接后保留展示）：整行弱化 */
+.workspace__tree-node--grey {
+  opacity: 0.55;
+}
+
+/* 会话行右侧关闭图标（hover/常显由 closable 驱动） */
+.workspace__node-close {
+  margin-left: auto;
+  flex: none;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.workspace__node-close:hover {
+  opacity: 1;
 }
 
 /* 会话节点双行（名称 + user@host） */
