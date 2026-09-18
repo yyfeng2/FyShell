@@ -126,7 +126,6 @@ const MENU_COMMANDS: { title: string; value: string }[] = [
   { title: '切换主题（深色/浅色）', value: 'toggle-theme' },
   { title: '传输队列', value: 'transfer' },
   { title: 'SFTP 文件传输', value: 'sftp' },
-  { title: '服务器监控', value: 'monitor' },
   { title: '快捷命令', value: 'quick-command' },
   { title: 'SSH 隧道', value: 'tunnel' },
   { title: 'MySQL', value: 'mysql' },

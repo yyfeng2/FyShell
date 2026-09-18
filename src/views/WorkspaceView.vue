@@ -26,8 +26,6 @@ import TerminalPane from '@/components/ssh/terminal/TerminalPane.vue'
 import DualPane from '@/components/sftp/DualPane.vue'
 import TransferQueueView from '@/views/transfer/TransferQueueView.vue'
 import TunnelView from '@/views/tunnel/TunnelView.vue'
-import MonitorDrawer from '@/components/ssh/monitor/MonitorDrawer.vue'
-import MonitorMiniBar from '@/components/ssh/monitor/MonitorMiniBar.vue'
 import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
 import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
@@ -1073,10 +1071,8 @@ function disconnectActive(): void {
   if (activeId.value) closeTab(activeId.value)
 }
 
-// ---------------- 监控 / 日志（P1） ----------------
+// ---------------- 日志（P1） ----------------
 
-/** 服务器监控抽屉开关 */
-const showMonitor = ref(false)
 /** 会话日志查看器开关 */
 const showLogViewer = ref(false)
 /** 主密码设置对话框开关（首次设置 + 修改/校验二合一） */
@@ -1184,10 +1180,6 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'sftp':
       openSftpTab()
-      break
-    // P1 视图入口
-    case 'monitor':
-      showMonitor.value = true
       break
     case 'quick-command':
       openComposeTab()
@@ -1558,13 +1550,6 @@ onUnmounted(() => {
       </main>
     </div>
 
-    <!-- 监控迷你条（P1：活动会话 CPU/内存/网络实时指示，点击打开抽屉） -->
-    <MonitorMiniBar
-      :session-id="activeTerminalId"
-      :session-name="activeSessionName"
-      @open="showMonitor = true"
-    />
-
     <!-- 快速命令栏（Xshell 风格，查看菜单可开关） -->
     <QuickCommandBar :session-id="activeTerminalId" />
 
@@ -1577,13 +1562,6 @@ onUnmounted(() => {
       :host-ip="activeSessionHost"
       :encoding="activeSessionEncoding"
       :session-count="tabs.length"
-    />
-
-    <!-- 服务器监控抽屉（P1） -->
-    <MonitorDrawer
-      v-model="showMonitor"
-      :session-id="activeTerminalId"
-      :session-name="activeSessionName"
     />
 
     <!-- 会话日志查看器（P1：活动会话日志落盘开关与查看） -->

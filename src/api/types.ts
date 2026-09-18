@@ -9,8 +9,6 @@
  * - 事件 payload（§3）：emit 事件不在命令绑定（bindings.ts）范围内
  * - SessionNode 家族：wire 格式 kind 值为 "Folder"/"Session"（Rust serde tag 无 rename），
  *   手写为小写并叠加 is_folder/children 容错归一化，迁移需改前端判断逻辑
- * - MonitorSample：Rust f64 经 specta-typescript 0.0.12 渲染为 `number | null`
- *   （JSON 中 NaN/Infinity 序列化为 null），前端 store 归一化为 number，迁移需引入 null 处理
  */
 
 export type {
@@ -21,7 +19,6 @@ export type {
   TransferKind,
   TransferStatus,
   TransferTask,
-  DockerContainer,
   QuickCommand,
   QuickCommandFolder,
   QuickCommandNode,
@@ -66,17 +63,6 @@ export interface SessionNodeLeaf {
 
 /** 会话树节点（session_list 返回：文件夹+会话混合树） */
 export type SessionNode = SessionFolderNode | SessionNodeLeaf;
-
-/* ============ 手写保留：监控采样（f64 → number | null 渲染差异） ============ */
-
-/** 监控采样（SSH exec 采集 /proc，Channel 推送） */
-export interface MonitorSample {
-  cpu_percent: number; // f64，Rust 侧 clamp 0-100
-  mem_used_mb: number; // u64
-  mem_total_mb: number; // u64
-  net_rx_kb: number; // u64，累计接收 KB
-  net_tx_kb: number; // u64，累计发送 KB
-}
 
 /* ============ §3：事件 payload（emit，仅低频状态；不在命令绑定中） ============ */
 

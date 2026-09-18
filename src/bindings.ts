@@ -74,14 +74,6 @@ export const commands = {
 	sftpFavoriteAdd: (side: string, path: string) => __TAURI_INVOKE<SftpFavorite>("sftp_favorite_add", { side, path }),
 	/**  取消收藏：按侧 + 路径删除（未收藏时幂等） */
 	sftpFavoriteRemove: (side: string, path: string) => __TAURI_INVOKE<null>("sftp_favorite_remove", { side, path }),
-	/**  开始采集（SSH exec /proc）：采样经 Channel 推送，返回即已开始 */
-	monitorStart: (id: string, intervalSecs: number, onSample: Channel<MonitorSample>) => __TAURI_INVOKE<null>("monitor_start", { id, intervalSecs, onSample }),
-	/**  停止采集（按会话 ID 路由） */
-	monitorStop: (id: string) => __TAURI_INVOKE<null>("monitor_stop", { id }),
-	/**  Docker 容器列表：`Vec<DockerContainer>` */
-	dockerList: (id: string) => __TAURI_INVOKE<DockerContainer[]>("docker_list", { id }),
-	/**  容器操作：action 为 start / stop / restart */
-	dockerOperate: (id: string, containerId: string, action: string) => __TAURI_INVOKE<null>("docker_operate", { id, containerId, action }),
 	/**
 	 *  快捷命令/文件夹树（扁平：文件夹+命令混合节点，前端按 groupId/parentId 组树）
 	 * 
@@ -417,17 +409,6 @@ export type AuthType =
 /**  跳板机：引用另一个已存会话 */
 { type: "jump"; jump_session_id: string };
 
-/**  Docker 容器（SSH exec docker 命令采集） */
-export type DockerContainer = {
-	id: string,
-	names: string,
-	image: string,
-	/**  running / exited / paused */
-	state: string,
-	/**  人类可读状态 */
-	status: string,
-};
-
 /**  SFTP 文件条目（契约第 1 节） */
 export type FileEntry = {
 	name: string,
@@ -449,17 +430,6 @@ export type KeyMapping = {
 	action_type: string,
 	/**  动作载荷：发送的字符串 或 菜单命令 action 名 */
 	payload: string,
-};
-
-/**  监控采样（SSH exec 采集 /proc，Channel 推送） */
-export type MonitorSample = {
-	cpu_percent: number | null,
-	mem_used_mb: number,
-	mem_total_mb: number,
-	/**  累计接收 KB */
-	net_rx_kb: number,
-	/**  累计发送 KB */
-	net_tx_kb: number,
 };
 
 /**  备份档案（自动运行任务的持久化配置） */

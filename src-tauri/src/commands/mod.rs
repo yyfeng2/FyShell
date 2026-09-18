@@ -6,7 +6,6 @@ pub mod session_log;
 pub mod auth_profile;
 pub mod quick_command;
 pub mod tunnel;
-pub mod monitor;
 pub mod mysql_design;
 pub mod mysql_console;
 pub mod mysql_edit;

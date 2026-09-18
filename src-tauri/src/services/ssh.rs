@@ -88,38 +88,6 @@ impl SshSessionHandle {
             .map_err(|e| AppError::Ssh(format!("初始化 SFTP 会话失败: {e}")))
     }
 
-    /// 连接是否仍然存活
-    pub fn is_alive(&self) -> bool {
-        !self.handle.is_closed()
-    }
-
-    /// 在已连接会话上执行一次性命令并返回全部输出（P1：供监控/Docker 采集使用）。
-    /// 独立 session channel，与终端互不影响；stderr 一并收集。
-    pub async fn exec(&self, command: &str) -> Result<String, AppError> {
-        let mut channel = self
-            .handle
-            .channel_open_session()
-            .await
-            .map_err(|e| AppError::Ssh(format!("打开 exec channel 失败: {e}")))?;
-        channel
-            .exec(true, command)
-            .await
-            .map_err(|e| AppError::Ssh(format!("执行命令失败: {e}")))?;
-        // 读取全部输出直到流结束（Eof/Close/对端断开）
-        let mut out: Vec<u8> = Vec::new();
-        loop {
-            match channel.wait().await {
-                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                    out.extend_from_slice(&data);
-                }
-                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                // 窗口调整等其他消息直接忽略
-                Some(_) => {}
-            }
-        }
-        Ok(String::from_utf8_lossy(&out).into_owned())
-    }
-
     /// 开通 direct-tcpip 通道（P1：供 SSH 隧道本地/SOCKS5 转发使用）。
     /// 返回的 Channel 经 `into_stream()` 转为流后双向转发。
     pub async fn open_direct_tcpip(

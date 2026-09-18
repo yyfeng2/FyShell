@@ -8,7 +8,6 @@ pub mod auth_profile;
 pub mod session_log;
 pub mod quick_command_store;
 pub mod tunnel;
-pub mod monitor;
 pub mod mysql_design;
 pub mod mysql_console;
 pub mod mysql_edit;

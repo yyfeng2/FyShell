@@ -49,11 +49,6 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::sftp::sftp_favorite_list,
             commands::sftp::sftp_favorite_add,
             commands::sftp::sftp_favorite_remove,
-            // 服务器监控（commands/monitor.rs，P1）
-            commands::monitor::monitor_start,
-            commands::monitor::monitor_stop,
-            commands::monitor::docker_list,
-            commands::monitor::docker_operate,
             // 快捷命令（commands/quick_command.rs，P1）
             commands::quick_command::qc_list,
             commands::quick_command::qc_save_command,
@@ -244,11 +239,6 @@ pub fn run() {
             commands::sftp::sftp_favorite_list,
             commands::sftp::sftp_favorite_add,
             commands::sftp::sftp_favorite_remove,
-            // 服务器监控（commands/monitor.rs，P1）
-            commands::monitor::monitor_start,
-            commands::monitor::monitor_stop,
-            commands::monitor::docker_list,
-            commands::monitor::docker_operate,
             // 快捷命令（commands/quick_command.rs，P1）
             commands::quick_command::qc_list,
             commands::quick_command::qc_save_command,
@@ -376,7 +366,6 @@ pub fn run() {
             crate::services::session_log::init(&data_dir)?;
             crate::services::quick_command_store::init(&data_dir)?;
             crate::services::tunnel::init(&data_dir)?;
-            crate::services::monitor::init(&data_dir)?;
             crate::services::mysql::init();
             // P2：SQL 控制台查询历史（SQLite，同 fyshell.db 独立 Connection）
             crate::services::mysql_console::init(&data_dir)?;

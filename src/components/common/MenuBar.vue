@@ -54,7 +54,6 @@ const MENUS: MenuDef[] = [
     items: [
       { title: '传输队列', action: 'transfer' },
       { title: 'SFTP 文件传输', action: 'sftp' },
-      { title: '服务器监控', action: 'monitor', dividerBefore: true },
       { title: '快捷命令', action: 'quick-command' },
       { title: 'SSH 隧道', action: 'tunnel' },
       { title: '会话设置', action: 'session-settings' },
