@@ -58,6 +58,7 @@ const MENUS: MenuDef[] = [
       { title: 'SSH 隧道', action: 'tunnel' },
       { title: '会话设置', action: 'session-settings' },
       { title: 'MySQL', action: 'mysql' },
+      { title: 'Redis', action: 'redis' },
       { title: '会话日志', action: 'session-log', dividerBefore: true },
       { title: '主密码设置', action: 'master-password' },
     ],

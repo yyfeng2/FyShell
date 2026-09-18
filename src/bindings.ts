@@ -392,20 +392,6 @@ export const commands = {
 	serialWrite: (id: string, data: number[]) => __TAURI_INVOKE<null>("serial_write", { id, data }),
 	/**  串口会话存活查询：Rust 侧是否持有该会话连接句柄 */
 	serialAlive: (id: string) => __TAURI_INVOKE<boolean>("serial_alive", { id }),
-	/**  `redis_connect` (config: RedisConnection) -> String connection_id */
-	redisConnect: (config: RedisConnection) => __TAURI_INVOKE<string>("redis_connect", { config }),
-	/**  `redis_disconnect` (conn_id: String) -> () */
-	redisDisconnect: (connId: string) => __TAURI_INVOKE<null>("redis_disconnect", { connId }),
-	/**  `redis_test` (config: RedisConnection) -> String 服务器版本摘要 */
-	redisTest: (config: RedisConnection) => __TAURI_INVOKE<string>("redis_test", { config }),
-	/**  `redis_info` (conn_id: String) -> Vec<(String, String)> 键值对 */
-	redisInfo: (connId: string) => __TAURI_INVOKE<([string, string])[]>("redis_info", { connId }),
-	/**  `redis_select_db` (conn_id: String, db: u8) -> 切换库 */
-	redisSelectDb: (connId: string, db: number) => __TAURI_INVOKE<null>("redis_select_db", { connId, db }),
-	/**  `redis_keys` (conn_id: String, pattern: String) -> Vec<String> */
-	redisKeys: (connId: string, pattern: string) => __TAURI_INVOKE<string[]>("redis_keys", { connId, pattern }),
-	/**  `redis_exec` (conn_id: String, args: Vec<String>) -> RedisExecResult */
-	redisExec: (connId: string, args: string[]) => __TAURI_INVOKE<RedisExecResult>("redis_exec", { connId, args }),
 };
 
 /* Types */

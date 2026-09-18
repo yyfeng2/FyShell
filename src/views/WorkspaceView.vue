@@ -29,13 +29,16 @@ import TunnelView from '@/views/tunnel/TunnelView.vue'
 import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
 import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
+import RedisDbWorkspace from '@/components/redis/RedisDbWorkspace.vue'
 import { useMysqlStore } from '@/stores/mysql'
+import { useRedisStore } from '@/stores/redis'
 import { mysqlDbList, mysqlDbSwitch } from '@/api/mysqlDb'
 import { sessionList } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
 import { useSessionStore, type SessionConfig } from '@/stores/session'
+import type { RedisConnection } from '@/api/types'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useTerminalStore } from '@/stores/terminal'
 import { debugLog } from '@/api/channels'
@@ -72,10 +75,10 @@ interface SessionNode {
   } & Record<string, unknown>
 }
 
-/** 工作区 Tab（终端 / 传输 / SFTP 双栏 / 隧道 / 快捷命令 / MySQL 六类） */
+/** 工作区 Tab（终端 / 传输 / SFTP 双栏 / 隧道 / 快捷命令 / MySQL / Redis 七类） */
 interface WorkTab {
   id: string
-  type: 'terminal' | 'transfer' | 'tunnel' | 'sftp' | 'compose' | 'mysql'
+  type: 'terminal' | 'transfer' | 'tunnel' | 'sftp' | 'compose' | 'mysql' | 'redis'
   title: string
   /** 终端 Tab 对应的会话配置 ID（状态栏主机/编码、SFTP 配置查询） */
   sessionId?: string
@@ -97,7 +100,7 @@ interface FlatNode {
   hostLabel: string
   /** 会话编码（副行展示用） */
   encoding: string | null
-  /** 数据库会话（session_type === 'mysql'，树图标与连接路由区分） */
+  /** 数据库会话（session_type === 'mysql' 或 'redis'，树图标与连接路由区分） */
   isMysql: boolean
   /** 会话类型（config.session_type，"ssh" 缺省；mysql/telnet/rlogin/serial 用于树图标与路由） */
   sessionType?: string | null
@@ -276,9 +279,10 @@ const flatNodes = computed<FlatNode[]>(() => {
   const out: FlatNode[] = []
   const walk = (list: SessionNode[], depth: number, section: 'ssh' | 'db') => {
     for (const n of list) {
-      const isMysqlSession = !n.is_folder && n.config?.session_type === 'mysql'
-      // 分区过滤：SSH 区跳过 MySQL 会话；数据库区只保留 MySQL 会话
-      //（数据库区不显示文件夹，扁平列出其中嵌套的 MySQL 会话）
+      // mysql 或 redis 的数据库会话（分区挂靠、树图标与连接路由共用此判定）
+      const isMysqlSession = !n.is_folder && (n.config?.session_type === 'mysql' || n.config?.session_type === 'redis')
+      // 分区过滤：SSH 区跳过数据库会话；数据库区只保留数据库会话（MySQL/Redis）
+      //（数据库区不显示文件夹，扁平列出其中嵌套的数据库会话）
       if (section === 'ssh' && isMysqlSession) continue
       if (section === 'db' && n.is_folder) {
         walk(n.children ?? [], depth, section)
@@ -362,7 +366,7 @@ const flatNodes = computed<FlatNode[]>(() => {
     isSeparator: true,
   })
 
-  // 数据库服务分区：MySQL 会话 + 已保存连接常驻节点 + 库列表（会话缩进一级，不与分区头齐平）
+  // 数据库服务分区：数据库（MySQL/Redis）会话 + 已保存连接常驻节点 + 库列表（会话缩进一级，不与分区头齐平）
   sectionHeader('section-db', '数据库服务')
   if (openSections.value.has('section-db')) {
     walk(filterTree(nodes.value, kw), 1, 'db')
@@ -501,6 +505,8 @@ function treeIconColor(node: FlatNode): string | null {
   if (node.isSection) return null
   if (node.isFolder) return 'amber'
   if (node.color) return node.color
+  // 数据库会话（MySQL/Redis）统一 primary：与 mdi-database 图标配套（Navicat 风格），
+  // Redis 不额外换色，避免同图标靠颜色区分反而不易辨别
   if (node.isDbLeaf || node.isMysql) return 'primary'
   switch (node.sessionType) {
     case 'telnet':
@@ -568,6 +574,10 @@ function onNodeClick(node: FlatNode): void {
     void connectMysqlSession(target)
     return
   }
+  if (stype === 'redis') {
+    void connectRedisSession(target)
+    return
+  }
   // Telnet / RLOGIN / 串口：byte-stream 会话打开终端（持久会话路径）
   if (stype === 'telnet' || stype === 'rlogin' || stype === 'serial') {
     openByteStreamSession(target)
@@ -607,6 +617,11 @@ function menuConnect(): void {
     // 数据库会话：切到 MySQL 工作台并按会话配置建连（不开终端）
     if (stype === 'mysql') {
       void connectMysqlSession(target)
+      return
+    }
+    // Redis 数据库会话：切到 Redis 工作台并按会话配置建连（不开终端）
+    if (stype === 'redis') {
+      void connectRedisSession(target)
       return
     }
     // Telnet / RLOGIN / 串口：byte-stream 会话打开终端（持久会话路径）
@@ -657,6 +672,48 @@ async function connectMysqlSession(target: SessionNode): Promise<void> {
     // 数据库子节点由 connId watch 统一挂载（覆盖工作台等入口）
   } catch {
     // 连接失败由 MySQL 工作台 v-alert 展示（store.connError）
+  }
+}
+
+/** 连接 Redis 数据库会话：激活 Redis 工作台 Tab + 用会话配置建立连接（镜像 connectMysqlSession） */
+async function connectRedisSession(target: SessionNode): Promise<void> {
+  const redisStore = useRedisStore()
+  openRedisTab()
+  // 树节点的 config 即后端 SessionConfig（含 auth_type），按宽松类型取连接字段
+  const cfg = (target.config ?? {}) as {
+    host?: string
+    port?: number
+    username?: string
+    auth_type?: { type: string; password?: string }
+  }
+  const auth = cfg.auth_type
+  // RedisConnection：用户名/密码可空（空串归一化为 null）
+  const connectCfg: RedisConnection = {
+    host: cfg.host ?? '',
+    port: cfg.port ?? 6379,
+    username: cfg.username?.trim() ? cfg.username.trim() : null,
+    password: auth && (auth.type === 'password' || auth.type === 'interactive') ? (auth.password ?? null) : null,
+    db: 0,
+  }
+  // 已连接/正在连接同一配置时直接复用（单击导航语义，双击/重复点击不反复重连）
+  const last = redisStore.lastConfig
+  if (
+    (redisStore.connId || redisStore.connecting) &&
+    last &&
+    last.host === connectCfg.host &&
+    last.port === connectCfg.port &&
+    last.username === connectCfg.username
+  ) {
+    return
+  }
+  try {
+    // 已有连接时先断开（切换连接语义，与 connectSaved 一致）
+    if (redisStore.connId) await redisStore.disconnect()
+    await redisStore.connect(connectCfg)
+    // 连接成功回填已存连接列表（按 host+port+username 去重）
+    redisStore.activeSavedId = redisStore.saveConnection(target.name ?? '', connectCfg)
+  } catch {
+    // 连接失败由 Redis 工作台 v-alert 展示（store.connError）
   }
 }
 
@@ -926,6 +983,18 @@ function openMysqlTab(): void {
     return
   }
   const tab: WorkTab = { id: genTabId(), type: 'mysql', title: 'MySQL' }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+}
+
+/** 打开 Redis Tab（单例，与 MySQL 同模式） */
+function openRedisTab(): void {
+  const existing = tabs.value.find((t) => t.type === 'redis')
+  if (existing) {
+    activeId.value = existing.id
+    return
+  }
+  const tab: WorkTab = { id: genTabId(), type: 'redis', title: 'Redis' }
   tabs.value.push(tab)
   activeId.value = tab.id
 }
@@ -1231,6 +1300,9 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'mysql':
       openMysqlTab()
+      break
+    case 'redis':
+      openRedisTab()
       break
     case 'session-log':
       if (activeTerminalId.value) {
@@ -1588,6 +1660,7 @@ onUnmounted(() => {
             <TunnelView v-else-if="tab.type === 'tunnel'" />
             <ComposePane v-else-if="tab.type === 'compose'" @sent="onComposeSent" />
             <MysqlDbWorkspace v-else-if="tab.type === 'mysql'" />
+            <RedisDbWorkspace v-else-if="tab.type === 'redis'" />
           </div>
           <div v-if="tabs.length === 0" class="workspace__empty">
             <v-icon icon="mdi-console" size="48" class="mb-2" />

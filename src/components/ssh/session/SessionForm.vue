@@ -65,8 +65,14 @@
                 :rules="[rules.required, rules.port]"
               />
             </v-col>
-            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'mysql'" cols="6">
-              <v-text-field v-model="username" label="用户名" density="compact" :rules="[rules.required]" />
+            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'mysql' || sessionKind === 'redis'" cols="6">
+              <!-- Redis 用户名可空（RedisConnection.username 为 string|null），ssh/mysql 仍必填 -->
+              <v-text-field
+                v-model="username"
+                label="用户名"
+                density="compact"
+                :rules="sessionKind === 'redis' ? [] : [rules.required]"
+              />
             </v-col>
             <v-col v-if="sessionKind === 'ssh'" cols="6">
               <v-select
@@ -125,7 +131,7 @@
 
             <!-- 密码 / 交互式 -->
             <v-col
-              v-if="sessionKind === 'mysql' || (sessionKind === 'ssh' && (authType === 'password' || authType === 'interactive'))"
+              v-if="sessionKind === 'mysql' || sessionKind === 'redis' || (sessionKind === 'ssh' && (authType === 'password' || authType === 'interactive'))"
               cols="12"
             >
               <v-text-field
@@ -133,7 +139,7 @@
                 label="密码"
                 density="compact"
                 :type="showPassword ? 'text' : 'password'"
-                :rules="[rules.required]"
+                :rules="sessionKind === 'redis' ? [] : [rules.required]"
                 :disabled="profileLocked"
                 :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
                 @click:append-inner="showPassword = !showPassword"
@@ -242,6 +248,7 @@ import { useTheme } from 'vuetify'
 import { sessionTest } from '@/api/session'
 import { authProfileList } from '@/api/authProfile'
 import { mysqlConnect, mysqlDisconnect } from '@/api/mysql'
+import { redisTest } from '@/api/redis'
 import { telnetConnect, telnetDisconnect } from '@/api/telnet'
 import { serialConnect, serialDisconnect, serialList, type SerialPortInfo } from '@/api/serial'
 import type { AuthProfile } from '@/api/types'
@@ -250,8 +257,8 @@ import { useSessionStore, type SessionConfig, type AuthType } from '@/stores/ses
 
 type AuthTypeKind = AuthType extends { type: infer T } ? T : never
 
-/** 会话类型：SSH 终端 / 数据库 / Telnet 兼容（Telnet/RLOGIN）/ 串口 */
-type SessionKind = 'ssh' | 'mysql' | 'telnet' | 'rlogin' | 'serial'
+/** 会话类型：SSH 终端 / 数据库（MySQL/Redis）/ Telnet 兼容（Telnet/RLOGIN）/ 串口 */
+type SessionKind = 'ssh' | 'mysql' | 'redis' | 'telnet' | 'rlogin' | 'serial'
 
 /** 契约 P1：SessionConfig 可选携带 profile_id（认证配置文件引用） */
 type SessionConfigWithProfile = SessionConfig & { profile_id?: string | null }
@@ -288,10 +295,11 @@ const AUTH_OPTIONS: { value: AuthTypeKind; title: string }[] = [
   { value: 'jump', title: '跳板机' },
 ]
 
-/** 会话类型：SSH 终端 / 数据库（MySQL）/ Telnet（含 RLOGIN 兼容）/ 串口 */
+/** 会话类型：SSH 终端 / 数据库（MySQL/Redis）/ Telnet（含 RLOGIN 兼容）/ 串口 */
 const SESSION_KINDS: { value: SessionKind; title: string }[] = [
   { value: 'ssh', title: 'SSH' },
   { value: 'mysql', title: '数据库 (MySQL)' },
+  { value: 'redis', title: '数据库 (Redis)' },
   { value: 'telnet', title: 'Telnet' },
   { value: 'rlogin', title: 'RLOGIN' },
   { value: 'serial', title: '串口' },
@@ -391,12 +399,13 @@ watch(
 watch(sessionKind, (kind) => {
   if (props.session) return
   if (kind === 'serial') return
-  port.value = kind === 'mysql' ? 3306 : kind === 'telnet' ? 23 : kind === 'rlogin' ? 513 : 22
+  port.value =
+    kind === 'mysql' ? 3306 : kind === 'redis' ? 6379 : kind === 'telnet' ? 23 : kind === 'rlogin' ? 513 : 22
 })
 
 /** session_type 字符串 → 表单类型（未知类型回退 SSH） */
 function mapSessionKind(t: string | null | undefined): SessionKind {
-  if (t === 'mysql' || t === 'telnet' || t === 'rlogin' || t === 'serial') return t
+  if (t === 'mysql' || t === 'redis' || t === 'telnet' || t === 'rlogin' || t === 'serial') return t
   return 'ssh'
 }
 
@@ -488,8 +497,8 @@ function buildConfig(): SessionConfigWithProfile {
   if (prof && sessionKind.value === 'ssh') {
     // 认证方式从配置文件解析（深拷贝，避免与会话配置共享引用）
     auth = JSON.parse(JSON.stringify(prof.auth_type)) as AuthType
-  } else if (sessionKind.value === 'mysql') {
-    // 数据库会话：认证即用户名/密码（auth_type 仅作存储载体）
+  } else if (sessionKind.value === 'mysql' || sessionKind.value === 'redis') {
+    // 数据库会话（MySQL/Redis）：认证即用户名/密码（auth_type 仅作存储载体）
     auth = { type: 'password', password: password.value }
   } else if (sessionKind.value !== 'ssh') {
     // byte-stream 会话（telnet/rlogin/serial）：无 SSH 认证概念，auth_type 仅作存储载体
@@ -558,6 +567,28 @@ async function runTest(): Promise<void> {
         schema: null,
       })
       await mysqlDisconnect(connId)
+      testResult.value = { ok: true, message: '连接成功' }
+    } catch (err) {
+      testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }
+    } finally {
+      testing.value = false
+    }
+    return
+  }
+  // 数据库会话（Redis）：redis_test 建连即断（后端内部自断，无需手动断开）
+  if (sessionKind.value === 'redis') {
+    testing.value = true
+    testResult.value = null
+    try {
+      const cfg = buildConfig()
+      // RedisConnection：用户名/密码可空（空串归一化为 null）
+      await redisTest({
+        host: cfg.host,
+        port: cfg.port,
+        username: username.value.trim() ? username.value.trim() : null,
+        password: password.value ? password.value : null,
+        db: 0,
+      })
       testResult.value = { ok: true, message: '连接成功' }
     } catch (err) {
       testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }

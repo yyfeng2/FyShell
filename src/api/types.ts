@@ -30,6 +30,8 @@ export type {
   MySqlConnection,
   MySqlTableInfo,
   MySqlQueryResult,
+  RedisConnection,
+  RedisExecResult,
 } from '../bindings';
 
 // 局部引用：手写保留的类型（SessionNodeLeaf / TransferStatusEvent）需要
