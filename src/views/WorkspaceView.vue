@@ -342,10 +342,10 @@ const flatNodes = computed<FlatNode[]>(() => {
     })
   }
 
-  // SSH 服务分区：文件夹 + SSH 会话
+  // SSH 服务分区：文件夹 + SSH 会话（会话/文件夹缩进一级，不与分区头齐平）
   sectionHeader('section-ssh', 'SSH 服务')
   if (openSections.value.has('section-ssh')) {
-    walk(filterTree(nodes.value, kw), 0, 'ssh')
+    walk(filterTree(nodes.value, kw), 1, 'ssh')
   }
 
   // 分区虚线分隔
@@ -362,10 +362,10 @@ const flatNodes = computed<FlatNode[]>(() => {
     isSeparator: true,
   })
 
-  // 数据库服务分区：MySQL 会话 + 已保存连接常驻节点 + 库列表
+  // 数据库服务分区：MySQL 会话 + 已保存连接常驻节点 + 库列表（会话缩进一级，不与分区头齐平）
   sectionHeader('section-db', '数据库服务')
   if (openSections.value.has('section-db')) {
-    walk(filterTree(nodes.value, kw), 0, 'db')
+    walk(filterTree(nodes.value, kw), 1, 'db')
     const dbs = mysqlTreeDbs.value
     // 已保存连接常驻节点（Navicat 风格：未连接也显示主机名，点击连接，连接后展开库列表）。
     // 与 session 树中同 host 的 MySQL 会话去重（session 树已有该 host 则不重复出现）
@@ -381,7 +381,7 @@ const flatNodes = computed<FlatNode[]>(() => {
       out.push({
         id: `savedconn-${c.id}`,
         name: c.host,
-        depth: 0,
+        depth: 1,
         isFolder: false,
         color: null,
         isOpen: isActive,

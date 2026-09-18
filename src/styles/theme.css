@@ -304,6 +304,13 @@ body {
   height: 1em;
 }
 
+/* 列表 prepend 图标与文字间距收紧（Vuetify 默认 spacer 32px 过宽 → 一个字符宽度 8px，
+   与树节点图标 mr-1 紧凑风格一致） */
+.v-application .v-list-item__prepend > .v-icon ~ .v-list-item__spacer,
+.v-overlay-container .v-list-item__prepend > .v-icon ~ .v-list-item__spacer {
+  width: 8px;
+}
+
 /* 菜单/列表文字与标签栏字号一致（标签栏 14px；注意 Vuetify 3 类名是单下划线 v-list-item-title；
    右键菜单/下拉经 Teleport 在 .v-overlay-container 内，需同时命中） */
 .v-application .v-list-item-title,
