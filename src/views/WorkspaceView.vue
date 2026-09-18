@@ -609,6 +609,15 @@ function toggleDbHost(node: FlatNode): void {
   collapsedDbHosts.value = set
 }
 
+/** 树行收缩箭头分发：文件夹行切换子级展开（expanded），host 行切换库列表（collapsedDbHosts） */
+function toggleTreeExpand(node: FlatNode): void {
+  if (node.isFolder) {
+    toggleFolder(node.id)
+    return
+  }
+  toggleDbHost(node)
+}
+
 function onNodeClick(node: FlatNode): void {
   // 分区头：单击折叠/展开
   if (node.isSection) {
@@ -1782,19 +1791,20 @@ onUnmounted(() => {
                 'workspace__tree-node--session': !node.isFolder,
                 'workspace__tree-node--section': node.isSection,
               }"
-              :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
+              <!-- 每级缩进 = 1 字符(14px) + 收缩箭头槽位(18px)，子级文本对齐父级箭头之后 -->
+              :style="{ paddingLeft: `${8 + node.depth * 32}px` }"
               @click="onNodeClick(node)"
               @keydown="onNodeKeydown(node, $event)"
               @contextmenu.prevent="onTreeContextmenu(node, $event)"
             >
-              <!-- 数据库 host 节点收缩箭头：点击折叠/展开库列表（@click.stop 不触发连接） -->
+              <!-- 可展开行收缩箭头：host 行切换库列表、文件夹行切换子级（@click.stop 不触发连接） -->
               <v-icon
-                v-if="node.hasDbChildren"
+                v-if="node.hasDbChildren || node.isSavedConn || node.id === 'db-standalone' || node.isFolder"
                 :icon="node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right'"
                 size="14"
                 class="mr-1"
-                title="展开/收起数据库列表"
-                @click.stop="toggleDbHost(node)"
+                title="展开/收起"
+                @click.stop="toggleTreeExpand(node)"
               />
               <v-icon
                 :icon="treeIcon(node)"
