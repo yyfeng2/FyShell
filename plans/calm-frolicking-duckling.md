@@ -1,118 +1,107 @@
-# 打通 Telnet / RLOGIN / 串口：完整会话化
+# 新任务：移除右键菜单 3 项 + 全项目图标统一替换为 Lucide
 
 ## Context
 
-用户发现 SshOptionsDialog 的 TELNET / RLOGIN / 串口三个分组是死占位（点选后只显示"暂不支持该连接类型 / FyShell 当前仅支持 SSH 连接"），但**后端 Telnet 与串口实现是真实的**（`services/telnet.rs` IAC 状态机 + `services/serial.rs` serialport），仅 RLOGIN 无后端。用户已确认范围（AskUserQuestion）：
+上一任务（Telnet/RLOGIN/串口完整会话化）已完成并提交（2aa7877 + bindings 同步 15ff637），工作区干净。本任务两个子任务（用户原话 + AskUserQuestion 澄清）：
 
-- **完整会话化**：telnet / rlogin / serial 成为可保存的会话（会话树、会话级设置入口、双击直连），与 MySQL 会话（session_type='mysql'）对称。目前仅有即时连接（ByteStreamForm）而无会话树持久化。
-- **RLOGIN 复用 Telnet 兼容连接（推荐）**：Rust 侧**零改动**，前端入口标记 `session_type='rlogin'` 但传输走 `telnet_connect`（端口默认 513），面板注明兼容说明。
+1. **移除会话树右键菜单 3 项**：新建本地终端 / Telnet 连接 / 串口终端（用户截图中红框精确框选的三项）。
+2. **全项目图标统一替换**：用户认为当前 mdi 图标"太单调、太粗糙、太丑"，选定更换为 **Lucide** 风格的图标。
 
-成果目标：三个分组全变为真实可编辑面板；会话树右键"设置"打开对应面板编辑会话并保存；树内双击/连接菜单直接路由到 byte-stream 会话。
+### 关键技术事实（已核实）
 
-验证基线固定在 `cargo check` + `npx vue-tsc --noEmit` 双绿（本机 `cargo test` 二进制会 0xc0000139 崩溃，不做）。
+- 右键三项入口只在 `WorkspaceView.vue` 右键菜单里（`menuNewLocal` / `menuNewByteStream('telnet')` / `menuNewByteStream('serial')` 均仅该菜单调用），**无菜单栏/工具栏/其它入口**。因此移除菜单后相关函数/组件/表单全部成为死代码。
+- `tsconfig noUnusedLocals: false` → 删模板调用后残留未用函数**不会**被 vue-tsc 报错，但按项目惯例（健康检查清死代码）应一并清理。
+- Vuetify 3.13.4 图标机制（`node_modules/vuetify/lib/composables/icons.js` + `VIcon.js` 已读源码确认）：
+  - `createVuetify({ icons: { defaultSet, sets, aliases } })`，`IconSet = { component }`。
+  - `icon` 以 `$` 开头 → 替换为 `aliases[name]`；否则按 `setName:` 前缀分派；**无前缀 → 走 `defaultSet` 的 set**，组件收到**移除前缀后的 icon 字符串**（如显式 `icon="mdi-plus"` 收到 `mdi-plus`，内部 `$close` 经 aliases 解析后收到别名值）。
+  - `VIcon` 渲染 `createVNode(set.component, { tag, icon, class: 'v-icon …', style: {fontSize/height/width, color} }, …)` → **set 组件只需渲染 `h(tag, {class, style}, [svg])`，继承 `currentColor` 即可无缝接管尺寸/颜色**。
+- 全项目无 `class="mdi"` 直接用法、无 `mdi-spin` 动画；`@mdi/font` 仅 `plugins/vuetify.ts:14` 一处 CSS import。
 
 ---
 
-## 1. 后端：SessionConfig 扩展串口字段
+## 任务一：移除右键菜单 3 项 + 清理死代码
 
-### 1a. `src-tauri/src/models/session.rs`
-`SessionConfig` 增加（serde default，与既有 `session_type`/`profile_id` 同模式）：
-```rust
-/// 串口会话：端口名（session_type=="serial" 时生效）
-pub serial_port: Option<String>,
-/// 串口会话：波特率（默认 115200）
-pub baud_rate: Option<u32>,
+全部改动集中在 `E:\fyshell\src\views\WorkspaceView.vue` 与一个组件文件：
+
+1. **模板右键菜单**（约 1542-1576 区域的 treeMenu v-list）：
+   - 删除注释 `<!-- 新建连接：本地终端 / Telnet / 串口（byte-stream 终端） -->` 与 3 个 `<v-list-item>`（新建本地终端 / Telnet 连接 / 串口终端），并删除因此多出的**一个** `<v-divider>`（删除项前后的两个 divider 保留其一）。
+   - 最终菜单：连接 → 设置 → divider → 重命名 → divider → 删除。
+2. **删除失去唯一入口的脚本死代码**：
+   - `import ByteStreamForm from '@/components/ssh/session/ByteStreamForm.vue'`（24 行）。
+   - `openLocalTerminal()`（767）、`openByteStreamTerminal()`（796）、`menuNewLocal()`（889）、`menuNewByteStream()`（895）。
+   - `const showByteStreamForm = ref(false)`（1099）。
+   - 模板挂载块（约 1675-1678，`<ByteStreamForm v-model="showByteStreamForm" @saved="openByteStreamTerminal" />`）。
+3. **删除组件文件** `E:\fyshell\src\components\ssh\session\ByteStreamForm.vue`（不再被引用）。
+4. **注释修正**：`src/components/ssh/options/panels/ByteStreamPanel.vue:100` 注释提到"与 ByteStreamForm 一致"→ 改为"常用波特率选项"（仅措辞）。
+
+**明确保留**（byte-stream 持久会话能力不受影响）：`openByteStreamSession()`（持久会话路由）、WorkspaceView 会话树 telnet/rlogin/serial 图标与双击路由、SshOptionsDialog 的 ByteStreamPanel 会话级编辑（记录编辑 SessionConfig，非即时连接）、SessionForm 的五类会话新建。
+
+---
+
+## 任务二：mdi → Lucide 图标全量替换
+
+**方案（已定，零组件改动）**：Vuetify 自定义 SVG 图标集接入 `lucide-vue-next`，所有现有 `icon="mdi-x"` / `prepend-icon` / `:icon` / `icon` 对象字段与**内部别名**（`$close`/`$prev`/`$next`/`$checkboxOn` 等 45 键）统一经一张映射表落到 Lucide 组件。现有 138 个唯一 mdi 图标名一个不落全部映射。
+
+### 2a. 安装依赖
+```bash
+npm i lucide-vue-next
+npm un @mdi/font
 ```
-更新 `session_type` 注释：`None/"ssh"`=SSH，`"mysql"`=数据库，`"telnet"/"rlogin"`=Telnet 兼容，`"serial"`=串口。
 
-### 1b. `src-tauri/src/services/config_store.rs`
-仿照既有 `session_type` 迁移（约 78 行）追加幂等 ALTER：
-```sql
-ALTER TABLE sessions ADD COLUMN serial_port TEXT;
-ALTER TABLE sessions ADD COLUMN baud_rate INTEGER;
+### 2b. 新建 `src/plugins/icons/lucideMap.ts`
+- **具名 import** 全部映射用到的 lucide 组件（保持 tree-shaking 与体型最小）：
+  ```ts
+  import { Plus, Search, Trash2, X, RefreshCw, Check, Pencil, Database, …, CircleHelp } from 'lucide-vue-next'
+  import type { Component } from 'vue'
+  import type { IconSet, IconAliases } from 'vuetify'
+  ```
+- **`mdiMap: Record<string, Component>`**：key = mdi 图标名**去 `mdi-` 前缀后的小写名**（同义映射，如 `'magnify': Search`、`'delete': Trash2`、`'close': X`、`'console': Terminal`、`'console-network': SquareTerminal`、`'usb-port': Usb`、`'send': Send`、`'database': Database`……）。完整清单实现第一步由
+  `grep -rhoE "mdi-[a-zA-Z0-9-]+" src --include=*.vue --include=*.ts | sort -u`
+  导出，逐条对照 lucide 官方图标名（lucide.dev）映射；**无直接等价的用语义近义词**（如 `swap-vertical→ArrowUpDown`），极少数（预计 <10）无法近义的映射到 `CircleHelp` 并在交付时向用户列出例外。
+- **导出 `aliases: IconAliases`**：覆盖 Vuetify 全部 45 个内部别名键，值直接用 **lucide PascalCase 字符串名**（如 `close:'X'`、`prev:'ChevronLeft'`、`next:'ChevronRight'`、`checkboxOn:'SquareCheckBig'`、`checkboxOff:'Square'`、`checkboxIndeterminate:'Minus'`、`dropdown:'ChevronDown'`、`loading:'LoaderCircle'`、`ratingFull:'Star'`、`ratingHalf:'StarHalf'`、`first:'ChevronsLeft'`、`last:'ChevronsRight'` 等）。
+- **导出 `lucideIconSet: IconSet`**：`component` 为下面的 `LucideIcon`；同时导出一张 pascal 名→组件表（`lucideByName`，由具名 import 手工构建）。
+
+### 2c. 新建 `src/plugins/icons/LucideIcon.ts`（渲染组件）
+```ts
+export const LucideIcon = defineComponent({
+  name: 'LucideIcon',
+  props: { tag: [String, Object, Function], icon: [String, Array, Object, Function] },
+  setup(props) {
+    return () => {
+      const n = typeof props.icon === 'string' ? props.icon.replace(/^mdi-/, '') : ''
+      const Icon = lucideByName[n] ?? mdiMap[n.toLowerCase()] ?? CircleHelp
+      return h(props.tag, null, [h(Icon, { size: '1em', 'aria-hidden': 'true' })])
+    }
+  },
+})
 ```
-`save_session`（INSERT + ON CONFLICT UPDATE，约 197-223 行）与加载 SELECT（约 369 行）补两列读写。**加载时 baud_rate 缺省回退 115200**（`row.get::<_, Option<u32>>`，前端默认值处理亦可，二选一；建议后端保持 Option，前端默认 115200）。
+关键点：`inheritAttrs` 默认 true，VIcon 传入的 `class="v-icon …"`/style(尺寸+颜色) 自动落到 `<i>` 根元素；svg `size="1em"` 随 font-size 缩放、`currentColor` 继承颜色 → 现有尺寸/颜色用法全部保持。
 
-> 说明：`baud_rate` 存 `INTEGER`（SQLite 无 u32），Rust 侧 `Option<u32>`。
+### 2d. 改 `src/plugins/vuetify.ts`
+- 删除 `import '@mdi/font/css/materialdesignicons.css'`（14 行）。
+- 引入 `lucideIconSet` / `aliases`，`icons: { defaultSet: 'lucide', sets: { lucide: lucideIconSet }, aliases }`。
 
----
-
-## 2. 前端：类型镜像 + 终端路由
-
-### 2a. `src/stores/session.ts`
-前端 `SessionConfig` 接口补 `serial_port?: string|null`、`baud_rate?: number|null`（可使用 bindings 类型，若已迁移）。
-
-### 2b. `src/stores/terminal.ts` —— **零改动**
-路由映射策略：RLOGIN 会话在 WorkspaceView 转 `TerminalSessionRef` 时 `sessionType: 'telnet'`（端口 513），`sessionTypes` Map 无需新增键。串口沿用现有 `serial` 分支（serialPort/baudRate 已支持）。
+### 2e. 需人工校对的关键映射抽样（确保视觉还原度）
+删除/关闭、放大镜搜索、加号、刷新、勾选、铅笔编辑、数据库、眼睛、切换上下、复制粘贴、文件夹/文件、齿轮设置、菜单、chevron 方向、表格/网格、终端控制台、锁定/钥匙、主题日/夜 等高频与语义图标——实现时在映射表注释中标注对应 mdi 原名以便复核。
 
 ---
 
-## 3. 前端：SessionForm 五类会话
-
-`src/components/ssh/session/SessionForm.vue`：
-- `SESSION_KINDS` 扩为 5 项：`ssh` / `mysql` / `telnet` / `rlogin` / `serial`（telnet/rlogin 标签区分"Telnet"/"RLOGIN"）。
-- 字段条件渲染：
-  - **telnet/rlogin**：host + port（port 默认 23 / 513，复用现有 host/port 字段区）。
-  - **serial**：隐藏 host/port，显示串口列表下拉（复用 `ByteStreamForm` 的 `serialList` 逻辑，api/serial.ts `serialList()`）+ 波特率输入（默认 115200）。
-- `initForm`：编辑恢复按 `session_type`；映射 `serial_port`/`baud_rate`。
-- `buildConfig`：组装 `session_type` + `serial_port`/`baud_rate`。
-- port watch：`mysql→3306 / ssh→22 / telnet→23 / rlogin→513`，serial 不设端口。
-- `runTest`：byte-stream 类型走 `telnetConnect`/`serialConnect` 建连即断（临时 connKey，仿 MySQL 测试模式）。
-
----
-
-## 4. 前端：WorkspaceView 会话路由 + 树
-
-`src/views/WorkspaceView.vue`：
-- 本地 `FlatNode` 增加 `sessionType?: string | null`（walk 时从 `config.session_type` 填）。
-- 树图标分支（现 1445-1447）扩展：
-  `mdi-console`（ssh）/ `mdi-database`（mysql）/ `mdi-console-network`（telnet）/ `mdi-serial-port`（serial）/ `mdi-send`（rlogin，或统一 `mdi-console-network`）。串口/网络图标用 Material Design Icons 现有集内图标。
-- **路由（onNodeClick 528 行 / menuConnect 563 行）**增加 byte-stream 分支：`session_type` 为 `telnet|rlogin|serial` 时调用新 `openByteStreamSession(node)` → 构造 `TerminalSessionRef`（`sessionType: type==='rlogin'?'telnet':type`，host/port 或 serialPort/baudRate 取自 `config`），connKey=node.id 走持久会话路径（双击第二次聚焦既有 tab，与 SSH/MySQL 会话一致）。
-- 即时 `openByteStreamTerminal`（781-825）保持原样不动。
-- **右键"设置"**（menuSessionSettings 656）已按 sessionId 打开 SshOptionsDialog 会话模式，无需改路由；SshOptionsDialog 内部按新的 session 感知逻辑渲染（见 §5）。
-
----
-
-## 5. 前端：SshOptionsDialog 占位移除 + 真实面板
-
-### 5a. `src/components/ssh/options/types.ts`
-`SSH_OPTIONS_NAV` 中 telnet/rlogin/serial 三叶子去掉 `placeholder: true`；各叶子补 `requires?: 'telnet'|'rlogin'|'serial'` 标签（或按现有 leaf id 推断）。
-
-### 5b. 新面板组件（`src/components/ssh/options/` 下）
-- **TelnetPanel.vue / RloginPanel.vue**：编辑会话字段 port（Telnet 默认 23；RLOGIN 默认 513 + 说明"与 Telnet 协议兼容，复用 Telnet 实现"，host/port 字段区），保存走 `session_save` 并刷新会话树。
-- **SerialPanel.vue**：串口列表下拉 + 波特率（默认 115200），保存同上。
-
-### 5c. `src/components/ssh/options/SshOptionsDialog.vue`
-- 会话模式（`sessionId` props）下：从 `session_list` 拉取该会话 `config.session_type`，据此过滤导航树到对应分组（telnet→Telnet 分组，serial→串口分组等），并把默认 `initialLeaf` 定位到对应类型面板。
-- 连接分组导航：byte-stream 会话只显示 Telnet/RLOGIN/串口相关叶子 + 共享的「终端/外观/高级」叶子（复用现有 TerminalPanels/AppearancePanels/AdvancedPanels，它们本来就是通用 sshopt 面板，byte-stream 同样适用）。
-- 移除过时文案"FyShell 当前仅支持 SSH 连接"的兜底块（保留为极简 fallback）。
-- 全局模式（新建连接上下文）下三个分组同真渲染。
-- 面板保存与 sshopt 机制的关系：telnet/serial 面板编辑的是**会话字段**（SessionConfig），不是 sshopt 会话级键——保存调 `session_save` + 树刷新，与现有 sshopt 会话覆盖（sshopt_session_*）互不冲突。
-
----
-
-## 6. 不改动的部分
-
-- `services/telnet.rs`、`services/serial.rs`（后端实现本就真实，无缺陷）。
-- `ByteStreamForm` 即时连接流程（保留两条路径：即时 + 会话）。
-- `stores/terminal.ts`、`stores/sshOptions.ts`、`stores/session.ts` 的既有机制。
-
----
-
-## 7. 验证
+## 验证
 
 1. `npx vue-tsc --noEmit` 绿。
-2. `cargo check` 绿（后端子命令：telnet/serial 与会话 CRUD 不受影响，但仍编译验证）。
-3. 手工端到端（dev 启动 `npm run tauri dev`）：
-   - 新建会话选 Telnet → 填 host/port → 测试连接通过 → 保存 → 会话树出现 telnet 图标 → 双击直连打开终端（作为已有 tab 聚焦）。
-   - 同流程验证 RLOGIN（默认端口 513，标注兼容 Telnet）。
-   - 新建串口会话 → 串口列表下拉可选（本机无串口则测试按钮给友好提示）。
-   - 会话树右键 byte-stream 会话"设置" → 打开对应类型面板（Telnet/RLOGIN/串口）→ 改 port 保存 → 会话字段更新生效。
-   - 回归：MySQL 会话、SSH 会话、即时 ByteStream 连接不受影响。
-4. 若个别图标不存在（`mdi-serial-port`），fallback 到 `mdi-usb-port` / `mdi-console-network`，以 vue-tsc 不报错、图标实际渲染为准。
+2. `npx vite build` 绿（模板结构完整性，本项目历史教训：结构性错误 vue-tsc 可能漏）。
+3. `cargo check` 绿（后端零改动，仅确认未受影响）。
+4. `npm run tauri dev` 手工：
+   - 会话树右键菜单只剩 连接/设置/重命名/删除 4 项（+ divider）。
+   - 全局界面无图标缺失/空框/异常：菜单栏、会话树、工具栏、MySQL 工作台、数据表操作、分页/下拉/复选框/单选框/评分、对话框关闭按钮、SFTP 双栏、FEXtabs、ByteStreamPanel 等；Vite/控制台无 `Could not find aliased icon` 警告。
+   - 回归：连接 SSH/MySQL 会话正常、持久 Telnet 会话双击可开、互联 Tab、右键设置（SshOptionsDialog）仍可用；ByteStream 即时连接入口已按预期消失（仅右键过）。
 
----
+## 提交策略
 
-## 遗留（本任务不涉及）
-- updater endpoint 渠道决策（用户侧）。
-- vault 单测待可用环境（Linux/mac/CI）。
+两个独立 commit（先任务一后任务二，本地身份沿用 yyfeng14）：
+1. `移除会话树右键菜单"新建本地终端/Telnet/串口"入口并清理死代码`
+2. `图标全量迁移 mdi → Lucide（Vuetify 自定义 SVG 图标集）`
+
+## 遗留（保持现状，不属本任务）
+- updater endpoint 占位渠道决策（用户侧）。
+- vault 单测待可跑环境（Windows 0xc0000139）。

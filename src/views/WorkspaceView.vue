@@ -21,7 +21,6 @@ import SshOptionsDialog from '@/components/ssh/options/SshOptionsDialog.vue'
 import ToolBar from '@/components/common/ToolBar.vue'
 import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
-import ByteStreamForm from '@/components/ssh/session/ByteStreamForm.vue'
 import HostkeyDialog from '@/components/ssh/terminal/HostkeyDialog.vue'
 import TerminalPane from '@/components/ssh/terminal/TerminalPane.vue'
 import DualPane from '@/components/sftp/DualPane.vue'
@@ -761,8 +760,8 @@ function openTerminal(node: { id: string; name: string; color?: string | null })
 }
 
 /**
- * 打开本地终端 Tab（byte-stream 终端）：无需表单与持久会话，直接创建，
- * 连接路由键 = local-<tabId>，读写经 local_shell_* 命令路由
+ * 打开本地终端 Tab（byte-stream 终端，本地 ConPTY）：无需表单与持久会话，直接创建，
+ * 连接路由键 = local-<tabId>，读写经 local_shell_* 命令路由（菜单栏「终端」入口）
  */
 function openLocalTerminal(): void {
   const connKey = `local-${genTabId()}`
@@ -781,56 +780,6 @@ function openLocalTerminal(): void {
     .openTerminal({ id: connKey, name: '本地终端', sessionType: 'local' }, connKey)
     .catch((e) => {
       ui.toast(`打开本地终端失败：${e instanceof Error ? e.message : String(e)}`, 'error')
-      const idx = tabs.value.findIndex((t) => t.id === tab.id)
-      if (idx >= 0) tabs.value.splice(idx, 1)
-      if (activeId.value === tab.id) {
-        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
-      }
-    })
-}
-
-/**
- * 打开 Telnet / 串口终端 Tab（byte-stream 终端，连接参数由表单收集，不持久化）：
- * 连接路由键 = byte-<tabId>，读写经 telnet_* 与 serial_* 命令路由
- */
-function openByteStreamTerminal(params: {
-  type: 'telnet' | 'serial'
-  host?: string
-  port?: number
-  serialPort?: string
-  baudRate?: number
-}): void {
-  const connKey = `byte-${genTabId()}`
-  const title =
-    params.type === 'telnet'
-      ? `Telnet ${params.host}:${params.port}`
-      : `串口 ${params.serialPort}@${params.baudRate}`
-  const tab: WorkTab = {
-    id: genTabId(),
-    type: 'terminal',
-    sessionId: connKey,
-    connId: connKey,
-    title,
-    color: null,
-  }
-  tabs.value.push(tab)
-  activeId.value = tab.id
-  debugLog(`workspace openByteStreamTerminal: tab=${tab.id} type=${params.type} conn=${connKey}`)
-  void terminalStore
-    .openTerminal(
-      {
-        id: connKey,
-        name: title,
-        sessionType: params.type,
-        host: params.host,
-        port: params.port,
-        serialPort: params.serialPort,
-        baudRate: params.baudRate,
-      },
-      connKey,
-    )
-    .catch((e) => {
-      ui.toast(`连接失败：${e instanceof Error ? e.message : String(e)}`, 'error')
       const idx = tabs.value.findIndex((t) => t.id === tab.id)
       if (idx >= 0) tabs.value.splice(idx, 1)
       if (activeId.value === tab.id) {
@@ -883,19 +832,6 @@ function openByteStreamSession(node: SessionNode): void {
         activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
       }
     })
-}
-
-/** 树右键菜单：新建本地终端（直接创建，无需表单） */
-function menuNewLocal(): void {
-  treeMenu.visible = false
-  openLocalTerminal()
-}
-
-/** 树右键菜单：新建 Telnet / 串口连接（打开最小表单） */
-function menuNewByteStream(type: 'telnet' | 'serial'): void {
-  treeMenu.visible = false
-  byteStreamFormType.value = type
-  showByteStreamForm.value = true
 }
 
 /** 打开传输队列 Tab（单例） */
@@ -958,7 +894,7 @@ function openMysqlTab(): void {
   activeId.value = tab.id
 }
 
-/** Ctrl+T / 加号：优先打开当前选中会话的终端 */
+/** Ctrl+T / 加号：优先打开当前选中会话的终端；未选会话时默认打开本地终端 */
 function onCreate(): void {
   if (selectedId.value) {
     const node = findNode(nodes.value, selectedId.value)
@@ -967,7 +903,8 @@ function onCreate(): void {
       return
     }
   }
-  ui.toast('请先在左侧选择一个会话', 'warning')
+  // 未选会话：默认打开本地终端（不再提示先选会话）
+  openLocalTerminal()
 }
 
 /** 关闭 Tab；终端 Tab 委托 terminalStore 断开会话并清理 Rust 侧 session/PTY（架构红线） */
@@ -1095,10 +1032,6 @@ const showSessionForm = ref(false)
 const editingSession = ref<SessionConfig | null>(null)
 const presetHost = ref('')
 
-/** Telnet / 串口连接表单（byte-stream 终端新建入口，不持久化） */
-const showByteStreamForm = ref(false)
-const byteStreamFormType = ref<'telnet' | 'serial'>('telnet')
-
 function openSessionForm(): void {
   editingSession.value = null
   presetHost.value = ''
@@ -1219,6 +1152,9 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'new-folder':
       showFolderDialog.value = true
+      break
+    case 'local-terminal':
+      openLocalTerminal()
       break
     case 'quit':
       // 关闭窗口（当前版本关闭即隐藏到托盘）
@@ -1389,6 +1325,9 @@ onMounted(async () => {
     } else {
       ui.toast('未找到对应会话，无法自动打开终端', 'warning')
     }
+  } else if (tabs.value.length === 0) {
+    // 默认打开本地终端（主窗口启动且无任何标签时）
+    openLocalTerminal()
   }
 })
 
@@ -1554,17 +1493,6 @@ onUnmounted(() => {
             <v-list-item-title>设置</v-list-item-title>
           </v-list-item>
           <v-divider />
-          <!-- 新建连接：本地终端 / Telnet / 串口（byte-stream 终端） -->
-          <v-list-item @click="menuNewLocal">
-            <v-list-item-title>新建本地终端</v-list-item-title>
-          </v-list-item>
-          <v-list-item @click="menuNewByteStream('telnet')">
-            <v-list-item-title>Telnet 连接</v-list-item-title>
-          </v-list-item>
-          <v-list-item @click="menuNewByteStream('serial')">
-            <v-list-item-title>串口终端</v-list-item-title>
-          </v-list-item>
-          <v-divider />
           <v-list-item @click="menuRename">
             <v-list-item-title>重命名</v-list-item-title>
           </v-list-item>
@@ -1669,13 +1597,6 @@ onUnmounted(() => {
       :session="editingSession"
       :preset-host="presetHost"
       @saved="onSessionSaved"
-    />
-
-    <!-- Telnet / 串口连接表单（byte-stream 终端，不持久化到会话树） -->
-    <ByteStreamForm
-      v-model="showByteStreamForm"
-      :type="byteStreamFormType"
-      @saved="openByteStreamTerminal"
     />
 
     <!-- 新建文件夹对话框 -->

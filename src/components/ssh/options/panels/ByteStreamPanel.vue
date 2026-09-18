@@ -97,7 +97,7 @@ const emit = defineEmits<{
 
 const sessionStore = useSessionStore()
 
-/** 常用波特率选项（与 ByteStreamForm 一致） */
+/** 常用波特率选项（串口会话使用） */
 const BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 
 const cfg = ref<SessionConfig | null>(null)

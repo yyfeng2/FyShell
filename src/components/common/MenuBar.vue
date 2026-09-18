@@ -26,6 +26,7 @@ const MENUS: MenuDef[] = [
     items: [
       { title: '新建会话', action: 'new-session', shortcut: 'Ctrl+N' },
       { title: '新建文件夹', action: 'new-folder' },
+      { title: '终端', action: 'local-terminal' },
       { title: '退出', action: 'quit', dividerBefore: true },
     ],
   },
