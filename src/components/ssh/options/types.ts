@@ -1,8 +1,9 @@
 /**
  * SSH 选项对话框树结构（参考 SecureCRT「会话选项」布局）
  *
- * 左侧两级树：连接 / 终端 / 外观 / 高级 四个组标题 + 缩进叶子项；
- * placeholder = true 的叶子为占位页（FyShell 暂不支持该连接类型，仅保留分组对齐布局）。
+ * 左侧两级树：连接 / 终端 / 外观 / 高级 四个组标题 + 缩进叶子项。
+ * telnet / rlogin / serial 非占位：会话模式下渲染 ByteStreamPanel 编辑会话字段，
+ * 全局模式下显示新建会话引导（byte-stream 连接参数是会话级字段，无全局默认）。
  */
 
 /** 组 key（顶级分类） */
@@ -35,8 +36,6 @@ export interface SshOptionsNavLeaf {
   key: SshOptionsLeaf
   title: string
   icon: string
-  /** 占位页（FyShell 暂不支持，仅保留布局） */
-  placeholder?: boolean
 }
 
 /** 树节点（组） */
@@ -58,9 +57,9 @@ export const SSH_OPTIONS_NAV: SshOptionsNavItem[] = [
       { key: 'ssh-security', title: 'SSH：安全性', icon: 'mdi-shield-lock-outline' },
       { key: 'ssh-tunnel', title: 'SSH：隧道', icon: 'mdi-tune-vertical' },
       { key: 'ssh-sftp', title: 'SSH：SFTP', icon: 'mdi-swap-horizontal' },
-      { key: 'telnet', title: 'TELNET', icon: 'mdi-lan-disconnect', placeholder: true },
-      { key: 'rlogin', title: 'RLOGIN', icon: 'mdi-lan-disconnect', placeholder: true },
-      { key: 'serial', title: '串口', icon: 'mdi-serial-port', placeholder: true },
+      { key: 'telnet', title: 'TELNET', icon: 'mdi-lan-disconnect' },
+      { key: 'rlogin', title: 'RLOGIN', icon: 'mdi-lan-disconnect' },
+      { key: 'serial', title: '串口', icon: 'mdi-serial-port' },
       { key: 'proxy', title: '代理', icon: 'mdi-server-network' },
       { key: 'keepalive', title: '保持活动状态', icon: 'mdi-heart-pulse' },
     ],

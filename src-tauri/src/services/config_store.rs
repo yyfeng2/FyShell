@@ -81,6 +81,19 @@ impl ConfigStore {
                 if msg.contains("duplicate column name") => {}
             Err(e) => return Err(e.into()),
         }
+        // 串口会话列：端口名 / 波特率（session_type == "serial" 时生效）
+        match conn.execute("ALTER TABLE sessions ADD COLUMN serial_port TEXT", []) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") => {}
+            Err(e) => return Err(e.into()),
+        }
+        match conn.execute("ALTER TABLE sessions ADD COLUMN baud_rate INTEGER", []) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok(())
     }
 
@@ -124,7 +137,8 @@ impl ConfigStore {
             // 匹配的会话（名称/主机模糊匹配）
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
-                        encoding, color, keepalive_interval, profile_id, session_type
+                        encoding, color, keepalive_interval, profile_id, session_type,
+                        serial_port, baud_rate
                  FROM sessions
                  WHERE name LIKE ?1 OR host LIKE ?1",
             )?;
@@ -164,7 +178,8 @@ impl ConfigStore {
             }
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
-                        encoding, color, keepalive_interval, profile_id, session_type
+                        encoding, color, keepalive_interval, profile_id, session_type,
+                        serial_port, baud_rate
                  FROM sessions ORDER BY name",
             )?;
             let sessions: Vec<SessionConfig> = stmt
@@ -181,7 +196,8 @@ impl ConfigStore {
         let conn = self.lock();
         let mut stmt = conn.prepare_cached(
             "SELECT id, name, folder_id, host, port, username, auth_type,
-                    encoding, color, keepalive_interval, profile_id, session_type
+                    encoding, color, keepalive_interval, profile_id, session_type,
+                    serial_port, baud_rate
              FROM sessions WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map([id], row_to_session)?;
@@ -194,8 +210,9 @@ impl ConfigStore {
         let auth_json = serde_json::to_string(&config.auth_type)?;
         conn.execute(
             "INSERT INTO sessions (id, name, folder_id, host, port, username, auth_type,
-                                   encoding, color, keepalive_interval, profile_id, session_type)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                                   encoding, color, keepalive_interval, profile_id, session_type,
+                                   serial_port, baud_rate)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
                  folder_id = excluded.folder_id,
@@ -207,7 +224,9 @@ impl ConfigStore {
                  color = excluded.color,
                  keepalive_interval = excluded.keepalive_interval,
                  profile_id = excluded.profile_id,
-                 session_type = excluded.session_type",
+                 session_type = excluded.session_type,
+                 serial_port = excluded.serial_port,
+                 baud_rate = excluded.baud_rate",
             params![
                 config.id,
                 config.name,
@@ -221,6 +240,8 @@ impl ConfigStore {
                 config.keepalive_interval as i64,
                 config.profile_id,
                 config.session_type,
+                config.serial_port,
+                config.baud_rate,
             ],
         )?;
         Ok(())
@@ -367,6 +388,8 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionConfig> {
             },
             profile_id: row.get("profile_id")?,
             session_type: row.get("session_type")?,
+            serial_port: row.get("serial_port")?,
+            baud_rate: row.get("baud_rate")?,
         })
 }
 

@@ -302,10 +302,34 @@ export const commands = {
 	mysqlBackupRunList: () => __TAURI_INVOKE<MySqlBackupRun[]>("mysql_backup_run_list"),
 	/**  是否已设置主密码（前端据此决定首次设置 / 修改模式） */
 	masterPasswordStatus: () => __TAURI_INVOKE<boolean>("master_password_status"),
-	/**  设置主密码（Rust 侧幂等覆盖；修改前应由前端先经 verify 校验旧密码） */
-	masterPasswordSet: (password: string) => __TAURI_INVOKE<null>("master_password_set", { password }),
+	/**
+	 *  设置主密码。
+	 * 
+	 *  - 首次设置（当前无主密码）：注册保险库 DEK 信封，此后已存凭据转加密存储
+	 *  - 修改（当前已有主密码）：须提供 `old_password` —— 先用它迁移 DEK 信封
+	 *    （旧密码错误时拒绝更新，防止已存凭据变成不可解），成功后再覆盖哈希
+	 */
+	masterPasswordSet: (password: string, oldPassword: string | null) => __TAURI_INVOKE<null>("master_password_set", { password, oldPassword }),
 	/**  验证主密码；尚未设置时返回 Ok(false) */
 	masterPasswordVerify: (password: string) => __TAURI_INVOKE<boolean>("master_password_verify", { password }),
+	/**  `vault_status` () -> VaultStatus（has_master_password / unlocked） */
+	vaultStatus: () => __TAURI_INVOKE<VaultStatus>("vault_status"),
+	/**
+	 *  `vault_unlock` (password: String) -> 以主密码解锁保险库（解包 DEK 入内存）
+	 * 
+	 *  主密码错误时返回带提示错误（AEAD 认证失败），不泄露哈希信息。
+	 */
+	vaultUnlock: (password: string) => __TAURI_INVOKE<null>("vault_unlock", { password }),
+	/**  `vault_lock` () -> 锁定保险库（丢弃内存 DEK），后续凭据读写需重新解锁 */
+	vaultLock: () => __TAURI_INVOKE<null>("vault_lock"),
+	/**
+	 *  `vault_encrypt` (plain: String) -> String（`v1$nonce$cipher`，hex）
+	 * 
+	 *  供保存路径在后端加密明文凭据后落 settings；未解锁时返回带提示错误。
+	 */
+	vaultEncrypt: (plain: string) => __TAURI_INVOKE<string>("vault_encrypt", { plain }),
+	/**  `vault_decrypt` (cipher: String) -> String（读取路径，密文还原明文） */
+	vaultDecrypt: (cipher: string) => __TAURI_INVOKE<string>("vault_decrypt", { cipher }),
 	/**  全量读取设置项（key -> value 映射；未写入过的键不在结果中，由前端回退默认值） */
 	settingsGetAll: () => __TAURI_INVOKE<{ [key in string]: string }>("settings_get_all"),
 	/**  按 key 读取单个设置项；未设置时返回 Ok(None) */
@@ -838,10 +862,19 @@ export type SessionConfig = {
 	 */
 	profile_id?: string | null,
 	/**
-	 *  会话类型：Some("mysql") = 数据库会话，None 或 Some("ssh") = SSH 会话。
+	 *  会话类型：Some("mysql") = 数据库会话，Some("telnet"/"rlogin") = Telnet 兼容，
+	 *  Some("serial") = 串口，None 或 Some("ssh") = SSH 会话。
 	 *  serde default：老数据缺该字段时反序列化为 None（视为 SSH），向后兼容。
 	 */
 	session_type?: string | null,
+	/**
+	 *  串口会话：端口名（session_type == "serial" 时生效）
+	 */
+	serial_port?: string | null,
+	/**
+	 *  串口会话：波特率（默认 115200，由前端给缺省值）
+	 */
+	baud_rate?: number | null,
 };
 
 /**  会话树文件夹 */
@@ -949,19 +982,19 @@ export type TunnelRule = {
 };
 
 /**  隧道状态 */
-export type TunnelStatus =
+export type TunnelStatus = 
 /**  已停止 */
-"Stopped" |
+"Stopped" | 
 /**  监听中 */
-"Listening" |
+"Listening" | 
 /**  错误（error 字段携带原因） */
 "Error";
 
-/**  凭据保险库状态（services/vault.rs） */
+/**  保险库状态（vault_status 返回） */
 export type VaultStatus = {
-	/**  是否已设置主密码 */
+	/**  是否已设置主密码（未设置时凭据沿用明文存储，向后兼容） */
 	has_master_password: boolean,
-	/**  是否已解锁（解包 DEK 已在 Rust 内存） */
+	/**  当前是否已解锁（解锁后 vault_encrypt/vault_decrypt 可用） */
 	unlocked: boolean,
 };
 

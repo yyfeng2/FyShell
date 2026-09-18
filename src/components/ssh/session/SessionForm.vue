@@ -53,10 +53,10 @@
                 item-value="value"
               />
             </v-col>
-            <v-col cols="8">
+            <v-col v-if="sessionKind !== 'serial'" cols="8">
               <v-text-field v-model="host" label="主机" density="compact" :rules="[rules.required]" />
             </v-col>
-            <v-col cols="4">
+            <v-col v-if="sessionKind !== 'serial'" cols="4">
               <v-text-field
                 v-model.number="port"
                 label="端口"
@@ -65,7 +65,7 @@
                 :rules="[rules.required, rules.port]"
               />
             </v-col>
-            <v-col cols="6">
+            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'mysql'" cols="6">
               <v-text-field v-model="username" label="用户名" density="compact" :rules="[rules.required]" />
             </v-col>
             <v-col v-if="sessionKind === 'ssh'" cols="6">
@@ -77,6 +77,28 @@
                 item-title="title"
                 item-value="value"
                 :disabled="profileLocked"
+              />
+            </v-col>
+
+            <!-- 串口会话：串口下拉 + 波特率（host/port 不适用） -->
+            <v-col v-if="sessionKind === 'serial'" cols="12">
+              <v-select
+                v-model="serialPortName"
+                :items="portItems"
+                label="串口"
+                density="compact"
+                :loading="loadingPorts"
+                :rules="[rules.required]"
+              />
+            </v-col>
+            <v-col v-if="sessionKind === 'serial'" cols="12">
+              <v-select
+                v-model="serialBaud"
+                :items="baudRates"
+                label="波特率"
+                density="compact"
+                hint="默认 115200"
+                persistent-hint
               />
             </v-col>
 
@@ -102,7 +124,10 @@
             </v-col>
 
             <!-- 密码 / 交互式 -->
-            <v-col v-if="sessionKind === 'mysql' || authType === 'password' || authType === 'interactive'" cols="12">
+            <v-col
+              v-if="sessionKind === 'mysql' || (sessionKind === 'ssh' && (authType === 'password' || authType === 'interactive'))"
+              cols="12"
+            >
               <v-text-field
                 v-model="password"
                 label="密码"
@@ -141,14 +166,14 @@
             </template>
 
             <!-- 不验证 -->
-            <v-col v-if="authType === 'noAuth'" cols="12">
+            <v-col v-if="sessionKind === 'ssh' && authType === 'noAuth'" cols="12">
               <v-alert type="info" variant="tonal" density="compact">
                 该方式不进行身份验证，仅在服务器允许匿名访问时可用。
               </v-alert>
             </v-col>
 
             <!-- 跳板机 -->
-            <v-col v-if="authType === 'jump'" cols="12">
+            <v-col v-if="sessionKind === 'ssh' && authType === 'jump'" cols="12">
               <v-select
                 v-model="jumpSessionId"
                 label="跳板机会话"
@@ -217,11 +242,16 @@ import { useTheme } from 'vuetify'
 import { sessionTest } from '@/api/session'
 import { authProfileList } from '@/api/authProfile'
 import { mysqlConnect, mysqlDisconnect } from '@/api/mysql'
+import { telnetConnect, telnetDisconnect } from '@/api/telnet'
+import { serialConnect, serialDisconnect, serialList, type SerialPortInfo } from '@/api/serial'
 import type { AuthProfile } from '@/api/types'
 import AuthProfileForm from '@/components/ssh/session/AuthProfileForm.vue'
 import { useSessionStore, type SessionConfig, type AuthType } from '@/stores/session'
 
 type AuthTypeKind = AuthType extends { type: infer T } ? T : never
+
+/** 会话类型：SSH 终端 / 数据库 / Telnet 兼容（Telnet/RLOGIN）/ 串口 */
+type SessionKind = 'ssh' | 'mysql' | 'telnet' | 'rlogin' | 'serial'
 
 /** 契约 P1：SessionConfig 可选携带 profile_id（认证配置文件引用） */
 type SessionConfigWithProfile = SessionConfig & { profile_id?: string | null }
@@ -258,10 +288,13 @@ const AUTH_OPTIONS: { value: AuthTypeKind; title: string }[] = [
   { value: 'jump', title: '跳板机' },
 ]
 
-/** 会话类型：SSH 终端会话 或 数据库（MySQL）会话 */
-const SESSION_KINDS: { value: 'ssh' | 'mysql'; title: string }[] = [
+/** 会话类型：SSH 终端 / 数据库（MySQL）/ Telnet（含 RLOGIN 兼容）/ 串口 */
+const SESSION_KINDS: { value: SessionKind; title: string }[] = [
   { value: 'ssh', title: 'SSH' },
   { value: 'mysql', title: '数据库 (MySQL)' },
+  { value: 'telnet', title: 'Telnet' },
+  { value: 'rlogin', title: 'RLOGIN' },
+  { value: 'serial', title: '串口' },
 ]
 
 const rules = {
@@ -277,7 +310,7 @@ const name = ref('')
 const host = ref('')
 const port = ref(22)
 /** 会话类型（新建缺省 SSH；编辑从 session_type 恢复） */
-const sessionKind = ref<'ssh' | 'mysql'>('ssh')
+const sessionKind = ref<SessionKind>('ssh')
 const username = ref('')
 const authType = ref<AuthTypeKind>('password')
 const password = ref('')
@@ -287,6 +320,16 @@ const jumpSessionId = ref<string | null>(null)
 const encoding = ref('UTF-8')
 const color = ref<string | null>(null)
 const keepalive = ref(30)
+
+// ---------- 串口会话字段（sessionKind === 'serial' 时生效） ----------
+const serialPortName = ref<string | null>(null)
+const serialBaud = ref(115200)
+const loadingPorts = ref(false)
+const ports = ref<SerialPortInfo[]>([])
+/** 串口下拉项（显示 "COM3 (USB)"，值为串口名） */
+const portItems = ref<{ title: string; value: string }[]>([])
+/** 常用波特率选项 */
+const baudRates = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 
 const showPassword = ref(false)
 /** 私钥口令明文开关（与密码框独立，避免共用一个 ref 联动切换） */
@@ -344,11 +387,40 @@ watch(
   }
 )
 
-/** 新建时切换类型联动默认端口（编辑模式端口由用户掌控） */
+/** 新建时切换类型联动默认端口（编辑模式端口由用户掌控；串口无端口） */
 watch(sessionKind, (kind) => {
   if (props.session) return
-  port.value = kind === 'mysql' ? 3306 : 22
+  if (kind === 'serial') return
+  port.value = kind === 'mysql' ? 3306 : kind === 'telnet' ? 23 : kind === 'rlogin' ? 513 : 22
 })
+
+/** session_type 字符串 → 表单类型（未知类型回退 SSH） */
+function mapSessionKind(t: string | null | undefined): SessionKind {
+  if (t === 'mysql' || t === 'telnet' || t === 'rlogin' || t === 'serial') return t
+  return 'ssh'
+}
+
+/** 枚举本机串口列表（串口类型表单下拉用；编辑模式保留已选值，仅未选时默认选第一个） */
+async function loadSerialPorts(): Promise<void> {
+  if (sessionKind.value !== 'serial') return
+  loadingPorts.value = true
+  try {
+    ports.value = await serialList()
+    portItems.value = ports.value.map((p) => ({
+      title: p.port_type === '未知' ? p.port_name : `${p.port_name} (${p.port_type})`,
+      value: p.port_name,
+    }))
+    if (!serialPortName.value && portItems.value.length > 0) {
+      serialPortName.value = portItems.value[0]!.value
+    }
+  } catch (e) {
+    console.error('[session-form] 枚举串口失败:', e)
+    ports.value = []
+    portItems.value = []
+  } finally {
+    loadingPorts.value = false
+  }
+}
 
 function initForm(): void {
   testResult.value = null
@@ -357,7 +429,7 @@ function initForm(): void {
   showPassphrase.value = false
   const cfg = props.session
   if (cfg) {
-    sessionKind.value = cfg.session_type === 'mysql' ? 'mysql' : 'ssh'
+    sessionKind.value = mapSessionKind(cfg.session_type)
     name.value = cfg.name
     host.value = cfg.host
     port.value = cfg.port
@@ -365,6 +437,8 @@ function initForm(): void {
     encoding.value = cfg.encoding || 'UTF-8'
     color.value = cfg.color ?? null
     keepalive.value = cfg.keepalive_interval
+    serialPortName.value = cfg.serial_port ?? null
+    serialBaud.value = cfg.baud_rate ?? 115200
     const auth = cfg.auth_type
     authType.value = auth.type
     if (auth.type === 'password' || auth.type === 'interactive') {
@@ -392,9 +466,12 @@ function initForm(): void {
     encoding.value = 'UTF-8'
     color.value = null
     keepalive.value = 30
+    serialPortName.value = null
+    serialBaud.value = 115200
     profileId.value = null
     void loadProfiles()
   }
+  void loadSerialPorts()
 }
 
 /** 跳板机候选：全部已存会话，排除自身（避免自引用） */
@@ -414,6 +491,9 @@ function buildConfig(): SessionConfigWithProfile {
   } else if (sessionKind.value === 'mysql') {
     // 数据库会话：认证即用户名/密码（auth_type 仅作存储载体）
     auth = { type: 'password', password: password.value }
+  } else if (sessionKind.value !== 'ssh') {
+    // byte-stream 会话（telnet/rlogin/serial）：无 SSH 认证概念，auth_type 仅作存储载体
+    auth = { type: 'noAuth' }
   } else {
     switch (authType.value) {
       case 'password':
@@ -433,19 +513,22 @@ function buildConfig(): SessionConfigWithProfile {
         break
     }
   }
+  const isSerial = sessionKind.value === 'serial'
   const config: SessionConfigWithProfile = {
     id: props.session?.id ?? '',
     name: name.value.trim(),
     folder_id: props.session ? props.session.folder_id : (props.folderId ?? null),
-    host: host.value.trim(),
-    port: port.value,
-    username: username.value.trim(),
+    host: isSerial ? '' : host.value.trim(),
+    port: isSerial ? 0 : port.value,
+    username: isSerial ? '' : username.value.trim(),
     auth_type: auth,
     encoding: encoding.value,
     color: color.value,
     keepalive_interval: keepalive.value,
     profile_id: prof && sessionKind.value === 'ssh' ? prof.id : null,
     session_type: sessionKind.value,
+    serial_port: isSerial ? serialPortName.value : null,
+    baud_rate: isSerial ? serialBaud.value : null,
   }
   return config
 }
@@ -475,6 +558,28 @@ async function runTest(): Promise<void> {
         schema: null,
       })
       await mysqlDisconnect(connId)
+      testResult.value = { ok: true, message: '连接成功' }
+    } catch (err) {
+      testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }
+    } finally {
+      testing.value = false
+    }
+    return
+  }
+  // byte-stream 会话（telnet/rlogin/serial）：telnet/serial 建连后立即断开作为测试
+  if (sessionKind.value !== 'ssh') {
+    testing.value = true
+    testResult.value = null
+    const id = `test-${Date.now()}`
+    try {
+      if (sessionKind.value === 'serial') {
+        if (!serialPortName.value) throw new Error('未选择串口')
+        await serialConnect(id, serialPortName.value, serialBaud.value, () => {})
+        await serialDisconnect(id)
+      } else {
+        await telnetConnect(id, host.value.trim(), port.value, () => {})
+        await telnetDisconnect(id)
+      }
       testResult.value = { ok: true, message: '连接成功' }
     } catch (err) {
       testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }

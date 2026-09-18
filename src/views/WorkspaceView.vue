@@ -102,6 +102,8 @@ interface FlatNode {
   encoding: string | null
   /** 数据库会话（session_type === 'mysql'，树图标与连接路由区分） */
   isMysql: boolean
+  /** 会话类型（config.session_type，"ssh" 缺省；mysql/telnet/rlogin/serial 用于树图标与路由） */
+  sessionType?: string | null
   /** 数据库子节点（已连接 MySQL 会话的库，Navicat 风格） */
   isDbLeaf?: boolean
   /** 分区头（SSH 服务 / 数据库服务，可收缩） */
@@ -297,6 +299,7 @@ const flatNodes = computed<FlatNode[]>(() => {
         hostLabel: '',
         encoding: (n.config?.encoding as string | undefined) ?? null,
         isMysql: isMysqlSession,
+        sessionType: n.config?.session_type ?? null,
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
         walk(n.children ?? [], depth + 1, section)
@@ -525,8 +528,14 @@ function onNodeClick(node: FlatNode): void {
   }
   const target = findNode(nodes.value, node.id)
   if (!target) return
-  if (target.config?.session_type === 'mysql') {
+  const stype = target.config?.session_type
+  if (stype === 'mysql') {
     void connectMysqlSession(target)
+    return
+  }
+  // Telnet / RLOGIN / 串口：byte-stream 会话打开终端（持久会话路径）
+  if (stype === 'telnet' || stype === 'rlogin' || stype === 'serial') {
+    openByteStreamSession(target)
     return
   }
   openTerminal(target)
@@ -559,9 +568,15 @@ function menuConnect(): void {
   if (treeMenu.node && !treeMenu.node.isFolder) {
     const target = findNode(nodes.value, treeMenu.node.id)
     if (!target) return
+    const stype = target.config?.session_type
     // 数据库会话：切到 MySQL 工作台并按会话配置建连（不开终端）
-    if (target.config?.session_type === 'mysql') {
+    if (stype === 'mysql') {
       void connectMysqlSession(target)
+      return
+    }
+    // Telnet / RLOGIN / 串口：byte-stream 会话打开终端（持久会话路径）
+    if (stype === 'telnet' || stype === 'rlogin' || stype === 'serial') {
+      openByteStreamSession(target)
       return
     }
     openTerminal(target)
@@ -816,6 +831,52 @@ function openByteStreamTerminal(params: {
     )
     .catch((e) => {
       ui.toast(`连接失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+      const idx = tabs.value.findIndex((t) => t.id === tab.id)
+      if (idx >= 0) tabs.value.splice(idx, 1)
+      if (activeId.value === tab.id) {
+        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
+      }
+    })
+}
+
+/**
+ * 打开 byte-stream 会话终端 Tab（Telnet / RLOGIN / 串口会话树的持久会话路径）：
+ * 与 SSH 会话同语义——sessionId = 会话 id（双击已有 Tab 直接聚焦不重复建连），
+ * connId = 每标签独立连接路由键（Xshell 多标签）。RLOGIN 复用 Telnet 传输
+ * （Rust 侧零协议改动，仅端口默认 513），见 plans/calm-frolicking-duckling.md
+ */
+function openByteStreamSession(node: SessionNode): void {
+  const cfg = (node.config ?? {}) as Record<string, unknown>
+  const stype = (cfg.session_type as string | undefined) ?? 'telnet'
+  const tabColor: string | null = (cfg.color as string | null) ?? sshOpts.defaultTabColor ?? null
+  const tab: WorkTab = {
+    id: genTabId(),
+    type: 'terminal',
+    sessionId: node.id,
+    connId: genTabId(),
+    title: node.name,
+    color: tabColor,
+  }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+  debugLog(`workspace openByteStreamSession: tab=${tab.id} type=${stype} conn=${tab.connId}`)
+  void terminalStore
+    .openTerminal(
+      {
+        id: node.id,
+        name: node.name,
+        color: tabColor,
+        // RLOGIN 无独立后端：路由为 Telnet（端口 513 即 RLOGIN 服务）
+        sessionType: stype === 'rlogin' ? 'telnet' : (stype as 'telnet' | 'serial'),
+        host: cfg.host as string | undefined,
+        port: cfg.port as number | undefined,
+        serialPort: cfg.serial_port as string | undefined,
+        baudRate: cfg.baud_rate as number | undefined,
+      },
+      tab.connId,
+    )
+    .catch((e) => {
+      ui.toast(`连接「${node.name}」失败：${e instanceof Error ? e.message : String(e)}`, 'error')
       const idx = tabs.value.findIndex((t) => t.id === tab.id)
       if (idx >= 0) tabs.value.splice(idx, 1)
       if (activeId.value === tab.id) {
@@ -1444,7 +1505,15 @@ onUnmounted(() => {
                     ? (node.isOpen ? 'mdi-folder-open' : 'mdi-folder')
                     : node.isDbLeaf
                       ? 'mdi-database-outline'
-                      : (node.isMysql ? 'mdi-database' : 'mdi-console')"
+                      : node.isMysql
+                        ? 'mdi-database'
+                        : node.sessionType === 'telnet'
+                          ? 'mdi-console-network'
+                          : node.sessionType === 'rlogin'
+                            ? 'mdi-send'
+                            : node.sessionType === 'serial'
+                              ? 'mdi-usb-port'
+                              : 'mdi-console'"
                 size="14"
                 class="mr-1"
                 :style="!node.isFolder && !node.isSection && node.color ? { color: node.color } : undefined"
@@ -1640,11 +1709,13 @@ onUnmounted(() => {
       @open-master-password="showMasterPassword = true"
     />
 
-    <!-- SSH 选项对话框（标签右键/菜单栏"会话设置"入口；会话模式编辑写会话级键） -->
+    <!-- SSH 选项对话框（标签右键/菜单栏"会话设置"入口；会话模式编辑写会话级键；
+         byte-stream 会话编辑会话字段，保存后刷新会话树） -->
     <SshOptionsDialog
       v-model="showSshOptionsDialog"
       :session-id="sshOptionsSessionId ?? undefined"
       :session-name="sshOptionsSessionName"
+      @changed="loadTree"
     />
 
     <!-- 全局弹层（确认 / toast / 主题同步） -->

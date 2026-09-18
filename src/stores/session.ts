@@ -25,8 +25,12 @@ export interface SessionConfig {
   encoding: string
   color: string | null
   keepalive_interval: number
-  /** 会话类型："mysql" = 数据库会话，缺省/"ssh" = SSH 会话（与后端 bindings 对齐，string 联动） */
+  /** 会话类型："mysql" = 数据库会话，"telnet"/"rlogin" = Telnet 兼容，"serial" = 串口；缺省/"ssh" = SSH（与后端 bindings 对齐，string 联动） */
   session_type?: string | null
+  /** 串口会话：端口名（session_type 为 "serial" 时生效） */
+  serial_port?: string | null
+  /** 串口会话：波特率（默认 115200） */
+  baud_rate?: number | null
 }
 
 export interface SessionFolder {
