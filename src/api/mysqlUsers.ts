@@ -9,18 +9,12 @@
  * 禁 rename_all="camelCase"）；invoke 顶层参数沿用 camelCase（Tauri 自动转换）。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { MySqlGrantItem, MySqlUserInfo } from '@/bindings';
 
-/** MySQL 用户条目（mysql_user_list 返回项） */
-export interface MySqlUserInfo {
-  user: string;
-  host: string;
-  comment: string;
-}
-
-/** 用户授权条目（mysql_user_grants 返回项，SHOW GRANTS 结果） */
-export interface MySqlUserGrant {
-  grant_sql: string;
-}
+// 模型类型与后端 Rust 契约同源（bindings.ts 自动生成）：re-export 消除契约漂移源
+// （MySqlUserGrant 为后端 MySqlGrantItem 的别名保留，调用方命名不变）
+export type { MySqlUserInfo }
+export type MySqlUserGrant = MySqlGrantItem
 
 /** 列出当前库可见的全部用户（权限不足时后端 reject，由调用方捕获展示） */
 export function mysqlUserList(connId: string): Promise<MySqlUserInfo[]> {

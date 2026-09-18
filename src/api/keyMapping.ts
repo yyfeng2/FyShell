@@ -5,20 +5,17 @@
  * 变更时写回（IPC 字段一律 snake_case）。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { KeyMapping as KeyMappingContract } from '@/bindings';
 
-/** 动作类型：发送字符串 / 执行菜单命令 */
+/** 动作类型：发送字符串 / 执行菜单命令（参数位与判定保持窄类型） */
 export type KeyMappingActionType = 'send_string' | 'menu_command';
 
-/** 键位映射条目 */
-export interface KeyMapping {
-  /** uuid v4 */
-  id: string;
-  /** 归一化键位组合（如 "ctrl+shift+x" / "alt+f1"） */
-  key_combo: string;
-  /** 动作类型（send_string | menu_command） */
-  action_type: KeyMappingActionType;
-  /** 动作载荷：发送的字符串 或 菜单命令 action 名 */
-  payload: string;
+/**
+ * 键位映射（字段同 bindings 契约，action_type 收窄为本地字面量以保 UI 判定类型安全；
+ * specta 对 Rust 简单枚举导出为 string，本地复合类型在契约字段变化时仍同步）
+ */
+export type KeyMapping = Omit<KeyMappingContract, 'action_type'> & {
+  action_type: KeyMappingActionType
 }
 
 /** 键位映射列表 */

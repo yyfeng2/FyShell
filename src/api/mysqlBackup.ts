@@ -5,30 +5,19 @@
  * 错误处理：Rust 侧 AppError 以字符串形式 reject，由调用方捕获处理。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { MySqlBackupProfile, MySqlBackupRun } from '@/bindings';
 
-/** 备份/还原执行结果（行数 + 耗时；耗时由本层客户端计时得出） */
+// 档案/运行历史模型与后端 Rust 契约同源（bindings.ts 自动生成）：re-export 消除契约漂移源；
+// MySqlBackupResult 为前端本地构造（客户端计时），MySqlBackupProfileInput 为保存入参（非契约模型），保留
+export type { MySqlBackupProfile, MySqlBackupRun }
+
+/** 备份/还原执行结果（行数 + 耗时；耗时由本层客户端计时得出，为前端活代码） */
 export interface MySqlBackupResult {
   rows_total: number;
   duration_ms: number;
 }
 
-/** 备份任务配置（持久化档案，mysql_backup_profile_list 返回项） */
-export interface MySqlBackupProfile {
-  /** 档案 id（uuid，由 Rust 侧生成） */
-  id: string;
-  /** 档案名称 */
-  name: string;
-  /** 关联连接标识（本轮为空串占位，后续接入连接选择时补齐） */
-  conn_host: string;
-  /** 备份表名列表；空数组 = 全库所有表 */
-  tables: string[];
-  include_data: boolean;
-  /** true = 附带 DROP TABLE IF EXISTS（建表结构始终导出） */
-  include_create: boolean;
-  /** 创建时间（RFC 3339 字符串） */
-  created_at: string;
-}
-
+/** 备份运行历史单条记录（与后端 Rust 契约同源，见文件头 re-export） */
 /** 备份任务保存入参（id 为 null = 新建，uuid 由 Rust 侧生成） */
 export interface MySqlBackupProfileInput {
   id: string | null;
@@ -37,18 +26,6 @@ export interface MySqlBackupProfileInput {
   tables: string[];
   include_data: boolean;
   include_create: boolean;
-}
-
-/** 备份运行历史单条记录 */
-export interface MySqlBackupRun {
-  id: number;
-  /** 关联的档案 id（null = 未关联档案的手动备份） */
-  profile_id: string | null;
-  file_path: string;
-  rows_total: number;
-  duration_ms: number;
-  created_at: string;
-  success: boolean;
 }
 
 /**

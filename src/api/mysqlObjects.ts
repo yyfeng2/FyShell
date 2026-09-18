@@ -9,24 +9,13 @@
  * 禁 rename_all="camelCase"）；invoke 顶层参数沿用 camelCase（Tauri 自动转换）。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { MySqlObjectDdl, MySqlObjectInfo } from '@/bindings';
 
-/** 数据库对象类型（对应 Rust enum ObjectKind） */
+/** 数据库对象类型（对应 Rust enum ObjectKind；OBJ 参数位保持窄类型） */
 export type MySqlObjectKind = 'view' | 'function' | 'procedure' | 'trigger' | 'event';
 
-/** 数据库对象条目（mysql_object_list 返回项） */
-export interface MySqlObjectInfo {
-  name: string;
-  kind: MySqlObjectKind;
-  /** 对象注释（可能为空串） */
-  comment: string;
-}
-
-/** 对象 DDL（mysql_object_ddl 返回） */
-export interface MySqlObjectDdl {
-  name: string;
-  kind: MySqlObjectKind;
-  sql: string;
-}
+// 对象条目/DDL 与后端 Rust 契约同源（bindings.ts 自动生成）：re-export 消除契约漂移源
+export type { MySqlObjectDdl, MySqlObjectInfo }
 
 /** 列出当前库指定类型的全部对象 */
 export function mysqlObjectList(connId: string, kind: MySqlObjectKind): Promise<MySqlObjectInfo[]> {

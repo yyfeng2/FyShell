@@ -8,19 +8,10 @@
  * 禁 rename_all="camelCase"）；invoke 顶层参数沿用 camelCase（Tauri 自动转换）。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { MySqlDatabaseList, MySqlTableDdl } from '@/bindings';
 
-/** 数据库清单（mysql_db_list 返回）：host 供「复制 Host」，current_db 为当前默认库 */
-export interface MySqlDatabaseList {
-  host: string;
-  current_db: string | null;
-  databases: string[];
-}
-
-/** 表结构 DDL（mysql_table_show_create 返回，SHOW CREATE TABLE 结果） */
-export interface MySqlTableDdl {
-  table: string;
-  sql: string;
-}
+// 模型类型与后端 Rust 契约同源（bindings.ts 自动生成）：re-export 消除契约漂移源
+export type { MySqlDatabaseList, MySqlTableDdl }
 
 /** 列出该连接可见的全部数据库（含连接 host 与当前默认库） */
 export function mysqlDbList(connId: string): Promise<MySqlDatabaseList> {

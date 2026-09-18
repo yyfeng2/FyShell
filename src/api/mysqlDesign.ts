@@ -6,51 +6,16 @@
  * 类型命名：一律 snake_case，与 Rust 契约保持一致（禁 camelCase rename）。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type {
+  MySqlColumnInfo,
+  MySqlForeignKeyInfo,
+  MySqlIndexInfo,
+  MySqlTableDesign,
+} from '@/bindings';
 
-/** 表设计中单个字段的信息（读取结果） */
-export interface MySqlColumnInfo {
-  name: string;
-  data_type: string;
-  is_nullable: boolean;
-  default_value: string | null;
-  comment: string;
-  /** AUTO_INCREMENT 等附加属性 */
-  extra: string;
-  /** 主键/唯一键标记（来自 information_schema，仅展示用） */
-  key_type: string | null;
-  character_set: string | null;
-  collation: string | null;
-}
-
-/** 表设计中单个索引的信息 */
-export interface MySqlIndexInfo {
-  name: string;
-  columns: string[];
-  is_unique: boolean;
-  is_primary: boolean;
-  index_type: string;
-}
-
-/** 表设计中单个外键的信息 */
-export interface MySqlForeignKeyInfo {
-  name: string;
-  columns: string[];
-  ref_table: string;
-  ref_columns: string[];
-  on_delete: string;
-  on_update: string;
-}
-
-/** 表结构读取结果 */
-export interface MySqlTableDesign {
-  table: string;
-  columns: MySqlColumnInfo[];
-  indexes: MySqlIndexInfo[];
-  foreign_keys: MySqlForeignKeyInfo[];
-  engine: string;
-  charset: string;
-  comment: string;
-}
+// 读取类模型与后端 Rust 契约同源（bindings.ts 自动生成）：re-export 消除契约漂移源；
+// 变更载荷（MySqlColumnChange / MySqlDesignChange）因前端必填约束更严，保留本地定义
+export type { MySqlColumnInfo, MySqlForeignKeyInfo, MySqlIndexInfo, MySqlTableDesign }
 
 /** 字段变更动作：add = 新增，modify = 修改，drop = 删除 */
 export type MySqlColumnAction = 'add' | 'modify' | 'drop';

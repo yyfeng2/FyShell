@@ -5,26 +5,10 @@
  * 错误处理：Rust 侧 AppError 以字符串形式 reject，由调用方捕获处理。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { MySqlExplainResult, MySqlQueryHistoryItem, MySqlSavedQueryItem } from '@/bindings';
 
-/** 查询历史条目（每次执行 SQL 后由 Rust 侧落库） */
-export interface MySqlQueryHistoryItem {
-  id: number;
-  conn_id: string;
-  sql: string;
-  created_at: string;
-  /** 执行耗时（毫秒）；null 表示未记录 */
-  duration_ms: number | null;
-  success: boolean;
-}
-
-/** EXPLAIN 结果：rows 表格 / tree 文本树 */
-export interface MySqlExplainResult {
-  format: 'rows' | 'tree';
-  columns: string[];
-  rows: (string | null)[][];
-  /** 文本树（format="tree" 时非空） */
-  tree: string | null;
-}
+// 模型类型与后端 Rust 契约同源（bindings.ts 自动生成）：re-export 消除契约漂移源
+export type { MySqlExplainResult, MySqlQueryHistoryItem, MySqlSavedQueryItem }
 
 /** 列出查询历史（默认 100 条，按时间倒序） */
 export function mysqlHistoryList(limit: number): Promise<MySqlQueryHistoryItem[]> {
@@ -47,17 +31,6 @@ export function mysqlHistoryClear(): Promise<void> {
 // ---------------------------------------------------------------------------
 // 已保存查询（命名保存，区别于自动记录的查询历史）
 // ---------------------------------------------------------------------------
-
-/** 已保存查询条目（用户命名，区别于查询历史） */
-export interface MySqlSavedQueryItem {
-  id: number;
-  /** 查询名称（后端 UNIQUE 约束，同名保存走覆盖语义） */
-  name: string;
-  /** 绑定的连接标识（null = 不绑定连接，全局可见） */
-  conn_id: string | null;
-  sql: string;
-  created_at: string;
-}
 
 /** 列出已保存查询（按名称排序） */
 export function mysqlSavedQueryList(): Promise<MySqlSavedQueryItem[]> {

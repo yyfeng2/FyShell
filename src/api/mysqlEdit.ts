@@ -12,39 +12,10 @@
  * 禁 rename_all="camelCase"）；invoke 顶层参数沿用 camelCase（Tauri 自动转换）。
  */
 import { invoke } from '@tauri-apps/api/core';
+import type { MySqlEditPreview, MySqlRowUpdate, MySqlRowUpdateBatch } from '@/bindings';
 
-/** 单元格更新（对应 Rust 侧 models/mysql_edit.rs::MySqlRowUpdate） */
-export interface MySqlRowUpdate {
-  /** 目标表名 */
-  table: string;
-  /** 主键列名 */
-  pk_column: string;
-  /** 主键值（null = 主键为 NULL，按 pk IS NULL 定位） */
-  pk_value: string | null;
-  /** 目标列名 */
-  column: string;
-  /** 新值（is_null=true 时忽略） */
-  value: string | null;
-  /** true = 显式写 NULL（区分空串与 NULL） */
-  is_null: boolean;
-}
-
-/** 批量更新（对应 Rust 侧 MySqlRowUpdateBatch；隐式事务包裹，失败整体回滚） */
-export interface MySqlRowUpdateBatch {
-  table: string;
-  updates: MySqlRowUpdate[];
-}
-
-/** 编辑预览（对应 Rust 侧 MySqlEditPreview） */
-export interface MySqlEditPreview {
-  /** 将执行的 UPDATE 语句（值已转义内联） */
-  sql: string;
-  /** COUNT(*) 估算的受影响行数 */
-  affected_estimate: number;
-  /** 命中危险 SQL 词法特征（管道完整性保留） */
-  danger: boolean;
-  danger_reason: string | null;
-}
+// 模型类型与后端 Rust 契约同源（bindings.ts 自动生成）：re-export 消除契约漂移源
+export type { MySqlEditPreview, MySqlRowUpdate, MySqlRowUpdateBatch }
 
 /**
  * 表设计快照的子集类型：与 design 模块（@/api/mysqlDesign.ts）的 MySqlTableDesign
