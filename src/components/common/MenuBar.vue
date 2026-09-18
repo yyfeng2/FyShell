@@ -149,7 +149,7 @@ defineEmits<{ (e: 'action', action: string): void }>()
 
 .menubar__item {
   font-size: 14px;
-  padding: 0 6px;
+  padding: 0 10px;
   border-radius: 3px;
   cursor: pointer;
   color: inherit;
