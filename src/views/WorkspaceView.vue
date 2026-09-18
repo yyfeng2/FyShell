@@ -1536,6 +1536,36 @@ function openSessionFromList(target: SessionNode): void {
   openTerminal(target)
 }
 
+// ---------------- 文件菜单"打开"：列表右键菜单（打开/删除） ----------------
+
+const listCtxMenu = reactive({ visible: false, x: 0, y: 0, node: null as SessionNode | null })
+
+function openListContextMenu(e: MouseEvent, node: SessionNode): void {
+  listCtxMenu.x = e.clientX
+  listCtxMenu.y = e.clientY
+  listCtxMenu.node = node
+  listCtxMenu.visible = true
+}
+
+/** 列表右键"删除会话"：二次确认后删除（含 Rust 侧清理） */
+async function deleteFromList(): Promise<void> {
+  listCtxMenu.visible = false
+  const node = listCtxMenu.node
+  if (!node) return
+  const ok = await ui.confirm({
+    title: '删除确认',
+    message: `确定删除会话「${node.name}」吗？此操作不可恢复。`,
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await sessionStore.remove(node.id, false)
+    ui.toast(`已删除会话「${node.name}」`, 'success')
+  } catch (e) {
+    ui.toast(`删除失败：${String(e)}`, 'error')
+  }
+}
+
 async function createFolder(): Promise<void> {
   const name = folderName.value.trim()
   if (!name) return
@@ -2188,7 +2218,12 @@ onUnmounted(() => {
         <v-divider />
         <v-card-text style="max-height: 60vh; overflow-y: auto">
           <v-list density="compact">
-            <v-list-item v-for="s in sessionListFlat" :key="s.id" @click="openSessionFromList(s)">
+            <v-list-item
+              v-for="s in sessionListFlat"
+              :key="s.id"
+              @click="openSessionFromList(s)"
+              @contextmenu.prevent="openListContextMenu($event, s)"
+            >
               <v-list-item-title class="session-row">
                 <span
                   class="session-row__type"
@@ -2202,6 +2237,22 @@ onUnmounted(() => {
             </v-list-item>
             <div v-if="sessionListFlat.length === 0" class="text-medium-emphasis">暂无已添加会话</div>
           </v-list>
+          <!-- 列表右键菜单：打开/删除会话 -->
+          <v-menu
+            v-model="listCtxMenu.visible"
+            :target="[listCtxMenu.x, listCtxMenu.y]"
+            location="bottom start"
+            :close-on-content-click="true"
+          >
+            <v-list density="compact">
+              <v-list-item @click="openSessionFromList(listCtxMenu.node!)">
+                <v-list-item-title>打开连接</v-list-item-title>
+              </v-list-item>
+              <v-list-item @click="deleteFromList">
+                <v-list-item-title class="text-error">删除会话</v-list-item-title>
+              </v-list-item>
+            </v-list>
+          </v-menu>
         </v-card-text>
       </v-card>
     </v-dialog>
