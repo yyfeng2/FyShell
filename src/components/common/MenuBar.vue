@@ -44,7 +44,7 @@ const MENUS: MenuDef[] = [
     title: '查看',
     accel: 'V',
     items: [
-      { title: '会话', action: 'toggle-nav' },
+      { title: '开启或关闭左导航', action: 'toggle-nav' },
       { title: '快速命令栏', action: 'toggle-quickbar' },
       { title: '切换主题（深色/浅色）', action: 'toggle-theme' },
     ],
@@ -118,7 +118,7 @@ defineEmits<{ (e: 'action', action: string): void }>()
 .menubar {
   display: flex;
   align-items: center;
-  height: 26px;
+  height: 20px;
   padding: 0 4px;
   border-bottom: 1px solid var(--fy-chrome-border, #d5d9de);
   background: var(--fy-chrome-bg, #f0f2f5);

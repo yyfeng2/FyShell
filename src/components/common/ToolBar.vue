@@ -71,7 +71,7 @@ function submit(): void {
 .toolbar {
   display: flex;
   align-items: center;
-  min-height: 30px;
+  min-height: 22px;
   padding: 0 4px;
   background: var(--fy-chrome-bg, #f0f2f5);
   user-select: none;

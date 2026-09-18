@@ -121,8 +121,6 @@ interface FlatNode {
   hasDbChildren?: boolean
   /** 历史库（断开连接后保留展示，灰色弱化） */
   grey?: boolean
-  /** 会话行：有打开的终端 Tab（显示关闭图标） */
-  closable?: boolean
 }
 
 // ---------------- 会话树 ----------------
@@ -190,6 +188,8 @@ async function refreshMysqlTreeDbs(): Promise<void> {
       savedId,
       connected: true,
     }
+    // 持久化最近一次成功的库列表：重启应用后未连接状态下仍以灰色展示历史库（Navicat 风格）
+    localStorage.setItem('mysql_tree_history', JSON.stringify({ host: result.host, databases }))
     debugLog(
       `[mysql-tree] conn=${id} databases=${databases.length} saved=${savedId ?? '-'} target=${match?.id ?? 'standalone'}`,
     )
@@ -226,11 +226,38 @@ async function loadTree(): Promise<void> {
   try {
     const tree = await sessionList()
     nodes.value = normalizeTreeNodes(tree)
+    restoreMysqlTreeHistory()
     // 树就绪后刷新库节点挂载（连接已建立时重新匹配会话节点）
     const mysqlStore = useMysqlStore()
     if (mysqlStore.connId) void refreshMysqlTreeDbs()
   } catch (e) {
     ui.toast(`加载会话列表失败：${String(e)}`, 'error')
+  }
+}
+
+/** 启动恢复历史库（localStorage）：未连接状态下树中仍以灰色展示上次连接的库列表（Navicat 风格）。
+    挂靠分流：同 host MySQL 会话节点 → 挂会话节点；已存连接同 host → 由常驻节点 host 匹配展示；
+    都无 → 走独立节点兜底分支 */
+function restoreMysqlTreeHistory(): void {
+  if (useMysqlStore().connId || mysqlTreeDbs.value) return
+  const raw = localStorage.getItem('mysql_tree_history')
+  if (!raw) return
+  let history: { host: string; databases: string[] }
+  try {
+    history = JSON.parse(raw)
+  } catch {
+    return
+  }
+  if (!history?.host || !Array.isArray(history.databases)) return
+  const sessionMatch = nodes.value.find(
+    (n) => !n.is_folder && n.config?.session_type === 'mysql' && n.config.host === history.host,
+  )
+  mysqlTreeDbs.value = {
+    sessionId: sessionMatch?.id ?? null,
+    host: history.host,
+    databases: history.databases,
+    savedId: null,
+    connected: false,
   }
 }
 
@@ -328,7 +355,6 @@ const flatNodes = computed<FlatNode[]>(() => {
         isMysql: isDbSession,
         sessionType: n.config?.session_type ?? null,
         hasDbChildren,
-        closable: terminalStore.tabs.some((t) => t.panes.some((p) => p.sessionId === n.id)),
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
         walk(n.children ?? [], depth + 1, section)
@@ -405,22 +431,24 @@ const flatNodes = computed<FlatNode[]>(() => {
     for (const c of useMysqlStore().savedConnections) {
       if (sessionHosts.has(c.host)) continue
       const isActive = dbs?.savedId === c.id
+      // 活动连接挂当前库；断开（灰色历史库）时按 host 匹配展示历史库
+      const showDbs = !!dbs && (isActive || (!dbs.connected && dbs.host === c.host))
       out.push({
         id: `savedconn-${c.id}`,
         name: c.host,
         depth: 1,
         isFolder: false,
         color: null,
-        isOpen: !!dbs && isActive && !collapsedDbHosts.value.has(c.id),
+        isOpen: showDbs && !collapsedDbHosts.value.has(c.id),
         hostLabel: '',
         encoding: null,
         isMysql: true,
         isSavedConn: true,
         savedConnId: c.id,
-        hasDbChildren: !!dbs && isActive,
+        hasDbChildren: showDbs,
       })
       // 该常驻节点是当前活动连接：库列表挂其下（断开后保留历史库以灰色展示，可点击收缩箭头折叠）
-      if (dbs && isActive && !collapsedDbHosts.value.has(c.id)) {
+      if (showDbs && !collapsedDbHosts.value.has(c.id)) {
         for (const dbName of dbs.databases) {
           out.push({
             id: `savdb-${c.id}-${dbName}`,
@@ -439,8 +467,10 @@ const flatNodes = computed<FlatNode[]>(() => {
         }
       }
     }
-    // 兜底：既无已保存连接匹配也无 session 树匹配时的独立节点（连接主机 + 库列表）
-    if (dbs && dbs.savedId === null && dbs.sessionId === null) {
+    // 兜底：既无已保存连接匹配也无 session 树匹配时的独立节点（连接主机 + 库列表）；
+    // 已存连接有同 host 常驻节点时不渲染（避免同一 host 两处展示）
+    const standaloneTaken = useMysqlStore().savedConnections.some((c) => c.host === dbs?.host)
+    if (dbs && dbs.savedId === null && dbs.sessionId === null && !standaloneTaken) {
       const standaloneOpen = !collapsedDbHosts.value.has('db-standalone')
       out.push({
         id: 'db-standalone',
@@ -632,13 +662,6 @@ function toggleTreeExpand(node: FlatNode): void {
     return
   }
   toggleDbHost(node)
-}
-
-/** 树中会话行关闭图标：断开并关闭该会话的终端（关闭后连接态图标随动消失） */
-async function closeSessionNode(node: FlatNode): Promise<void> {
-  const existing = tabs.value.find((t) => t.type === 'terminal' && t.sessionId === node.id)
-  if (existing) closeTab(existing.id)
-  await terminalStore.closeBySessionId(node.id)
 }
 
 function onNodeClick(node: FlatNode): void {
@@ -1299,6 +1322,13 @@ function closeTab(id: string): void {
     // store 侧同步断开连接、清理标签与状态（按连接键路由，含未建立连接的兜底）
     void terminalStore.closeBySessionId(closed.connId)
   }
+  // MySQL/Redis 工作台 Tab 关闭即断开（与右键"关闭连接"行为一致，驱动树中历史库灰化）
+  if (closed?.type === 'mysql') {
+    void useMysqlStore().disconnect()
+  }
+  if (closed?.type === 'redis') {
+    void useRedisStore().disconnect()
+  }
   if (activeId.value === id) {
     const next = tabs.value[Math.min(idx, tabs.value.length - 1)]
     activeId.value = next?.id ?? null
@@ -1866,15 +1896,6 @@ onUnmounted(() => {
               <div class="workspace__node-text">
                 <span class="workspace__node-name" :title="node.name">{{ node.name }}</span>
               </div>
-              <!-- 会话关闭图标：断开并关闭该会话终端（关闭后连接态图标消失） -->
-              <v-icon
-                v-if="node.closable"
-                icon="mdi-close"
-                size="12"
-                class="workspace__node-close"
-                title="关闭会话"
-                @click.stop="closeSessionNode(node)"
-              />
             </div>
           </template>
           <div v-if="flatNodes.length === 0" class="workspace__tree-empty">无匹配会话</div>
@@ -2306,18 +2327,6 @@ onUnmounted(() => {
 /* 历史库（断开连接后保留展示）：整行弱化 */
 .workspace__tree-node--grey {
   opacity: 0.55;
-}
-
-/* 会话行右侧关闭图标（hover/常显由 closable 驱动） */
-.workspace__node-close {
-  margin-left: auto;
-  flex: none;
-  cursor: pointer;
-  opacity: 0.6;
-}
-
-.workspace__node-close:hover {
-  opacity: 1;
 }
 
 /* 会话节点双行（名称 + user@host） */
