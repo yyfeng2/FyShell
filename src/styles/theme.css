@@ -327,3 +327,15 @@ body {
 .fy-terminal .xterm-screen {
   background-color: transparent !important;
 }
+
+/* ---------- 深色主题（2026-09-18） ----------
+   根因修复：--fy-chrome-bg/--fy-chrome-border 仅定义于 :root（浅灰），无深色覆盖，
+   深色主题下 9+ 处 chrome 区组件（菜单栏/工具栏/标签栏/状态栏/会话树/快速命令栏/对话框）
+   仍渲染浅灰白块。Vuetify 3 把 v-theme--dark 类挂在 html 元素，此处覆盖变量实现随主题切换，
+   同时 color-scheme: dark 让原生控件（滚动条/输入件/选中高亮）同步深色（根因 B）。 */
+html.v-theme--dark {
+  --fy-chrome-bg: #1f2224;
+  --fy-chrome-border: #34383c;
+  background-color: #1a1c1e;
+  color-scheme: dark;
+}
