@@ -593,16 +593,19 @@ function toggleFolder(id: string): void {
  * 树节点图标着色：自定义色优先，未设置按会话类型给 Navicat 式分类色。
  * 返回 Vuetify 语义色名（双主题自适应）；文件头/分区不着色（null）。
  */
-/** 数据库 host 节点连接状态（图标/颜色共用）：MySQL 库列表挂载即连接；Redis 按活动连接判定 */
+/** 数据库 host 节点连接状态（图标/颜色共用）：按实际连接状态判定。
+    灰色历史库挂载态（断开/重启恢复）不算连接——hasDbChildren 不能作为连接判据 */
 function dbHostConnected(node: FlatNode): boolean {
-  if (node.hasDbChildren) return true
-  if (node.isSavedConn && !node.isMysql) {
-    return useRedisStore().activeSavedId === node.savedConnId
+  if (node.isSavedConn) {
+    return node.isMysql
+      ? useMysqlStore().activeSavedId === node.savedConnId && !!useMysqlStore().connId
+      : useRedisStore().activeSavedId === node.savedConnId && !!useRedisStore().connId
   }
-  const stype = node.isSavedConn
-    ? 'redis'
-    : (findNode(nodes.value, node.id)?.config?.session_type ?? '')
-  return stype === 'redis' && !!useRedisStore().connId
+  const stype = findNode(nodes.value, node.id)?.config?.session_type ?? ''
+  if (stype === 'mysql') return !!useMysqlStore().connId
+  if (stype === 'redis') return !!useRedisStore().connId
+  // 兜底独立节点（db-standalone）：连接态随 mysqlTreeDbs.connected
+  return !!mysqlTreeDbs.value?.connected
 }
 
 /** 树节点图标名（连接状态感知：数据库 host 已连接=数据库，未连接=断开插头，Navicat 风格） */

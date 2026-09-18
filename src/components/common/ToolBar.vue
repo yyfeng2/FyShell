@@ -81,6 +81,11 @@ function submit(): void {
   height: 18px;
 }
 
+/* 覆盖 Vuetify 竖向 inset divider 默认 margin-block 8px：工具栏行高收紧到内容高 */
+.toolbar :deep(.v-divider--inset) {
+  margin-block: 0;
+}
+
 /* 图标按钮：24px 按钮 + 16px 图标（Vuetify 默认 20px 图标偏粗糙），细腻清晰 */
 .toolbar :deep(.v-btn .v-icon) {
   font-size: 16px;
