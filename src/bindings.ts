@@ -867,13 +867,9 @@ export type SessionConfig = {
 	 *  serde default：老数据缺该字段时反序列化为 None（视为 SSH），向后兼容。
 	 */
 	session_type?: string | null,
-	/**
-	 *  串口会话：端口名（session_type == "serial" 时生效）
-	 */
+	/**  串口会话：端口名（session_type == "serial" 时生效） */
 	serial_port?: string | null,
-	/**
-	 *  串口会话：波特率（默认 115200，由前端给缺省值）
-	 */
+	/**  串口会话：波特率（默认 115200，由前端给缺省值） */
 	baud_rate?: number | null,
 };
 
