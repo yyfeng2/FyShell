@@ -32,6 +32,11 @@ export function sessionTest(config: SessionConfig): Promise<SessionTestResult> {
   return invoke<SessionTestResult>('session_test', { config });
 }
 
+/** 会话克隆：读原配置 → 新 uuid → 名称加"副本"后缀 → 自动保存并返回新配置（不建立连接） */
+export function sessionClone(id: string): Promise<SessionConfig> {
+  return invoke<SessionConfig>('session_clone', { id });
+}
+
 /** 保存文件夹；新文件夹传 id 为空字符串，Rust 侧生成 uuid 并返回完整对象 */
 export function folderSave(folder: SessionFolder): Promise<SessionFolder> {
   return invoke<SessionFolder>('folder_save', { folder });

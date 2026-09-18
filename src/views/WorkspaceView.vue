@@ -29,11 +29,12 @@ import TunnelView from '@/views/tunnel/TunnelView.vue'
 import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
 import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
+import ImportExportDialog from '@/components/mysql/ImportExportDialog.vue'
 import RedisDbWorkspace from '@/components/redis/RedisDbWorkspace.vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { useRedisStore } from '@/stores/redis'
-import { mysqlDbList, mysqlDbSwitch } from '@/api/mysqlDb'
-import { sessionList } from '@/api/session'
+import { mysqlDbList, mysqlDbSwitch, mysqlDbCreate, mysqlDbDrop } from '@/api/mysqlDb'
+import { sessionList, sessionClone } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
@@ -639,7 +640,8 @@ function onNodeKeydown(node: FlatNode, e: KeyboardEvent): void {
 const treeMenu = reactive({ visible: false, x: 0, y: 0, node: null as FlatNode | null })
 
 function onTreeContextmenu(node: FlatNode, e: MouseEvent): void {
-  if (node.isDbLeaf || node.isSection || node.isSavedConn || node.id === 'db-standalone') return
+  // 分区头/分隔线/MySQL 兜底独立节点无菜单（独立节点无 SessionConfig，操作一律在工作台内）
+  if (node.isSection || node.isSeparator || node.id === 'db-standalone') return
   selectedId.value = node.id
   treeMenu.x = e.clientX
   treeMenu.y = e.clientY
@@ -647,11 +649,55 @@ function onTreeContextmenu(node: FlatNode, e: MouseEvent): void {
   treeMenu.visible = true
 }
 
-/** 右键菜单"连接"：打开该会话终端 */
+/** 右键菜单上下文：按节点类型 + 连接状态派生菜单项（Navicat 风格状态感知，未连接灰化数据库操作） */
+const treeMenuCtx = computed(() => {
+  const node = treeMenu.node
+  if (!node) return null
+  const mysqlStore = useMysqlStore()
+  const redisStore = useRedisStore()
+  // 库叶子：操作对象即当前活动 MySQL 连接
+  if (node.isDbLeaf) {
+    return {
+      kind: 'db-leaf' as const,
+      isDb: true,
+      isSessionNode: false,
+      connected: !!mysqlStore.connId,
+      connId: mysqlStore.connId,
+    }
+  }
+  // 已存连接常驻节点：isMysql=true → MySQL，否则 Redis
+  if (node.isSavedConn) {
+    const connId = node.isMysql ? mysqlStore.connId : redisStore.connId
+    return {
+      kind: 'conn' as const,
+      isDb: node.isMysql,
+      isSessionNode: false,
+      connected: !!connId,
+      connId,
+    }
+  }
+  // 会话节点：数据库类型共享连接菜单，其余（SSH/Telnet 等）通用会话菜单
+  const stype = findNode(nodes.value, node.id)?.config?.session_type
+  if (stype === 'mysql' || stype === 'redis') {
+    const connId = stype === 'mysql' ? mysqlStore.connId : redisStore.connId
+    return { kind: 'conn' as const, isDb: stype === 'mysql', isSessionNode: true, connected: !!connId, connId }
+  }
+  return { kind: 'session' as const, isDb: false, isSessionNode: true, connected: false, connId: null }
+})
+
+/** 右键菜单"打开连接"：打开该会话终端（已存连接节点按类型走对应 store 的 connectSaved） */
 function menuConnect(): void {
   treeMenu.visible = false
-  if (treeMenu.node && !treeMenu.node.isFolder) {
-    const target = findNode(nodes.value, treeMenu.node.id)
+  const node = treeMenu.node
+  if (!node) return
+  // 已存连接常驻节点：树中无 SessionConfig，按类型分流到对应 store
+  if (node.isSavedConn) {
+    if (node.isMysql) void connectMysqlSaved(node.savedConnId ?? '')
+    else void useRedisStore().connectSaved(node.savedConnId ?? '')
+    return
+  }
+  if (!node.isFolder) {
+    const target = findNode(nodes.value, node.id)
     if (!target) return
     const stype = target.config?.session_type
     // 数据库会话：切到 MySQL 工作台并按会话配置建连（不开终端）
@@ -800,16 +846,6 @@ async function switchMysqlDbFromTree(node: FlatNode): Promise<void> {
   }
 }
 
-/** 右键菜单"设置"：打开该会话的会话选项对话框（会话模式，编辑写会话级键覆盖全局值） */
-function menuSessionSettings(): void {
-  treeMenu.visible = false
-  const node = treeMenu.node
-  if (!node || node.isFolder) return
-  sshOptionsSessionId.value = node.id
-  sshOptionsSessionName.value = node.name
-  showSshOptionsDialog.value = true
-}
-
 /** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框） */
 function menuRename(): void {
   treeMenu.visible = false
@@ -848,6 +884,131 @@ async function menuDelete(): Promise<void> {
     ui.toast(`删除失败：${String(e)}`, 'error')
   }
 }
+
+/** 右键菜单"关闭连接"：断开该节点对应的数据库连接（MySQL/Redis store 按类型分流） */
+async function menuCloseConnection(): Promise<void> {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node) return
+  const isMysql = node.isSavedConn
+    ? node.isMysql
+    : findNode(nodes.value, node.id)?.config?.session_type === 'mysql'
+  if (isMysql) {
+    await useMysqlStore().disconnect()
+  } else {
+    await useRedisStore().disconnect()
+  }
+}
+
+/** 右键菜单"复制连接"：session_clone（自动保存，名称加"副本"后缀）后刷新树 */
+async function menuCloneConnection(): Promise<void> {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node || node.isFolder) return
+  try {
+    await sessionClone(node.id)
+    ui.toast(`已复制连接「${node.name}」`, 'success')
+    await loadTree()
+  } catch (e) {
+    ui.toast(`复制连接失败：${String(e)}`, 'error')
+  }
+}
+
+/** 右键菜单"新建查询/命令列界面"：打开对应数据库工作台 Tab（共用单例 Tab） */
+function menuNewQuery(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node) return
+  // 库叶子 / MySQL 会话与已存连接 → MySQL 工作台；Redis → Redis 工作台
+  if (node.isDbLeaf || (node.isSavedConn && node.isMysql)) {
+    openMysqlTab()
+    return
+  }
+  if (node.isSavedConn) {
+    openRedisTab()
+    return
+  }
+  const stype = findNode(nodes.value, node.id)?.config?.session_type
+  if (stype === 'redis') {
+    openRedisTab()
+    return
+  }
+  openMysqlTab()
+}
+
+/** 右键菜单"运行 SQL 文件"：挂载导入导出对话框（作用于当前活动 MySQL 连接） */
+function menuRunSqlFile(): void {
+  treeMenu.visible = false
+  const connId = useMysqlStore().connId
+  if (!connId) return
+  ioDialogConnId.value = connId
+  ioDialogVisible.value = true
+}
+
+/** 右键菜单"新建数据库"：输入库名对话框（确认后走 mysql_db_create） */
+function menuCreateDb(): void {
+  treeMenu.visible = false
+  if (!useMysqlStore().connId) return
+  newDbName.value = ''
+  showNewDbDialog.value = true
+}
+
+/** 右键菜单"删除数据库"：二次确认 → mysql_db_drop → 刷新树中库节点 */
+async function menuDropDb(): Promise<void> {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  const connId = useMysqlStore().connId
+  if (!node?.dbName || !connId) return
+  const ok = await ui.confirm({
+    title: '删除数据库',
+    message: `确定删除数据库「${node.dbName}」吗？库中所有数据将丢失，此操作不可恢复。`,
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await mysqlDbDrop(connId, node.dbName)
+    ui.toast(`数据库「${node.dbName}」已删除`, 'success')
+    await refreshMysqlTreeDbs()
+  } catch (e) {
+    ui.toast(`删除数据库失败：${String(e)}`, 'error')
+  }
+}
+
+/** 右键菜单"刷新"：重载会话树 + 当前连接的库节点 */
+async function menuRefresh(): Promise<void> {
+  treeMenu.visible = false
+  await loadTree()
+  await refreshMysqlTreeDbs()
+}
+
+// ---------------- 树右键"新建数据库"对话框 ----------------
+
+const showNewDbDialog = ref(false)
+const newDbName = ref('')
+const newDbCreating = ref(false)
+
+/** 新建数据库确认：作用于当前活动 MySQL 连接，成功后刷新树中库节点 */
+async function createDb(): Promise<void> {
+  const name = newDbName.value.trim()
+  const connId = useMysqlStore().connId
+  if (!name || !connId) return
+  newDbCreating.value = true
+  try {
+    await mysqlDbCreate(connId, name)
+    newDbName.value = ''
+    showNewDbDialog.value = false
+    ui.toast(`数据库「${name}」已创建`, 'success')
+    await refreshMysqlTreeDbs()
+  } catch (e) {
+    ui.toast(`新建数据库失败：${String(e)}`, 'error')
+  } finally {
+    newDbCreating.value = false
+  }
+}
+
+/** 导入导出对话框（树右键"运行 SQL 文件"入口；connId 挂当前活动 MySQL 连接） */
+const ioDialogVisible = ref(false)
+const ioDialogConnId = ref('')
 
 // ---------------- Tab 管理 ----------------
 
@@ -1630,7 +1791,7 @@ onUnmounted(() => {
         @dblclick="ui.setNavWidth(240)"
       />
 
-      <!-- 树右键菜单：连接 / 重命名 / 删除 -->
+      <!-- 树右键菜单：按节点类型上下文渲染（Navicat 风格；未连接时灰化数据库操作） -->
       <v-menu
         v-model="treeMenu.visible"
         :target="[treeMenu.x, treeMenu.y]"
@@ -1639,20 +1800,96 @@ onUnmounted(() => {
         :close-on-content-click="true"
       >
         <v-list density="compact">
-          <v-list-item v-if="treeMenu.node && !treeMenu.node.isFolder" @click="menuConnect">
-            <v-list-item-title>连接</v-list-item-title>
-          </v-list-item>
-          <v-list-item v-if="treeMenu.node && !treeMenu.node.isFolder" @click="menuSessionSettings">
-            <v-list-item-title>设置</v-list-item-title>
-          </v-list-item>
-          <v-divider />
-          <v-list-item @click="menuRename">
-            <v-list-item-title>重命名</v-list-item-title>
-          </v-list-item>
-          <v-divider />
-          <v-list-item @click="menuDelete">
-            <v-list-item-title class="text-error">删除</v-list-item-title>
-          </v-list-item>
+          <!-- 数据库叶子：打开/删除数据库 + 查询/SQL 文件 + 刷新 -->
+          <template v-if="treeMenuCtx?.kind === 'db-leaf'">
+            <v-list-item @click="menuNewQuery">
+              <v-list-item-title>打开数据库</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuDropDb">
+              <v-list-item-title class="text-error">删除数据库</v-list-item-title>
+            </v-list-item>
+            <v-divider />
+            <v-list-item @click="menuNewQuery">
+              <v-list-item-title>新建查询</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuNewQuery">
+              <v-list-item-title>命令列界面...</v-list-item-title>
+            </v-list-item>
+            <v-list-item :disabled="!treeMenuCtx.connId" @click="menuRunSqlFile">
+              <v-list-item-title>运行 SQL 文件...</v-list-item-title>
+            </v-list-item>
+            <v-divider />
+            <v-list-item @click="menuRefresh">
+              <v-list-item-title>刷新</v-list-item-title>
+            </v-list-item>
+          </template>
+
+          <!-- 数据库连接节点（MySQL/Redis 会话 + 已存连接）：状态感知 -->
+          <template v-else-if="treeMenuCtx?.kind === 'conn'">
+            <v-list-item v-if="!treeMenuCtx.connected" @click="menuConnect">
+              <v-list-item-title>打开连接</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-else @click="menuCloseConnection">
+              <v-list-item-title>关闭连接</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuRename">
+              <v-list-item-title>编辑连接...</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-if="treeMenuCtx.isSessionNode" @click="menuCloneConnection">
+              <v-list-item-title>复制连接...</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuDelete">
+              <v-list-item-title class="text-error">删除连接</v-list-item-title>
+            </v-list-item>
+            <v-divider />
+            <v-list-item :disabled="!treeMenuCtx.isDb || !treeMenuCtx.connected" @click="menuCreateDb">
+              <v-list-item-title>新建数据库...</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuNewQuery">
+              <v-list-item-title>新建查询</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuNewQuery">
+              <v-list-item-title>命令列界面...</v-list-item-title>
+            </v-list-item>
+            <v-list-item :disabled="!treeMenuCtx.isDb || !treeMenuCtx.connected" @click="menuRunSqlFile">
+              <v-list-item-title>运行 SQL 文件...</v-list-item-title>
+            </v-list-item>
+            <v-divider />
+            <v-list-item @click="menuRefresh">
+              <v-list-item-title>刷新</v-list-item-title>
+            </v-list-item>
+          </template>
+
+          <!-- 通用会话节点：打开/编辑/复制/删除 + 刷新 -->
+          <template v-else-if="treeMenuCtx?.kind === 'session'">
+            <v-list-item @click="menuConnect">
+              <v-list-item-title>打开连接</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuRename">
+              <v-list-item-title>编辑连接...</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuCloneConnection">
+              <v-list-item-title>复制连接...</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuDelete">
+              <v-list-item-title class="text-error">删除连接</v-list-item-title>
+            </v-list-item>
+            <v-divider />
+            <v-list-item @click="menuRefresh">
+              <v-list-item-title>刷新</v-list-item-title>
+            </v-list-item>
+          </template>
+
+          <!-- 文件夹：重命名/删除 -->
+          <template v-else>
+            <v-list-item @click="menuRename">
+              <v-list-item-title>重命名</v-list-item-title>
+            </v-list-item>
+            <v-divider />
+            <v-list-item @click="menuDelete">
+              <v-list-item-title class="text-error">删除</v-list-item-title>
+            </v-list-item>
+          </template>
         </v-list>
       </v-menu>
 
@@ -1759,6 +1996,30 @@ onUnmounted(() => {
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- 新建数据库对话框（树右键"新建数据库..."入口；作用于当前活动 MySQL 连接） -->
+    <v-dialog v-model="showNewDbDialog" width="360">
+      <v-card>
+        <v-card-title class="text-subtitle-1">新建数据库</v-card-title>
+        <v-card-text>
+          <v-text-field
+            v-model="newDbName"
+            label="数据库名称"
+            density="compact"
+            autofocus
+            @keydown.enter="createDb"
+          />
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showNewDbDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="newDbCreating" @click="createDb">确定</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- 导入导出对话框（树右键"运行 SQL 文件..."入口；connId 挂当前活动 MySQL 连接） -->
+    <ImportExportDialog v-model="ioDialogVisible" :conn-id="ioDialogConnId" />
 
     <!-- 主密码设置对话框（首次设置 + 修改/校验） -->
     <MasterPasswordDialog v-model="showMasterPassword" />
