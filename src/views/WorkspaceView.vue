@@ -631,6 +631,12 @@ function onNodeClick(node: FlatNode): void {
     void switchMysqlDbFromTree(node)
     return
   }
+  // 数据库 host 行（已连接、库已挂载）：单击切换库列表展开/收缩（Navicat 行为）。
+  // 已连接 host 的连接动作走右键菜单/工作台；重复单击不再无响应
+  if (node.hasDbChildren) {
+    toggleDbHost(node)
+    return
+  }
   // 已保存连接节点：打开对应工作台并按保存配置建连（MySQL/Redis）
   if (node.isSavedConn) {
     if (node.isMysql) {
@@ -1776,7 +1782,7 @@ onUnmounted(() => {
                 'workspace__tree-node--session': !node.isFolder,
                 'workspace__tree-node--section': node.isSection,
               }"
-              :style="{ paddingLeft: `${8 + node.depth * 28}px` }"
+              :style="{ paddingLeft: `${8 + node.depth * 14}px` }"
               @click="onNodeClick(node)"
               @keydown="onNodeKeydown(node, $event)"
               @contextmenu.prevent="onTreeContextmenu(node, $event)"
