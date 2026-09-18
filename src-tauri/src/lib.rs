@@ -170,14 +170,6 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::serial::serial_disconnect,
             commands::serial::serial_write,
             commands::serial::serial_alive,
-            // Redis 终端（commands/redis.rs）
-            commands::redis::redis_connect,
-            commands::redis::redis_disconnect,
-            commands::redis::redis_test,
-            commands::redis::redis_info,
-            commands::redis::redis_select_db,
-            commands::redis::redis_keys,
-            commands::redis::redis_exec,
         ])
         .error_handling(tauri_specta::ErrorHandlingMode::Throw)
         // 模型含 u64/i64 字段（字节数/耗时/时间戳），TS 侧统一为 number
@@ -376,14 +368,6 @@ pub fn run() {
             commands::serial::serial_disconnect,
             commands::serial::serial_write,
             commands::serial::serial_alive,
-            // Redis 终端（commands/redis.rs）
-            commands::redis::redis_connect,
-            commands::redis::redis_disconnect,
-            commands::redis::redis_test,
-            commands::redis::redis_info,
-            commands::redis::redis_select_db,
-            commands::redis::redis_keys,
-            commands::redis::redis_exec,
         ])
         .setup(|app| {
             // 会话配置存储：数据库路径经 Tauri API 获取（setup 在任何命令之前运行）
