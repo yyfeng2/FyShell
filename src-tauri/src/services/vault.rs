@@ -280,3 +280,134 @@ pub fn decrypt(encoded: &str) -> Result<String, AppError> {
     let plain = aead_decrypt(&dek, &nonce, &cipher)?;
     String::from_utf8(plain).map_err(|_| AppError::general("凭据解密内容编码错误"))
 }
+
+// ---------------------------------------------------------------------------
+// 单元测试（服务级：不依赖真实 MySQL/前端，直接验证 DEK 信封全流程）
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// OnceLock 全局单例（CONN/DEK 一次初始化，跨测试共享同一临时库），
+    /// 用互斥锁串行化全部用例，避免 DEK/信封互相覆盖。
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 初始化服务（幂等：CONN 已有实例时取第一次打开的库；同库足够，各用例自洽）
+    fn setup() {
+        let dir = std::env::temp_dir().join("fyshell-vault-unit-test");
+        let _ = std::fs::create_dir_all(&dir);
+        init(&dir).expect("vault 测试初始化失败");
+    }
+
+    /// 模拟 config_store 写入 master_password 键（与库同表同 key）
+    fn fake_set_master_password() {
+        meta_set("master_password", "mock-hash").expect("写入 mock 主密码失败");
+    }
+
+    #[test]
+    fn rekey_encrypt_decrypt_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+        fake_set_master_password();
+
+        assert!(!is_unlocked(), "初始应处于未解锁状态");
+        rekey("master-pw").expect("首次设置主密码应成功");
+        assert!(is_unlocked(), "设置后应自动解锁");
+        assert!(has_master_password(), "应能感知已设置主密码");
+
+        let enc = encrypt("敏感凭据-用户:密码").expect("加密应成功");
+        assert!(enc.starts_with("v1$"), "密文应带 v1 格式前缀");
+        // 明文不应出现在密文中（不泄露凭据内容）
+        assert!(!enc.contains("敏感凭据"), "密文不应包含明文");
+        assert_eq!(decrypt(&enc).expect("解密应成功"), "敏感凭据-用户:密码");
+
+        // 同明文两次加密不同（随机 nonce）
+        let enc2 = encrypt("敏感凭据-用户:密码").expect("二次加密应成功");
+        assert_ne!(enc, enc2, "随机 nonce 应产生不同密文");
+    }
+
+    #[test]
+    fn rekey_migrate_preserves_ciphertext() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+
+        rekey("old-pw").expect("首次设置应成功");
+        let enc = encrypt("改密后仍应可解").expect("加密应成功");
+
+        // 改密走 rekey_migrate：旧密码解包 → 新密码重包同一 DEK，存量密文无需迁移
+        rekey_migrate("old-pw", "new-pw").expect("旧密码正确应能改密");
+        assert!(is_unlocked(), "改密后应保持解锁");
+        assert_eq!(decrypt(&enc).expect("存量密文应可解"), "改密后仍应可解");
+
+        // 锁定 → 解密/加密被拒
+        lock();
+        assert!(!is_unlocked(), "锁定后应处于锁定态");
+        assert!(decrypt(&enc).is_err(), "锁定后解密应失败");
+        assert!(encrypt("x").is_err(), "锁定后加密应失败");
+
+        // 错误密码解锁被拒，正确密码解锁后可解存量密文
+        assert!(unlock("wrong-pw").is_err(), "错误主密码应拒绝解锁");
+        assert!(!is_unlocked(), "解锁失败不应改变状态");
+        unlock("new-pw").expect("正确主密码应能解锁");
+        assert_eq!(decrypt(&enc).expect("解锁后可解存量密文"), "改密后仍应可解");
+    }
+
+    #[test]
+    fn rekey_migrate_rejects_wrong_old_password() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+
+        rekey("truE-密码").expect("首次设置应成功");
+        let enc = encrypt("数据应保持原样").expect("加密应成功");
+
+        // 旧密码错误：拒绝迁移（防已存凭据变成不可解）
+        assert!(rekey_migrate("wrong-old", "new").is_err(), "旧密码错误应拒绝改密");
+        // DEK 未被篡改：仍可解原密文
+        assert_eq!(decrypt(&enc).expect("改密失败不应影响存量"), "数据应保持原样");
+    }
+
+    #[test]
+    fn corrupt_or_garbage_cipher_rejected() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+
+        rekey("pw").expect("首次设置应成功");
+
+        // 格式非法 / hex 损坏 / 长度非法：一律报错而非 panic
+        assert!(decrypt("garbage").is_err(), "非法格式应报错");
+        assert!(decrypt("").is_err(), "空串应报错");
+        assert!(decrypt("v1$zz$zz").is_err(), "非法 hex 应报错");
+        assert!(decrypt("v1$12$34$56").is_err(), "nonce 长度非法应报错");
+        assert!(decrypt("v2$12$34").is_err(), "未知版本应报错");
+
+        // 篡改密文（翻转首字节）应被 AEAD 认证拒绝，且不泄露明文
+        let (nonce, cipher) = aead_encrypt(&[0u8; KEY_LEN], b"hello").unwrap();
+        let mut tampered = cipher.clone();
+        if let Some(b) = tampered.first_mut() {
+            *b ^= 0xff;
+        }
+        assert!(
+            aead_decrypt(&[0u8; KEY_LEN], &nonce, &tampered).is_err(),
+            "篡改密文应认证失败"
+        );
+
+        // 错误密钥解密（信封包裹场景：密码不符 = 密钥不符）
+        assert!(
+            aead_decrypt(&[1u8; KEY_LEN], &nonce, &cipher).is_err(),
+            "密钥不符应解密失败"
+        );
+    }
+
+    #[test]
+    fn unlock_before_init_cleanup_and_yield() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+
+        // 未设主密码（无 vault_dek 信封）时解锁报"未初始化"
+        assert!(unlock("any").is_err(), "无信封时应报未初始化");
+        // 首次设置即解锁，原样验证 is_unlocked 幂等
+        rekey("pw").expect("首次设置应成功");
+        assert!(is_unlocked());
+    }
+}
