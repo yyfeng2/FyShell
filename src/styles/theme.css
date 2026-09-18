@@ -296,6 +296,14 @@ body {
   font-size: 14px;
 }
 
+/* Lucide SVG 图标随父级 .v-icon 字号缩放（lucide 默认 24px 宽高属性被 CSS 覆盖为 1em） */
+.v-application .v-icon svg,
+.v-overlay-container .v-icon svg {
+  display: block;
+  width: 1em;
+  height: 1em;
+}
+
 /* 菜单/列表文字与标签栏字号一致（标签栏 14px；注意 Vuetify 3 类名是单下划线 v-list-item-title；
    右键菜单/下拉经 Teleport 在 .v-overlay-container 内，需同时命中） */
 .v-application .v-list-item-title,

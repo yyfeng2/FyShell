@@ -11,9 +11,15 @@
 import { createVuetify } from 'vuetify'
 import type { VuetifyOptions } from 'vuetify'
 import 'vuetify/styles'
-import '@mdi/font/css/materialdesignicons.css'
+import { aliases, lucideIconSet } from '@/plugins/icons/lucide'
 
 const options: Partial<VuetifyOptions> = {
+  // Lucide 自定义 SVG 图标集：全项目图标统一经 mdiMap 迁移（见 plugins/icons/lucide.ts）
+  icons: {
+    defaultSet: 'lucide',
+    sets: { lucide: lucideIconSet },
+    aliases,
+  },
   // 经典浅灰为默认基调（Xshell 传统桌面风格），深色主题保留可切换
   theme: {
     defaultTheme: 'light',
