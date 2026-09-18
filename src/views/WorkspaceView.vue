@@ -982,6 +982,14 @@ async function switchMysqlDbFromTree(node: FlatNode): Promise<void> {
   }
 }
 
+/** 右键菜单"会话设置"：树节点即会话 id，打开 SSH 会话选项对话框 */
+function menuSessionSettings(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node) return
+  openSessionSettingsFor({ sessionId: node.id, title: node.name })
+}
+
 /** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框） */
 function menuRename(): void {
   treeMenu.visible = false
@@ -1992,6 +2000,9 @@ onUnmounted(() => {
             <v-list-item @click="menuRename">
               <v-list-item-title>编辑连接...</v-list-item-title>
             </v-list-item>
+            <v-list-item v-if="treeMenuCtx.isSessionNode" @click="menuSessionSettings">
+              <v-list-item-title>会话设置...</v-list-item-title>
+            </v-list-item>
             <v-list-item v-if="treeMenuCtx.isSessionNode" @click="menuCloneConnection">
               <v-list-item-title>复制连接...</v-list-item-title>
             </v-list-item>
@@ -2024,6 +2035,9 @@ onUnmounted(() => {
             </v-list-item>
             <v-list-item @click="menuRename">
               <v-list-item-title>编辑连接...</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuSessionSettings">
+              <v-list-item-title>会话设置...</v-list-item-title>
             </v-list-item>
             <v-list-item @click="menuCloneConnection">
               <v-list-item-title>复制连接...</v-list-item-title>
@@ -2174,15 +2188,20 @@ onUnmounted(() => {
         <v-divider />
         <v-card-text style="max-height: 60vh; overflow-y: auto">
           <v-list density="compact">
-            <v-list-item
-              v-for="s in sessionListFlat"
-              :key="s.id"
-              :title="(s.config?.host as string) || s.name"
-              :subtitle="s.name"
-              @click="openSessionFromList(s)"
-            />
+            <v-list-item v-for="s in sessionListFlat" :key="s.id" @click="openSessionFromList(s)">
+              <v-list-item-title class="session-row">
+                <span
+                  class="session-row__type"
+                  :class="`session-row__type--${(s.config?.session_type as string) ?? 'ssh'}`"
+                >
+                  {{ s.config?.session_type === 'mysql' ? 'MySQL' : s.config?.session_type === 'redis' ? 'Redis' : 'SSH' }}
+                </span>
+                <span class="session-row__name">{{ s.name }}</span>
+                <span class="session-row__host">{{ (s.config?.host as string) || s.name }}</span>
+              </v-list-item-title>
+            </v-list-item>
+            <div v-if="sessionListFlat.length === 0" class="text-medium-emphasis">暂无已添加会话</div>
           </v-list>
-          <div v-if="sessionListFlat.length === 0" class="text-medium-emphasis">暂无已添加会话</div>
         </v-card-text>
       </v-card>
     </v-dialog>
@@ -2412,6 +2431,46 @@ onUnmounted(() => {
   padding: 12px 8px;
   font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
+}
+
+/* 打开会话对话框：类型 名称 主机IP 横排展示（v-dialog slot 内容带 data-v，scoped 样式生效） */
+.session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.session-row__type {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 3px;
+  color: rgb(var(--v-theme-primary));
+  background: rgb(var(--v-theme-primary) / 0.12);
+}
+
+.session-row__type--mysql,
+.session-row__type--redis {
+  color: rgb(var(--v-theme-success));
+  background: rgb(var(--v-theme-success) / 0.12);
+}
+
+.session-row__name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row__host {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(var(--v-theme-on-surface) / 0.55);
 }
 
 /* 右侧多 Tab 工作区 */
