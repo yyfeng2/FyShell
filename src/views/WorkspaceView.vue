@@ -117,6 +117,8 @@ interface FlatNode {
   savedConnId?: string
   /** 库名（isDbLeaf 节点的目标库，切换时直接使用，免解析 id 前缀） */
   dbName?: string
+  /** 数据库 host 节点（已存连接/独立节点/已连接会话）：库列表已挂载（已连接态） */
+  hasDbChildren?: boolean
 }
 
 // ---------------- 会话树 ----------------
@@ -293,6 +295,10 @@ const flatNodes = computed<FlatNode[]>(() => {
       }
       if (section === 'db' && !isMysqlSession) continue
       if (section === 'redis' && !isRedisSession) continue
+      // 已连接的 MySQL 会话：数据库作为子节点展示（Navicat 风格）
+      //（同 host 的已存连接常驻节点不渲染，避免同一库挂两处）
+      const hasDbChildren =
+        section === 'db' && !n.is_folder && mysqlTreeDbs.value?.sessionId === n.id
       out.push({
         id: n.id,
         // 主机显示（Navicat 风格单行）：会话节点以主机地址为主，名称兜底
@@ -300,22 +306,21 @@ const flatNodes = computed<FlatNode[]>(() => {
         depth,
         isFolder: !!n.is_folder,
         color: n.config?.color ?? null,
-        isOpen: !!n.is_folder && (forceExpand || expanded.value.has(n.id)),
+        isOpen: n.is_folder
+          ? forceExpand || expanded.value.has(n.id)
+          : hasDbChildren
+            ? !collapsedDbHosts.value.has(n.id)
+            : false,
         hostLabel: '',
         encoding: (n.config?.encoding as string | undefined) ?? null,
         isMysql: isDbSession,
         sessionType: n.config?.session_type ?? null,
+        hasDbChildren,
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
         walk(n.children ?? [], depth + 1, section)
-      } else if (
-        section === 'db' &&
-        mysqlTreeDbs.value?.savedId === null &&
-        mysqlTreeDbs.value?.sessionId === n.id
-      ) {
-        // 已连接的 MySQL 会话：数据库作为子节点展示（Navicat 风格）
-        // （savedId 非空时库列表挂已保存连接常驻节点，避免同一库挂两处）
-        for (const dbName of mysqlTreeDbs.value.databases) {
+      } else if (hasDbChildren && !collapsedDbHosts.value.has(n.id)) {
+        for (const dbName of mysqlTreeDbs.value!.databases) {
           out.push({
             id: `db-${n.id}-${dbName}`,
             name: dbName,
@@ -398,6 +403,7 @@ const flatNodes = computed<FlatNode[]>(() => {
         isMysql: true,
         isSavedConn: true,
         savedConnId: c.id,
+        hasDbChildren: isActive,
       })
       // 该常驻节点是当前活动连接：库列表挂其下（Navicat 展开效果，可点击收缩箭头折叠）
       if (isActive && dbs && !collapsedDbHosts.value.has(c.id)) {
@@ -432,6 +438,7 @@ const flatNodes = computed<FlatNode[]>(() => {
         encoding: null,
         isMysql: true,
         isDbLeaf: false,
+        hasDbChildren: true,
       })
       if (standaloneOpen) {
         for (const dbName of dbs.databases) {
@@ -535,16 +542,48 @@ function toggleFolder(id: string): void {
  * 树节点图标着色：自定义色优先，未设置按会话类型给 Navicat 式分类色。
  * 返回 Vuetify 语义色名（双主题自适应）；文件头/分区不着色（null）。
  */
+/** 数据库 host 节点连接状态（图标/颜色共用）：MySQL 库列表挂载即连接；Redis 按活动连接判定 */
+function dbHostConnected(node: FlatNode): boolean {
+  if (node.hasDbChildren) return true
+  if (node.isSavedConn && !node.isMysql) {
+    return useRedisStore().activeSavedId === node.savedConnId
+  }
+  const stype = node.isSavedConn
+    ? 'redis'
+    : (findNode(nodes.value, node.id)?.config?.session_type ?? '')
+  return stype === 'redis' && !!useRedisStore().connId
+}
+
+/** 树节点图标名（连接状态感知：数据库 host 已连接=数据库，未连接=断开插头，Navicat 风格） */
+function treeIcon(node: FlatNode): string {
+  if (node.isSection) return node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right'
+  if (node.isFolder) return node.isOpen ? 'mdi-folder-open' : 'mdi-folder'
+  if (node.isDbLeaf) return 'mdi-database-outline'
+  if (node.isSavedConn || node.isMysql || node.sessionType === 'redis') {
+    return dbHostConnected(node) ? 'mdi-database' : 'mdi-lan-disconnect'
+  }
+  switch (node.sessionType) {
+    case 'telnet':
+      return 'mdi-console-network'
+    case 'rlogin':
+      return 'mdi-send'
+    case 'serial':
+      return 'mdi-usb-port'
+    default:
+      return 'mdi-console'
+  }
+}
+
 function treeIconColor(node: FlatNode): string | null {
   if (node.isSection) return null
   if (node.isFolder) return 'amber'
+  // 数据库 host：已连接 primary（与数据库图标配套），未连接不着色（灰化弱化视觉）
+  if (node.isDbLeaf) return 'primary'
+  if (node.isSavedConn || node.isMysql || node.sessionType === 'redis') {
+    return dbHostConnected(node) ? 'primary' : null
+  }
   if (node.color) return node.color
-  // 数据库会话（MySQL/Redis）统一 primary：与 mdi-database 图标配套（Navicat 风格），
-  // Redis 不额外换色，避免同图标靠颜色区分反而不易辨别
-  if (node.isDbLeaf || node.isMysql) return 'primary'
   switch (node.sessionType) {
-    case 'redis':
-      return 'primary'
     case 'telnet':
       return 'warning'
     case 'rlogin':
@@ -1578,6 +1617,8 @@ let unlisteners: UnlistenFn[] = []
 const offs: Array<() => void> = []
 
 onMounted(async () => {
+  // 挂载时刷新树中库节点（HMR/状态重置后 connId watch 不触发，库节点需恢复挂载）
+  void refreshMysqlTreeDbs()
   // 全局快捷键（Xshell 惯例）
   window.addEventListener('keydown', ui.handleKeydown)
   offs.push(
@@ -1735,14 +1776,14 @@ onUnmounted(() => {
                 'workspace__tree-node--session': !node.isFolder,
                 'workspace__tree-node--section': node.isSection,
               }"
-              :style="{ paddingLeft: `${8 + node.depth * 14 + (node.isDbLeaf ? 14 : 0)}px` }"
+              :style="{ paddingLeft: `${8 + node.depth * 28}px` }"
               @click="onNodeClick(node)"
               @keydown="onNodeKeydown(node, $event)"
               @contextmenu.prevent="onTreeContextmenu(node, $event)"
             >
               <!-- 数据库 host 节点收缩箭头：点击折叠/展开库列表（@click.stop 不触发连接） -->
               <v-icon
-                v-if="(node.isSavedConn && node.isMysql) || node.id === 'db-standalone'"
+                v-if="node.hasDbChildren"
                 :icon="node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right'"
                 size="14"
                 class="mr-1"
@@ -1750,23 +1791,7 @@ onUnmounted(() => {
                 @click.stop="toggleDbHost(node)"
               />
               <v-icon
-                :icon="node.isSection
-                  ? (node.isOpen ? 'mdi-chevron-down' : 'mdi-chevron-right')
-                  : node.isFolder
-                    ? (node.isOpen ? 'mdi-folder-open' : 'mdi-folder')
-                    : node.isDbLeaf
-                      ? 'mdi-database-outline'
-                      : node.isMysql
-                        ? 'mdi-database'
-                        : node.sessionType === 'redis'
-                          ? 'mdi-database'
-                          : node.sessionType === 'telnet'
-                          ? 'mdi-console-network'
-                          : node.sessionType === 'rlogin'
-                            ? 'mdi-send'
-                            : node.sessionType === 'serial'
-                              ? 'mdi-usb-port'
-                              : 'mdi-console'"
+                :icon="treeIcon(node)"
                 size="14"
                 class="mr-1"
                 :color="treeIconColor(node) ?? undefined"
