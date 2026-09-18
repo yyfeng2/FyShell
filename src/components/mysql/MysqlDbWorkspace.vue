@@ -175,7 +175,26 @@
               />
             </template>
           </v-list-item>
-          <v-list-item v-if="store.savedConnections.length === 0">
+          <v-list-item v-if="store.vaultLocked">
+            <template #prepend>
+              <v-icon size="small">mdi-lock-outline</v-icon>
+            </template>
+            <v-list-item-title class="text-caption text-medium-emphasis">
+              已存连接密码受主密码保护，解锁后方可查看
+            </v-list-item-title>
+            <template #append>
+              <v-btn
+                size="x-small"
+                color="primary"
+                variant="tonal"
+                prepend-icon="mdi-lock-open-variant-outline"
+                @click="showUnlockDialog = true"
+              >
+                解锁
+              </v-btn>
+            </template>
+          </v-list-item>
+          <v-list-item v-else-if="store.savedConnections.length === 0">
             <v-list-item-title class="text-caption text-medium-emphasis">
               暂无已保存的连接
             </v-list-item-title>
@@ -186,6 +205,9 @@
         </v-btn>
       </div>
     </div>
+
+    <!-- 凭据保险库解锁对话框（已存连接被主密码保护时） -->
+    <VaultUnlockDialog v-model="showUnlockDialog" />
 
     <!-- 表：直接嵌入现有数据网格（不修改 MysqlDataGrid） -->
     <div v-else-if="activeTab === 'table'" class="mysql-ws__grid-wrap">
@@ -718,6 +740,7 @@ import MysqlDataGrid from './MysqlDataGrid.vue'
 import MysqlConnectionForm from './MysqlConnectionForm.vue'
 import BackupPanel from './BackupPanel.vue'
 import AutoRunPanel from './AutoRunPanel.vue'
+import VaultUnlockDialog from '@/components/common/VaultUnlockDialog.vue'
 import type { SavedMysqlConnection } from '@/stores/mysql'
 
 const store = useMysqlStore()
@@ -1446,6 +1469,8 @@ watch(
 
 // ---------- 连接入口与会话管理（已保存连接 + 新建连接） ----------
 const showConnForm = ref(false)
+/** 凭据保险库解锁对话框（已存连接被主密码保护时触发） */
+const showUnlockDialog = ref(false)
 
 // ---------- 侧栏宽度可拖拽（Navicat 风格：拖手柄调宽，双击恢复默认 240px） ----------
 const sidebarWidth = ref(240)

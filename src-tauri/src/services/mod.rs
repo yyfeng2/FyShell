@@ -25,3 +25,4 @@ pub mod local_shell;
 pub mod telnet;
 pub mod serial;
 pub mod key_mapping_store;
+pub mod vault;

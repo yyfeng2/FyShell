@@ -15,10 +15,25 @@ pub fn master_password_status(state: State<'_, AppState>) -> Result<bool, AppErr
     state.config_store.has_master_password()
 }
 
-/// 设置主密码（Rust 侧幂等覆盖；修改前应由前端先经 verify 校验旧密码）
+/// 设置主密码。
+///
+/// - 首次设置（当前无主密码）：注册保险库 DEK 信封，此后已存凭据转加密存储
+/// - 修改（当前已有主密码）：须提供 `old_password` —— 先用它迁移 DEK 信封
+///   （旧密码错误时拒绝更新，防止已存凭据变成不可解），成功后再覆盖哈希
 #[tauri::command]
 #[specta::specta]
-pub fn master_password_set(state: State<'_, AppState>, password: String) -> Result<(), AppError> {
+pub fn master_password_set(
+    state: State<'_, AppState>,
+    password: String,
+    old_password: Option<String>,
+) -> Result<(), AppError> {
+    if state.config_store.has_master_password()? {
+        let old = old_password
+            .ok_or_else(|| AppError::general("修改主密码需提供旧密码"))?;
+        crate::services::vault::rekey_migrate(&old, &password)?;
+    } else {
+        crate::services::vault::rekey(&password)?;
+    }
     state.config_store.set_master_password(&password)
 }
 

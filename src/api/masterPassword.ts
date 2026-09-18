@@ -11,9 +11,17 @@ export function masterPasswordStatus(): Promise<boolean> {
   return invoke<boolean>('master_password_status');
 }
 
-/** 设置主密码（Rust 侧幂等覆盖；修改前建议先调 masterPasswordVerify 校验旧密码） */
-export function masterPasswordSet(password: string): Promise<void> {
-  return invoke<void>('master_password_set', { password });
+/**
+ * 设置主密码。
+ * - 首次设置：oldPassword 传 null/省略，后端同时注册保险库 DEK 信封，
+ *   此后已存凭据转加密存储
+ * - 修改：oldPassword 必传（后端据此迁移 DEK 信封，旧密码错误时拒绝更新）
+ */
+export function masterPasswordSet(password: string, oldPassword?: string): Promise<void> {
+  return invoke<void>('master_password_set', {
+    password,
+    oldPassword: oldPassword ?? null,
+  });
 }
 
 /** 验证主密码；尚未设置时返回 false */

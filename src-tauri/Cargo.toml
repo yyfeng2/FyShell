@@ -44,6 +44,11 @@ portable-pty = "0.8"
 # 串口终端（serial-unix/serial-windows 按平台自动后端）
 serialport = { version = "4.10.1", default-features = false }
 
+# 凭据保险库（主密码保护已存连接密码）：AEAD + 密钥派生（RustCrypto 纯 Rust）
+chacha20poly1305 = "0.10"
+pbkdf2 = "0.12"
+sha2 = "0.10"
+
 # IPC 类型绑定自动生成（bindings.ts 编译期生成，类型权威来源）
 # specta 版本须与 tauri-specta 精确匹配（rc 阶段官方要求用 "=" 锁定）
 specta = "=2.0.0-rc.25"

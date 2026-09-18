@@ -17,6 +17,7 @@ pub mod mysql_user;
 pub mod mysql_db;
 pub mod mysql_backup;
 pub mod master_password;
+pub mod vault;
 pub mod settings;
 pub mod key_mapping;
 pub mod local_shell;

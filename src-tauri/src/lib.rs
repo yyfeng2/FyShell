@@ -132,6 +132,12 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::master_password::master_password_status,
             commands::master_password::master_password_set,
             commands::master_password::master_password_verify,
+            // 凭据保险库（commands/vault.rs，主密码保护已存连接密码）
+            commands::vault::vault_status,
+            commands::vault::vault_unlock,
+            commands::vault::vault_lock,
+            commands::vault::vault_encrypt,
+            commands::vault::vault_decrypt,
             // 高功能设置（commands/settings.rs）：设置项持久化（SQLite settings 表）
             commands::settings::settings_get_all,
             commands::settings::settings_get,
@@ -321,6 +327,12 @@ pub fn run() {
             commands::master_password::master_password_status,
             commands::master_password::master_password_set,
             commands::master_password::master_password_verify,
+            // 凭据保险库（commands/vault.rs，主密码保护已存连接密码）
+            commands::vault::vault_status,
+            commands::vault::vault_unlock,
+            commands::vault::vault_lock,
+            commands::vault::vault_encrypt,
+            commands::vault::vault_decrypt,
             // 高功能设置（commands/settings.rs）：设置项持久化（SQLite settings 表）
             commands::settings::settings_get_all,
             commands::settings::settings_get,
@@ -376,6 +388,8 @@ pub fn run() {
             crate::services::sftp_store::init(&data_dir)?;
             // 键位映射（SQLite，同 fyshell.db 独立 Connection，key_mappings 表）
             crate::services::key_mapping_store::init(&data_dir)?;
+            // 凭据保险库（SQLite meta 表独立 Connection：解密 DEK 信封）
+            crate::services::vault::init(&data_dir)?;
 
             // 托盘：图标 + 菜单
             tray::init(app.handle())?;

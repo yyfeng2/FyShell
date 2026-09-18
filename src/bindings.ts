@@ -949,11 +949,19 @@ export type TunnelRule = {
 };
 
 /**  隧道状态 */
-export type TunnelStatus = 
+export type TunnelStatus =
 /**  已停止 */
-"Stopped" | 
+"Stopped" |
 /**  监听中 */
-"Listening" | 
+"Listening" |
 /**  错误（error 字段携带原因） */
 "Error";
+
+/**  凭据保险库状态（services/vault.rs） */
+export type VaultStatus = {
+	/**  是否已设置主密码 */
+	has_master_password: boolean,
+	/**  是否已解锁（解包 DEK 已在 Rust 内存） */
+	unlocked: boolean,
+};
 

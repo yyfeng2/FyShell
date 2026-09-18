@@ -149,7 +149,7 @@ async function submit(): Promise<void> {
   }
   submitting.value = true
   try {
-    await masterPasswordSet(newPassword.value)
+    await masterPasswordSet(newPassword.value, isModifyMode.value ? oldPassword.value : undefined)
     ui.toast(isModifyMode.value ? '主密码已更新' : '主密码已设置', 'success')
     emit('update:modelValue', false)
   } catch (e) {

@@ -28,6 +28,8 @@ import {
   mysqlRollback,
 } from '@/api/mysql'
 import { settingsGet, settingsSet } from '@/api/settings'
+import { vaultDecrypt, vaultEncrypt, vaultStatus, vaultUnlock } from '@/api/vault'
+import { useUiStore } from './ui'
 import type { MySqlConnection, MySqlQueryResult, MySqlTableInfo } from '@/api/types'
 
 /** 对外复用契约类型（单一事实来源在 @/api/types） */
@@ -127,6 +129,11 @@ export const useMysqlStore = defineStore('mysql', {
     /** 最近一次 connect 的入参（连接成功后回填保存列表用） */
     lastConfig: null as MySqlConnection | null,
 
+    /**
+     * 已存连接被主密码保护且未解锁（密码密文不可读，列表为空，由 UI 引导解锁）
+     */
+    vaultLocked: false as boolean,
+
     tables: [] as MySqlTableInfo[],
     tablesLoading: false,
 
@@ -206,20 +213,58 @@ export const useMysqlStore = defineStore('mysql', {
       }
     },
 
-    /** 从后端 settings 表加载已保存连接（失败静默：列表为空，可手动新建） */
+    /**
+     * 从后端 settings 表加载已保存连接（失败静默：列表为空，可手动新建）。
+     *
+     * Vault 感知：设置了主密码时，密码字段为密文（v1$…），需先解锁保险库才能解密读取；
+     * 未解锁则置 vaultLocked、列表置空（明文直读路径对未设主密码的旧数据保持兼容）。
+     */
     async loadSavedConnections(): Promise<void> {
       try {
-        this.savedConnections = parseSaved(await settingsGet(SAVED_CONN_KEY))
+        const status = await vaultStatus()
+        if (status.has_master_password && !status.unlocked) {
+          // 主密码保护但未解锁：密文不可读，列表置空等待解锁引导
+          this.vaultLocked = true
+          this.savedConnections = []
+          return
+        }
+        this.vaultLocked = false
+        const raw = await settingsGet(SAVED_CONN_KEY)
+        if (status.has_master_password && raw && raw.startsWith('v1$')) {
+          // 加密存储：先解密再解析（密钥在 Rust 侧内存，此路径已解锁）
+          this.savedConnections = parseSaved(await vaultDecrypt(raw))
+        } else {
+          // 明文存储：未设主密码，或设定前遗留的存量数据
+          this.savedConnections = parseSaved(raw)
+        }
       } catch {
         // 后端读取失败不阻塞 UI：列表保持为空，可在连接入口手动新建
       }
     },
 
-    /** 持久化已保存连接到 settings 表（失败静默：不阻塞 UI，下次变更会重试覆盖） */
-    persistSavedConnections(): void {
-      void settingsSet(SAVED_CONN_KEY, JSON.stringify(this.savedConnections)).catch(
-        () => undefined,
-      )
+    /**
+     * 持久化已保存连接到 settings 表（失败静默：不阻塞 UI，下次变更会重试覆盖）。
+     *
+     * Vault 感知：已设主密码时先加密再落盘；未解锁（正常路径不会发生，保存入口已被
+     * 拦截）则以 toast 提示并跳过本次保存，防止覆盖成明文造成凭据裸奔。
+     */
+    async persistSavedConnections(): Promise<void> {
+      try {
+        const status = await vaultStatus()
+        let raw: string
+        if (status.has_master_password) {
+          if (!status.unlocked) {
+            useUiStore().toast('已存连接受主密码保护，请先解锁后再保存', 'warning')
+            return
+          }
+          raw = await vaultEncrypt(JSON.stringify(this.savedConnections))
+        } else {
+          raw = JSON.stringify(this.savedConnections)
+        }
+        await settingsSet(SAVED_CONN_KEY, raw)
+      } catch {
+        // 加密/落盘失败不抛出：下次变更会重试覆盖
+      }
     },
 
     /**
@@ -227,6 +272,11 @@ export const useMysqlStore = defineStore('mysql', {
      * 返回该条目的 id（供组件回填 activeSavedId）
      */
     saveConnection(config: MySqlConnection): string {
+      // 保险库锁定：已存连接不可写入（正常路径不会触发，编辑入口已被锁定态遮挡）
+      if (this.vaultLocked) {
+        useUiStore().toast('已存连接受主密码保护，请先解锁后再保存', 'warning')
+        return ''
+      }
       const existing = this.savedConnections.find(
         (c) => c.host === config.host && c.port === config.port && c.username === config.username,
       )
@@ -256,6 +306,16 @@ export const useMysqlStore = defineStore('mysql', {
       this.savedConnections = this.savedConnections.filter((c) => c.id !== id)
       if (this.activeSavedId === id) this.activeSavedId = null
       this.persistSavedConnections()
+    },
+
+    /**
+     * 以主密码解锁保险库后加载已存连接（解锁对话框调用）。
+     * 密码错误由后端返回，向上抛出供对话框提示。
+     */
+    async unlockVault(password: string): Promise<void> {
+      await vaultUnlock(password)
+      this.vaultLocked = false
+      await this.loadSavedConnections()
     },
 
     /** 连接指定已保存配置：已连接时先断开（切换连接语义）；失败时抛出 */
