@@ -409,8 +409,8 @@ const THEME_MODE_ITEMS: { title: string; value: ThemeMode }[] = [
 
 /** 鼠标中/右键行为下拉选项 */
 const MOUSE_BUTTON_ITEMS: { title: string; value: MouseButtonAction }[] = [
-  { title: '没做什么。', value: 'nothing' },
-  { title: '粘贴剪贴板内容。', value: 'paste' },
+  { title: '无操作', value: 'nothing' },
+  { title: '粘贴剪贴板', value: 'paste' },
 ]
 
 /** 键位映射管理对话框可见性（键盘和鼠标分区的「编辑(E)...」按钮） */

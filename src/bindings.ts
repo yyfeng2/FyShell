@@ -324,6 +324,8 @@ export const commands = {
 	 *  `vault_unlock` (password: String) -> 以主密码解锁保险库（解包 DEK 入内存）
 	 * 
 	 *  主密码错误时返回带提示错误（AEAD 认证失败），不泄露哈希信息。
+	 *  解锁成功后自动迁移明文凭据存量（sessions.auth_type / 已存连接 / 代理密码），
+	 *  迁移失败仅记录不阻塞解锁。
 	 */
 	vaultUnlock: (password: string) => __TAURI_INVOKE<null>("vault_unlock", { password }),
 	/**  `vault_lock` () -> 锁定保险库（丢弃内存 DEK），后续凭据读写需重新解锁 */

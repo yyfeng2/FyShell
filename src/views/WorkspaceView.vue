@@ -388,6 +388,15 @@ const flatNodes = computed<FlatNode[]>(() => {
     }
   }
 
+  // 空分区不渲染分区头（无会话/已存连接时空分区头是噪音；按全量树判定，搜索时不闪变）
+  const hasSshContent = nodes.value.length > 0
+  const hasDbContent =
+    nodes.value.some((n) => !n.is_folder && n.config?.session_type === 'mysql') ||
+    useMysqlStore().savedConnections.length > 0
+  const hasRedisContent =
+    nodes.value.some((n) => !n.is_folder && n.config?.session_type === 'redis') ||
+    useRedisStore().savedConnections.length > 0
+
   // 分区头（可收缩：单击折叠/展开）
   const sectionHeader = (id: string, name: string) => {
     out.push({
@@ -405,28 +414,30 @@ const flatNodes = computed<FlatNode[]>(() => {
   }
 
   // SSH 服务分区：文件夹 + SSH 会话（会话/文件夹缩进一级，不与分区头齐平）
-  sectionHeader('section-ssh', 'SSH')
-  if (openSections.value.has('section-ssh')) {
+  if (hasSshContent) sectionHeader('section-ssh', 'SSH')
+  if (hasSshContent && openSections.value.has('section-ssh')) {
     walk(filterTree(nodes.value, kw), 1, 'ssh')
   }
 
-  // 分区虚线分隔
-  out.push({
-    id: 'tree-separator',
-    name: '',
-    depth: 0,
-    isFolder: false,
-    color: null,
-    isOpen: false,
-    hostLabel: '',
-    encoding: null,
-    isMysql: false,
-    isSeparator: true,
-  })
+  // 分区虚线分隔（下方分区有内容时才需要，空分区隐藏后虚线不悬空）
+  if (hasDbContent || hasRedisContent) {
+    out.push({
+      id: 'tree-separator',
+      name: '',
+      depth: 0,
+      isFolder: false,
+      color: null,
+      isOpen: false,
+      hostLabel: '',
+      encoding: null,
+      isMysql: false,
+      isSeparator: true,
+    })
+  }
 
   // 数据库服务分区：数据库（MySQL/Redis）会话 + 已保存连接常驻节点 + 库列表（会话缩进一级，不与分区头齐平）
-  sectionHeader('section-db', '数据库')
-  if (openSections.value.has('section-db')) {
+  if (hasDbContent) sectionHeader('section-db', '数据库')
+  if (hasDbContent && openSections.value.has('section-db')) {
     walk(filterTree(nodes.value, kw), 1, 'db')
     const dbs = mysqlTreeDbs.value
     // 已保存连接常驻节点（Navicat 风格：未连接也显示主机名，点击连接，连接后展开库列表）。
@@ -518,8 +529,8 @@ const flatNodes = computed<FlatNode[]>(() => {
   }
 
   // Redis 独立分区：Redis 会话 + 已存连接常驻节点（对齐数据库服务的 Navicat 模式）
-  sectionHeader('section-redis', 'Redis')
-  if (openSections.value.has('section-redis')) {
+  if (hasRedisContent) sectionHeader('section-redis', 'Redis')
+  if (hasRedisContent && openSections.value.has('section-redis')) {
     walk(filterTree(nodes.value, kw), 1, 'redis')
     // Redis 已存连接常驻节点（与同 host 的 Redis 会话去重；库管理在工作台 Tab 内）
     const redisSessionHosts = new Set<string>()
@@ -1842,14 +1853,29 @@ const settingsSection = ref<'appearance' | 'terminal' | 'sftp' | 'data' | 'secur
 /** SSH 选项对话框开关（标签右键菜单/菜单栏"会话设置"入口） */
 const showSshOptionsDialog = ref(false)
 
+/** 菜单栏组件引用（Alt+字母菜单导航经 openMenu 程序化打开对应菜单） */
+const menuBarRef = ref<InstanceType<typeof MenuBar> | null>(null)
+
+/** 窗口菜单动态标签列表：全部已开标签 + 当前激活勾选（Xshell 窗口菜单惯例） */
+const windowMenuTabs = computed(() =>
+  tabs.value.map((t) => ({ id: t.id, title: t.title, active: t.id === activeId.value })),
+)
+
+/** 窗口菜单标签跳转：切换激活标签 */
+function onMenuTabAction(id: string): void {
+  activeId.value = id
+}
+
 /** 工具栏帮助按钮：打开设置对话框"关于"分区（与菜单"关于 FyShell"一致） */
 function openAbout(): void {
   settingsSection.value = 'about'
   showSettings.value = true
 }
-/** 会话设置目标：会话节点 id 与会话名（会话模式，编辑写会话级键覆盖全局值） */
+/** 会话设置目标：会话节点 id与会话名（会话模式，编辑写会话级键覆盖全局值） */
 const sshOptionsSessionId = ref<string | null>(null)
 const sshOptionsSessionName = ref('')
+/** 本地终端（conn 键 local-<id>）打开时选项对话框只留终端/外观组（无 SSH 连接层） */
+const sshOptionsLocalOnly = ref(false)
 
 /** 打开会话选项对话框（会话模式）；无目标会话（非终端 Tab）时 toast 提示 */
 function openSessionSettingsFor(tab: { sessionId?: string; title: string } | null): void {
@@ -1857,6 +1883,7 @@ function openSessionSettingsFor(tab: { sessionId?: string; title: string } | nul
     ui.toast('请先选择一个会话终端', 'warning')
     return
   }
+  sshOptionsLocalOnly.value = tab.sessionId.startsWith('local-')
   sshOptionsSessionId.value = tab.sessionId
   sshOptionsSessionName.value = tab.title
   showSshOptionsDialog.value = true
@@ -2066,6 +2093,19 @@ onMounted(async () => {
     }),
     ui.registerShortcut('ctrl+tab', cycleTab),
   )
+  // Alt+字母菜单导航（Windows 桌面惯例）：打开加速下划线对应的菜单
+  const menuAccels: Array<[string, number]> = [
+    ['f', 0],
+    ['e', 1],
+    ['v', 2],
+    ['t', 3],
+    ['s', 4],
+    ['w', 5],
+    ['h', 6],
+  ]
+  for (const [key, idx] of menuAccels) {
+    offs.push(ui.registerShortcut(`alt+${key}`, () => menuBarRef.value?.openMenu(idx)))
+  }
   for (let i = 1; i <= 9; i++) {
     const idx = i - 1
     offs.push(
@@ -2141,7 +2181,13 @@ onUnmounted(() => {
 <template>
   <div class="workspace">
     <!-- 顶部菜单栏 + 工具栏 + 快速连接地址栏（参考 Xshell） -->
-    <MenuBar @action="onMenuAction" />
+    <MenuBar
+      ref="menuBarRef"
+      :toggles="{ nav: !ui.navCollapsed, quickbar: ui.quickBarVisible, composebar: ui.composeBarVisible }"
+      :window-tabs="windowMenuTabs"
+      @action="onMenuAction"
+      @tab-action="onMenuTabAction"
+    />
     <ToolBar
       @new-session="openSessionForm"
       @new-folder="showFolderDialog = true"
@@ -2557,6 +2603,7 @@ onUnmounted(() => {
       v-model="showSshOptionsDialog"
       :session-id="sshOptionsSessionId ?? undefined"
       :session-name="sshOptionsSessionName"
+      :terminal-only="sshOptionsLocalOnly"
     />
 
     <!-- 全局弹层（确认 / toast / 主题同步） -->

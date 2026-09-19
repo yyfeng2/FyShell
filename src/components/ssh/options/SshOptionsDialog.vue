@@ -21,7 +21,7 @@
       <div class="ssh-options settings-dialog__body">
         <!-- 左侧树形导航（参考 SecureCRT「会话选项」布局） -->
         <nav class="ssh-options__nav" aria-label="SSH 选项分类">
-          <template v-for="group in SSH_OPTIONS_NAV" :key="group.key">
+          <template v-for="group in navGroups" :key="group.key">
             <div class="ssh-options__nav-group">{{ group.title }}</div>
             <button
               v-for="leaf in group.children"
@@ -92,6 +92,8 @@ const props = defineProps<{
   sessionId?: string
   /** 会话模式：会话名（标题展示用） */
   sessionName?: string
+  /** 本地终端模式：左导航过滤掉 SSH 连接组（本地终端无 SSH 连接层，只留终端/外观组） */
+  terminalOnly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -106,6 +108,18 @@ void opts.ensureLoaded()
 /** 是否处于会话模式（传入 sessionId） */
 const isSessionMode = computed(() => !!props.sessionId)
 
+/** 左导航组（本地终端模式过滤 SSH 连接组，只留终端/外观组） */
+const navGroups = computed(() =>
+  props.terminalOnly
+    ? SSH_OPTIONS_NAV.filter((g) => g.key === 'terminal' || g.key === 'appearance')
+    : SSH_OPTIONS_NAV,
+)
+
+/** 导航内可用的叶子集合（terminalOnly 下连接组叶子不可用） */
+const availableLeaves = computed(
+  () => new Set(navGroups.value.flatMap((g) => g.children.map((l) => l.key))),
+)
+
 /** 当前展示的叶子页 */
 const current = ref<SshOptionsLeaf>('auth')
 
@@ -114,7 +128,10 @@ watch(
   () => props.modelValue,
   (visible) => {
     if (visible) {
-      current.value = props.initialLeaf ?? 'auth'
+      // terminalOnly 下连接组叶子不在导航内，回退到终端组首项（键盘）
+      const fallback: SshOptionsLeaf = props.terminalOnly ? 'keyboard' : 'auth'
+      const wanted = props.initialLeaf ?? fallback
+      current.value = availableLeaves.value.has(wanted) ? wanted : fallback
       if (props.sessionId) {
         opts.dialogSessionId = props.sessionId
         void opts.loadSessionOverrides(props.sessionId)
