@@ -639,6 +639,24 @@ export function useXterm(options: UseXtermOptions = {}) {
     }
   }
 
+  /** 菜单「编辑 → 复制」入口：立即复制当前选中内容（含复制后处理），返回是否复制成功 */
+  function copySelection(): boolean {
+    if (!term) return false
+    const selection = term.getSelection()
+    if (!selection) return false
+    const processed = postProcessCopiedText(selection)
+    if (!processed) return false
+    void navigator.clipboard.writeText(processed).catch(() => {
+      // 剪贴板写入失败静默
+    })
+    return true
+  }
+
+  /** 菜单「编辑 → 全选」入口：全选缓冲区文本 */
+  function selectAllText(): void {
+    term?.selectAll()
+  }
+
   /** 计算鼠标事件对应的缓冲 cell 位置（0-based col/row，视口相对） */
   function cellPositionOf(e: MouseEvent): { col: number; row: number } | null {
     if (!term || !term.element) return null
@@ -805,6 +823,12 @@ export function useXterm(options: UseXtermOptions = {}) {
     fit,
     /** 写入输出（字节流或字符串） */
     write,
+    /** 复制当前选中内容到剪贴板（含复制后处理；无选中返回 false） */
+    copySelection,
+    /** 从剪贴板粘贴（term.paste 自动处理 bracketed paste 模式） */
+    pasteFromClipboard,
+    /** 全选缓冲区文本（菜单「编辑 → 全选」入口） */
+    selectAllText,
     /** 切换会话编码 */
     setEncoding,
     /** 运行时切换字号（需外部随后调用 fit 重新布局） */

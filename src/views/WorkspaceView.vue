@@ -24,6 +24,7 @@ import AddressBar from '@/components/common/AddressBar.vue'
 import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
 import HostkeyDialog from '@/components/ssh/terminal/HostkeyDialog.vue'
+import ZmodemDialog from '@/components/ssh/terminal/ZmodemDialog.vue'
 import TerminalPane from '@/components/ssh/terminal/TerminalPane.vue'
 import ComposeBar from '@/components/ssh/terminal/ComposeBar.vue'
 import DualPane from '@/components/sftp/DualPane.vue'
@@ -753,12 +754,7 @@ function onNodeClick(node: FlatNode): void {
     }
     return
   }
-  // 会话单击即连接：已有该会话终端 Tab 时直接激活，不重复建连（双击也不会开两个 Tab）
-  const existing = tabs.value.find((t) => t.type === 'terminal' && t.sessionId === node.id)
-  if (existing) {
-    activeId.value = existing.id
-    return
-  }
+  // 会话单击即连接：每次单击都新建独立连接 Tab（不限制多开，同一会话可并存多个终端）
   const target = findNode(nodes.value, node.id)
   if (!target) return
   const stype = target.config?.session_type
@@ -1426,6 +1422,23 @@ function genTabId(): string {
   return `tab-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
 }
 
+/** 连接失败的终端 Tab（tabId → 错误原因）：失败后 Tab 保留，终端区就地展示「重试」入口（Xshell 惯例） */
+const failedConns = ref(new Map<string, string>())
+/** 重试中的 Tab（防重复点击重试） */
+const retryingConns = ref(new Set<string>())
+/** 失败 Tab 的重连闭包（tabId → connect）：就地重试按原会话参数重连 */
+const retryHandlers = new Map<string, () => Promise<unknown>>()
+
+/** 活动终端窗格 ref 表（tabId → TerminalPane，v-show 常驻仅活跃项被菜单操作命中）：
+ * 菜单「编辑 → 复制/粘贴/全选」就地执行剪贴板操作 */
+const paneRefs = new Map<string, InstanceType<typeof TerminalPane>>()
+
+/** 模板函数 ref：挂载时注册，卸载（Tab 关闭）时注销 */
+function setPaneRef(id: string, el: unknown): void {
+  if (el) paneRefs.set(id, el as InstanceType<typeof TerminalPane>)
+  else paneRefs.delete(id)
+}
+
 /** 打开会话终端 Tab（Xshell 多标签：同一会话可重复开 Tab，每标签一条独立连接） */
 function openTerminal(node: { id: string; name: string; color?: string | null }): void {
   // 标签色：会话节点自定义色优先，未设置时回退 SSH 选项默认标签色（sshopt_default_tab_color）
@@ -1441,18 +1454,13 @@ function openTerminal(node: { id: string; name: string; color?: string | null })
   tabs.value.push(tab)
   activeId.value = tab.id
   debugLog(`workspace openTerminal: tab=${tab.id} session=${node.id} tabs=${tabs.value.length}`)
-  // 委托 terminalStore.openTerminal 建立 SSH 连接并把输出流绑到 TerminalPane
-  void terminalStore
-    .openTerminal({ id: node.id, name: node.name, color: tabColor }, tab.connId)
-    .catch((e) => {
-      // 连接失败：移除 UI Tab（store 侧已回滚），展示错误信息
-      ui.toast(`连接「${node.name}」失败：${e instanceof Error ? e.message : String(e)}`, 'error')
-      const idx = tabs.value.findIndex((t) => t.id === tab.id)
-      if (idx >= 0) tabs.value.splice(idx, 1)
-      if (activeId.value === tab.id) {
-        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
-      }
-    })
+  // 失败重试：按原会话参数重连（重试用全新 connId：旧连接已被 store 清理，TerminalPane 经 sessionId watch 重绑写入器）
+  retryHandlers.set(tab.id, () => {
+    const t = tabs.value.find((x) => x.id === tab.id)
+    if (t) t.connId = genTabId()
+    return terminalStore.openTerminal({ id: node.id, name: node.name, color: tabColor }, t?.connId ?? tab.connId)
+  })
+  runConnect(tab, `连接「${node.name}」`)
 }
 
 /**
@@ -1461,26 +1469,56 @@ function openTerminal(node: { id: string; name: string; color?: string | null })
  */
 function openLocalTerminal(): void {
   const connKey = `local-${genTabId()}`
+  // 标题序号：按已开本地终端数追加（首个「本地终端」，后续「本地终端 2」…，关闭后不重排）
+  const localCount = tabs.value.filter((t) => t.type === 'terminal' && t.sessionId?.startsWith('local-')).length
   const tab: WorkTab = {
     id: genTabId(),
     type: 'terminal',
     sessionId: connKey,
     connId: connKey,
-    title: '本地终端',
+    title: localCount === 0 ? '本地终端' : `本地终端 ${localCount + 1}`,
     color: null,
   }
   tabs.value.push(tab)
   activeId.value = tab.id
   debugLog(`workspace openLocalTerminal: tab=${tab.id} conn=${connKey}`)
-  void terminalStore
-    .openTerminal({ id: connKey, name: '本地终端', sessionType: 'local' }, connKey)
+  // 失败重试：换全新 connKey 重连（旧连接已被 store 清理，TerminalPane 经 sessionId watch 重绑写入器）
+  retryHandlers.set(tab.id, () => {
+    const t = tabs.value.find((x) => x.id === tab.id)
+    const nextKey = `local-${genTabId()}`
+    if (t) {
+      t.connId = nextKey
+      t.sessionId = nextKey
+    }
+    return terminalStore.openTerminal({ id: nextKey, name: '本地终端', sessionType: 'local' }, nextKey)
+  })
+  runConnect(tab, '打开本地终端')
+}
+
+/** 连接失败处理（Xshell 惯例：失败后终端 Tab 保留可改参数重连）：
+ * 失败原因记入 failedConns（终端区就地展示「重试」入口），toast 提示 */
+function runConnect(tab: WorkTab, action: string): void {
+  const connect = retryHandlers.get(tab.id)
+  if (!connect) return
+  void connect().catch((e) => {
+    const reason = e instanceof Error ? e.message : String(e)
+    failedConns.value.set(tab.id, reason)
+    ui.toast(`${action}失败：${reason}`, 'error')
+  })
+}
+
+/** 就地重试（终端区「重试」按钮）：按原会话参数重连，再次失败时原因就地更新（不打扰 toast） */
+function retryConnection(tab: WorkTab): void {
+  const connect = retryHandlers.get(tab.id)
+  if (!connect || retryingConns.value.has(tab.id)) return
+  retryingConns.value.add(tab.id)
+  failedConns.value.delete(tab.id)
+  void connect()
     .catch((e) => {
-      ui.toast(`打开本地终端失败：${e instanceof Error ? e.message : String(e)}`, 'error')
-      const idx = tabs.value.findIndex((t) => t.id === tab.id)
-      if (idx >= 0) tabs.value.splice(idx, 1)
-      if (activeId.value === tab.id) {
-        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
-      }
+      failedConns.value.set(tab.id, e instanceof Error ? e.message : String(e))
+    })
+    .finally(() => {
+      retryingConns.value.delete(tab.id)
     })
 }
 
@@ -1505,8 +1543,11 @@ function openByteStreamSession(node: SessionNode): void {
   tabs.value.push(tab)
   activeId.value = tab.id
   debugLog(`workspace openByteStreamSession: tab=${tab.id} type=${stype} conn=${tab.connId}`)
-  void terminalStore
-    .openTerminal(
+  // 失败重试：按原会话参数重连（重试用全新 connId，TerminalPane 经 sessionId watch 重绑写入器）
+  retryHandlers.set(tab.id, () => {
+    const t = tabs.value.find((x) => x.id === tab.id)
+    if (t) t.connId = genTabId()
+    return terminalStore.openTerminal(
       {
         id: node.id,
         name: node.name,
@@ -1518,16 +1559,10 @@ function openByteStreamSession(node: SessionNode): void {
         serialPort: cfg.serial_port as string | undefined,
         baudRate: cfg.baud_rate as number | undefined,
       },
-      tab.connId,
+      t?.connId ?? tab.connId,
     )
-    .catch((e) => {
-      ui.toast(`连接「${node.name}」失败：${e instanceof Error ? e.message : String(e)}`, 'error')
-      const idx = tabs.value.findIndex((t) => t.id === tab.id)
-      if (idx >= 0) tabs.value.splice(idx, 1)
-      if (activeId.value === tab.id) {
-        activeId.value = tabs.value[Math.min(idx, tabs.value.length - 1)]?.id ?? null
-      }
-    })
+  })
+  runConnect(tab, `连接「${node.name}」`)
 }
 
 /** 打开传输队列 Tab（单例） */
@@ -1623,6 +1658,9 @@ function closeTab(id: string): void {
   if (closed?.type === 'terminal' && closed.connId) {
     // store 侧同步断开连接、清理标签与状态（按连接键路由，含未建立连接的兜底）
     void terminalStore.closeBySessionId(closed.connId)
+    // 同步清理失败状态与重连闭包（Tab 已关闭，就地重试入口随之消失）
+    failedConns.value.delete(closed.id)
+    retryHandlers.delete(closed.id)
   }
   // MySQL/Redis 工作台 Tab 关闭即断开（与右键"关闭连接"行为一致，驱动树中历史库灰化）
   if (closed?.type === 'mysql') {
@@ -1964,9 +2002,24 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'copy':
     case 'paste':
-    case 'select-all':
-      ui.toast('终端内 Ctrl+Shift+C 复制 / Ctrl+Shift+V 粘贴 / Ctrl+Shift+A 全选', 'info')
+    case 'select-all': {
+      // 真实执行（Xshell 菜单肌肉记忆）：活动终端窗格存在时执行剪贴板操作，无终端时提示快捷键
+      const pane = paneRefs.get(activeId.value ?? '')
+      if (!pane) {
+        ui.toast('终端内 Ctrl+Shift+C 复制 / Ctrl+Shift+V 粘贴 / Ctrl+Shift+A 全选', 'info')
+        break
+      }
+      if (action === 'copy') {
+        // 复制：选中内容写入剪贴板（含复制后处理），无选中时提示
+        const copied = await pane.copySelection()
+        if (!copied) ui.toast('当前无选中内容', 'info')
+      } else if (action === 'paste') {
+        await pane.pasteFromClipboard()
+      } else {
+        pane.selectAll()
+      }
       break
+    }
     case 'toggle-nav':
       ui.navCollapsed = !ui.navCollapsed
       break
@@ -2441,9 +2494,31 @@ onUnmounted(() => {
           >
             <!-- 终端 Tab：终端 + 命令栏 + 撰写栏（命令栏/撰写栏随 Tab 内嵌，不再全局） -->
             <template v-if="tab.type === 'terminal' && tab.connId">
-              <TerminalPane :session-id="tab.connId" :session-node-id="tab.sessionId" />
-              <QuickCommandBar :session-id="tab.connId" />
-              <ComposeBar :session-id="tab.connId" />
+              <!-- 连接失败（Xshell 惯例：Tab 保留可改参数重连）：就地展示错误与重试入口 -->
+              <div v-if="failedConns.has(tab.id)" class="workspace__conn-error">
+                <v-icon icon="mdi-alert-circle-outline" size="40" class="workspace__conn-error-icon" />
+                <div class="workspace__conn-error-title">连接「{{ tab.title }}」失败</div>
+                <div class="workspace__conn-error-msg">{{ failedConns.get(tab.id) }}</div>
+                <div class="workspace__conn-error-actions">
+                  <v-btn
+                    size="small"
+                    color="primary"
+                    prepend-icon="mdi-refresh"
+                    :loading="retryingConns.has(tab.id)"
+                    @click="retryConnection(tab)"
+                  >重试</v-btn>
+                  <v-btn size="small" variant="tonal" @click="closeTab(tab.id)">关闭标签</v-btn>
+                </div>
+              </div>
+              <template v-else>
+                <TerminalPane
+                  :ref="(el) => setPaneRef(tab.id, el)"
+                  :session-id="tab.connId"
+                  :session-node-id="tab.sessionId"
+                />
+                <QuickCommandBar :session-id="tab.connId" />
+                <ComposeBar :session-id="tab.connId" />
+              </template>
             </template>
             <TransferQueueView v-else-if="tab.type === 'transfer'" />
             <DualPane
@@ -2611,6 +2686,9 @@ onUnmounted(() => {
 
     <!-- HostKey 首次确认弹层（连接新主机时 Rust 侧挂起等待确认，必须挂载） -->
     <HostkeyDialog />
+
+    <!-- 终端 ZMODEM 传输弹层（rz/sz 触发，必须挂载） -->
+    <ZmodemDialog />
   </div>
 </template>
 
@@ -2853,6 +2931,42 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   color: rgb(var(--v-theme-on-surface) / 0.45);
+}
+
+/* 连接失败就地重试态（Xshell 惯例：失败后 Tab 保留）：主区中央图标 + 会话名 + 原因 + 操作 */
+.workspace__conn-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background-color: var(--fy-terminal-bg);
+  color: rgb(var(--v-theme-on-surface) / 0.45);
+}
+
+.workspace__conn-error-icon {
+  margin-bottom: 4px;
+  color: rgb(var(--v-theme-error));
+}
+
+.workspace__conn-error-title {
+  font-size: 14px;
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.workspace__conn-error-msg {
+  max-width: 60ch;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace__conn-error-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 /* 空态提示文字：主区中央大字提示，14px 标题档 */

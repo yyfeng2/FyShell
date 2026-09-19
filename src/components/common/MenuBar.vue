@@ -177,11 +177,11 @@ defineExpose({ openMenu })
             </template>
           </v-list-item>
         </template>
-        <!-- 窗口菜单动态标签区：全部已开标签，勾选指示当前激活（Xshell 惯例） -->
+        <!-- 窗口菜单动态标签区：全部已开标签带序号（Xshell 惯例「1 会话名」对应 Alt+数字直达），勾选指示当前激活 -->
         <template v-if="menu.title === '窗口' && (props.windowTabs?.length ?? 0) > 0">
           <v-divider />
           <v-list-item
-            v-for="t in props.windowTabs"
+            v-for="(t, i) in props.windowTabs"
             :key="t.id"
             :value="`tab:${t.id}`"
             @click="$emit('tab-action', t.id)"
@@ -191,7 +191,7 @@ defineExpose({ openMenu })
                 <v-icon v-if="t.active" icon="mdi-check" size="13" />
               </span>
             </template>
-            <v-list-item-title>{{ t.title }}</v-list-item-title>
+            <v-list-item-title>{{ i + 1 }} {{ t.title }}</v-list-item-title>
           </v-list-item>
         </template>
       </v-list>

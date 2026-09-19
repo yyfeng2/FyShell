@@ -103,6 +103,16 @@ onBeforeUnmount(() => {
   unbindWriter = null
   xterm.dispose()
 })
+
+// 菜单「编辑 → 复制/粘贴/全选」入口：WorkspaceView 经模板 ref 就地执行真实剪贴板操作
+defineExpose({
+  /** 选中内容写入剪贴板（含复制后处理；无选中返回 false） */
+  copySelection: () => xterm.copySelection(),
+  /** 从剪贴板粘贴到终端 */
+  pasteFromClipboard: () => xterm.pasteFromClipboard(),
+  /** 全选缓冲区文本 */
+  selectAll: () => xterm.selectAllText(),
+})
 </script>
 
 <style scoped>
