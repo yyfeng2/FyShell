@@ -9,6 +9,9 @@ import { createChannel } from './channels';
 import type {
   HostkeyPromptEvent,
   SessionStatusEvent,
+  ZmodemEndEvent,
+  ZmodemProgressEvent,
+  ZmodemStartEvent,
 } from './types';
 
 /** SSH 终端输出块：Rust 侧 Vec<u8> 序列化后为数字数组（可能被包装为 Uint8Array） */
@@ -84,6 +87,43 @@ export function listenHostkeyPrompt(
   handler: (event: HostkeyPromptEvent) => void,
 ): Promise<UnlistenFn> {
   return listen<HostkeyPromptEvent>('hostkey-prompt', (event) =>
+    handler(event.payload),
+  );
+}
+
+/** ZMODEM 传输用户选择回传（收到 zmodem-start 事件后由前端调用）：
+ *  action = "recv"（localPath 为保存目录）/ "send"（localPath 为本地文件）/ "cancel" */
+export function zmodemRespond(
+  key: string,
+  action: 'recv' | 'send' | 'cancel',
+  localPath: string,
+): Promise<void> {
+  return invoke<void>('zmodem_respond', { key, action, localPath: localPath });
+}
+
+/** 订阅 `zmodem-start` 事件（终端 ZMODEM 传输请求弹层） */
+export function listenZmodemStart(
+  handler: (event: ZmodemStartEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<ZmodemStartEvent>('zmodem-start', (event) =>
+    handler(event.payload),
+  );
+}
+
+/** 订阅 `zmodem-progress` 事件（ZMODEM 传输进度） */
+export function listenZmodemProgress(
+  handler: (event: ZmodemProgressEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<ZmodemProgressEvent>('zmodem-progress', (event) =>
+    handler(event.payload),
+  );
+}
+
+/** 订阅 `zmodem-end` 事件（ZMODEM 传输结束） */
+export function listenZmodemEnd(
+  handler: (event: ZmodemEndEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<ZmodemEndEvent>('zmodem-end', (event) =>
     handler(event.payload),
   );
 }

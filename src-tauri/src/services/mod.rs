@@ -26,3 +26,4 @@ pub mod telnet;
 pub mod serial;
 pub mod key_mapping_store;
 pub mod vault;
+pub mod zmodem;

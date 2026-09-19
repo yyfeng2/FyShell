@@ -28,6 +28,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::ssh::ssh_write,
             commands::ssh::ssh_resize,
             commands::ssh::ssh_hostkey_accept,
+            commands::ssh::zmodem_respond,
             // 前端诊断日志（临时调试用）
             commands::debug::debug_log,
             // SFTP 传输（commands/sftp.rs）
@@ -226,6 +227,7 @@ pub fn run() {
             commands::ssh::ssh_write,
             commands::ssh::ssh_resize,
             commands::ssh::ssh_hostkey_accept,
+            commands::ssh::zmodem_respond,
             // 前端诊断日志（临时调试用）
             commands::debug::debug_log,
             // SFTP 传输（commands/sftp.rs）

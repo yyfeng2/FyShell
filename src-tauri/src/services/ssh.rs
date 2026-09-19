@@ -15,7 +15,7 @@ use russh::keys::{HashAlg, PrivateKeyWithHashAlg, load_secret_key};
 use russh::keys::PublicKeyOrCertificate;
 use russh::{ChannelMsg, Disconnect};
 use tauri::ipc::Channel;
-use tauri::{Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::AppError;
 use crate::models::session::{AuthType, SessionConfig};
@@ -63,7 +63,8 @@ pub struct SshSessionHandle {
 }
 
 /// 写转发任务的消息：键盘输入或终端 resize
-enum SshWriteMsg {
+/// pub(crate)：zmodem 服务复用同一写路径回传协议字节
+pub(crate) enum SshWriteMsg {
     /// 键盘输入字节流
     Data(Vec<u8>),
     /// 终端尺寸变更（pix 尺寸固定 0）
@@ -342,10 +343,16 @@ async fn authenticate(
 /// （否则登录 banner + 提示符远小于 4KB，输出会一直滞留导致终端黑屏）。
 /// ANSI 解析交给 xterm.js；流结束（Eof/Close/断开）时由 Handler::disconnected 推送断开状态。
 /// 会话日志开启时同步追加落盘（P1，write_log 未启用时立即返回）。
+///
+/// ZMODEM：输出流中出现 ZRQINIT 哨兵（**\x18B）时切到 ZMODEM 模式——
+/// 输出整块改道到传输任务管道（不写 xterm），任务结束移除条目后恢复常规转发。
 async fn read_loop(
     session_id: String,
+    key: String,
     mut read_half: russh::ChannelReadHalf,
     on_output: Channel<Vec<u8>>,
+    app: AppHandle,
+    write_tx: tokio::sync::mpsc::UnboundedSender<SshWriteMsg>,
 ) {
     let mut buf: Vec<u8> = Vec::with_capacity(READ_BATCH_BYTES);
     let mut first_chunk = true;
@@ -369,30 +376,58 @@ async fn read_loop(
                     eprintln!("[ssh] {} first output chunk: {} bytes", session_id, data.len());
                 }
                 buf.extend_from_slice(&data);
-                if buf.len() >= READ_BATCH_BYTES {
-                    // take() 取走已积累内容并复用缓冲区容量
-                    let chunk = std::mem::take(&mut buf);
-                    crate::services::session_log::write_log(&session_id, &chunk);
-                    if on_output.send(chunk).is_err() {
-                        break;
-                    }
-                }
             }
             Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => break,
             // 窗口调整等其他消息直接忽略
             Some(_) => {}
-            None => {
-                // 空缓冲：流结束（对端断开）；非空缓冲：超时 → 冲刷积压输出
-                if buf.is_empty() {
-                    break;
-                }
-                let chunk = std::mem::take(&mut buf);
-                crate::services::session_log::write_log(&session_id, &chunk);
-                if on_output.send(chunk).is_err() {
-                    eprintln!("[ssh] {} channel send failed", session_id);
-                    break;
+            // 空缓冲：流结束（对端断开）；非空缓冲：超时 → 冲刷积压输出
+            None if buf.is_empty() => break,
+            None => {}
+        }
+
+        if buf.is_empty() {
+            continue;
+        }
+
+        // ZMODEM 传输中：输出整块改道到传输任务管道（不写 xterm/日志）。
+        // 发送失败（任务刚好退出）时本块回落到常规终端输出（如传输完成后的提示符）
+        if let Some(pipe_tx) = zmodem_pipe_tx(&app, &key) {
+            let chunk = std::mem::take(&mut buf);
+            match pipe_tx.send(chunk) {
+                Ok(()) => continue,
+                Err(e) => {
+                    if on_output.send(e.0).is_err() {
+                        break;
+                    }
                 }
             }
+        }
+
+        // 哨兵检测：输出流出现 ZRQINIT → 启动 ZMODEM 传输（sz/rz 公共起始）
+        if let Some(pos) = find_zmodem_sentinel(&buf) {
+            let tail = buf.split_off(pos);
+            let head = std::mem::take(&mut buf);
+            // 哨兵前内容（回显等）照常显示终端
+            crate::services::session_log::write_log(&session_id, &head);
+            if on_output.send(head).is_err() {
+                break;
+            }
+            let state = app.state::<AppState>();
+            crate::services::zmodem::start(&app, &state, &key, tail, write_tx.clone());
+            continue;
+        }
+
+        // 常规冲刷：部分哨兵滞留尾部时扣留等下一批（防跨批漏检）
+        let hold = partial_sentinel_len(&buf);
+        let cut = buf.len() - hold;
+        if cut == 0 {
+            continue;
+        }
+        let chunk: Vec<u8> = buf.drain(..cut).collect();
+        crate::services::session_log::write_log(&session_id, &chunk);
+        if on_output.send(chunk).is_err() {
+            eprintln!("[ssh] {} channel send failed", session_id);
+            break;
         }
     }
     // 冲刷残留输出
@@ -400,6 +435,33 @@ async fn read_loop(
         crate::services::session_log::write_log(&session_id, &buf);
         let _ = on_output.send(buf);
     }
+}
+
+/// ZMODEM ZRQINIT 哨兵：ZPAD ZPAD ZDLE 'B'（sz/rz 输出帧的公共起始）
+const ZMODEM_SENTINEL: [u8; 4] = [b'*', b'*', 0x18, b'B'];
+
+/// 在缓冲区中查找 ZMODEM 哨兵的起始位置
+fn find_zmodem_sentinel(buf: &[u8]) -> Option<usize> {
+    buf.windows(ZMODEM_SENTINEL.len())
+        .position(|w| w == ZMODEM_SENTINEL)
+}
+
+/// 缓冲区尾部是哨兵前缀（部分匹配）的最长字节数，无则 0
+fn partial_sentinel_len(buf: &[u8]) -> usize {
+    (1..ZMODEM_SENTINEL.len())
+        .rev()
+        .find(|&n| buf.ends_with(&ZMODEM_SENTINEL[..n]))
+        .unwrap_or(0)
+}
+
+/// 查询当前会话的 ZMODEM 数据管道（传输进行中时 Some）
+fn zmodem_pipe_tx(app: &AppHandle, key: &str) -> Option<std::sync::mpsc::Sender<Vec<u8>>> {
+    let state = app.state::<AppState>();
+    state
+        .zmodem_sessions
+        .lock()
+        .ok()
+        .and_then(|guard| guard.get(key).map(|entry| entry.pipe_tx.clone()))
 }
 
 /// 写转发任务：消费键盘输入 / resize 消息队列，转发到 russh channel
@@ -533,9 +595,16 @@ pub async fn connect(
     // 日志键用稳定会话 id（非 per-tab 路由键 key）：同一会话多标签/重连共享一份
     // 落盘，关闭重开标签不产生孤儿日志目录（LogViewer 亦按会话 id 查询）。
     let (read_half, write_half) = channel.split();
-    tauri::async_runtime::spawn(read_loop(cfg.id.clone(), read_half, on_output));
     let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
     tauri::async_runtime::spawn(write_forward(write_rx, write_half));
+    tauri::async_runtime::spawn(read_loop(
+        cfg.id.clone(),
+        key.to_string(),
+        read_half,
+        on_output,
+        app.clone(),
+        write_tx.clone(),
+    ));
     ssh_trace!("[ssh] {key} pty/shell ready, read_loop spawned");
 
     // 登录脚本：启用时 shell 就绪后按行间隔自动发送（SSH 选项「连接 → 登录脚本」）
@@ -655,6 +724,10 @@ pub fn disconnect(state: &AppState, id: &str) {
     // 清理挂起的 HostKey 确认（若有），挂起点将因 Sender 被丢弃而中止
     if let Ok(mut pending) = state.pending_hostkey.lock() {
         pending.remove(id);
+    }
+    // 清理进行中的 ZMODEM 传输（若有），任务经管道 Disconnected 退出并恢复终端
+    if let Ok(mut zmodem) = state.zmodem_sessions.lock() {
+        zmodem.remove(id);
     }
 }
 

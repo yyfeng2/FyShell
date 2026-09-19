@@ -39,6 +39,12 @@ export const commands = {
 	 *  oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
 	 */
 	sshHostkeyAccept: (id: string, accept: boolean) => __TAURI_INVOKE<null>("ssh_hostkey_accept", { id, accept }),
+	/**
+	 *  终端 ZMODEM 传输（rz/sz）的用户选择回传：收到 zmodem-start 事件后
+	 *  前端弹对话框，用户选择接收（local_path 为保存目录）/ 发送（local_path
+	 *  为本地文件）/ 取消后调用本命令，选择经响应通道传给传输任务。
+	 */
+	zmodemRespond: (key: string, action: string, localPath: string) => __TAURI_INVOKE<null>("zmodem_respond", { key, action, localPath }),
 	debugLog: (message: string) => __TAURI_INVOKE<void>("debug_log", { message }),
 	/**  目录列表：`Vec<FileEntry>` */
 	sftpList: (id: string, path: string) => __TAURI_INVOKE<FileEntry[]>("sftp_list", { id, path }),

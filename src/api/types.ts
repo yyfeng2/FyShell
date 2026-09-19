@@ -85,3 +85,24 @@ export interface HostkeyPromptEvent {
 export interface TransferStatusEvent {
   task: TransferTask;
 }
+
+/** `zmodem-start` 事件：检测到 ZRQINIT 哨兵；用户选择后调 zmodemRespond(key, action, localPath) */
+export interface ZmodemStartEvent {
+  /** 连接路由键（多标签同会话独立连接时每标签唯一） */
+  key: string;
+}
+
+/** `zmodem-progress` 事件：ZMODEM 传输进度 */
+export interface ZmodemProgressEvent {
+  key: string;
+  file_name: string;
+  transferred: number;
+  total: number;
+}
+
+/** `zmodem-end` 事件：ZMODEM 传输结束（成功/失败/取消） */
+export interface ZmodemEndEvent {
+  key: string;
+  ok: boolean;
+  message: string;
+}
