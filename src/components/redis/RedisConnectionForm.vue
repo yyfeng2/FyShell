@@ -8,53 +8,72 @@
       <v-card-title class="d-flex align-center">
         <v-icon size="small" class="mr-2">mdi-database-outline</v-icon>
         连接 Redis
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="emit('update:modelValue', false)"
+      />
       </v-card-title>
       <v-divider />
       <v-card-text class="redis-conn-form__body">
         <v-form ref="formRef" @submit.prevent="submit">
           <v-row dense>
             <v-col cols="8">
-              <v-text-field v-model="host" label="主机" density="compact" :rules="[rules.required]" />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">主机</span>
+                <v-text-field v-model="host" density="compact" :rules="[rules.required]" />
+              </div>
             </v-col>
             <v-col cols="4">
-              <v-text-field
-                v-model.number="port"
-                label="端口"
-                type="number"
-                density="compact"
-                :rules="[rules.required, rules.port]"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">端口</span>
+                <v-text-field
+                  v-model.number="port"
+                  type="number"
+                  density="compact"
+                  :rules="[rules.required, rules.port]"
+                />
+              </div>
             </v-col>
             <v-col cols="12">
-              <v-text-field
-                v-model="username"
-                label="用户名（ACL，可空）"
-                density="compact"
-                clearable
-                placeholder="留空 = 默认用户"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">用户名（ACL，可空）</span>
+                <v-text-field
+                  v-model="username"
+                  density="compact"
+                  clearable
+                  placeholder="留空 = 默认用户"
+                />
+              </div>
             </v-col>
             <v-col cols="12">
-              <v-text-field
-                v-model="password"
-                label="密码（可空）"
-                density="compact"
-                clearable
-                :type="showPassword ? 'text' : 'password'"
-                :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
-                @click:append-inner="showPassword = !showPassword"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">密码（可空）</span>
+                <v-text-field
+                  v-model="password"
+                  density="compact"
+                  clearable
+                  :type="showPassword ? 'text' : 'password'"
+                  :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+                  @click:append-inner="showPassword = !showPassword"
+                />
+              </div>
             </v-col>
             <v-col cols="12">
-              <v-text-field
-                v-model.number="db"
-                label="数据库"
-                type="number"
-                density="compact"
-                :rules="[rules.db]"
-                hint="内存数据库编号 (0-15)"
-                persistent-hint
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">数据库</span>
+                <v-text-field
+                  v-model.number="db"
+                  type="number"
+                  density="compact"
+                  :rules="[rules.db]"
+                  hint="内存数据库编号 (0-15)"
+                  persistent-hint
+                />
+              </div>
             </v-col>
           </v-row>
         </v-form>

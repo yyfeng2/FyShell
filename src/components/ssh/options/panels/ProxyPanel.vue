@@ -11,57 +11,67 @@
   />
   <v-row dense>
     <v-col cols="6">
-      <v-select
-        :model-value="opts.proxyType"
-        :items="PROXY_TYPES"
-        item-title="title"
-        item-value="value"
-        label="代理类型"
-        density="compact"
-        :disabled="!opts.proxyEnabled"
-        @update:model-value="(v: unknown) => opts.setProxyType(v as 'socks5' | 'http')"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">代理类型</span>
+        <v-select
+          :model-value="opts.proxyType"
+          :items="PROXY_TYPES"
+          item-title="title"
+          item-value="value"
+          density="compact"
+          :disabled="!opts.proxyEnabled"
+          @update:model-value="(v: unknown) => opts.setProxyType(v as 'socks5' | 'http')"
+        />
+      </div>
     </v-col>
     <v-col cols="6">
-      <v-text-field
-        :model-value="opts.proxyPort"
-        label="代理端口"
-        type="number"
-        min="1"
-        max="65535"
-        density="compact"
-        :disabled="!opts.proxyEnabled"
-        @change="onProxyPortChange"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">代理端口</span>
+        <v-text-field
+          :model-value="opts.proxyPort"
+          type="number"
+          min="1"
+          max="65535"
+          density="compact"
+          :disabled="!opts.proxyEnabled"
+          @change="onProxyPortChange"
+        />
+      </div>
     </v-col>
     <v-col cols="12">
-      <v-text-field
-        :model-value="opts.proxyHost"
-        label="代理主机"
-        density="compact"
-        placeholder="例如 127.0.0.1"
-        :disabled="!opts.proxyEnabled"
-        @change="onProxyHostChange"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">代理主机</span>
+        <v-text-field
+          :model-value="opts.proxyHost"
+          density="compact"
+          placeholder="例如 127.0.0.1"
+          :disabled="!opts.proxyEnabled"
+          @change="onProxyHostChange"
+        />
+      </div>
     </v-col>
     <v-col cols="6">
-      <v-text-field
-        :model-value="opts.proxyUsername"
-        label="用户名（可选）"
-        density="compact"
-        :disabled="!opts.proxyEnabled"
-        @change="onProxyUsernameChange"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">用户名（可选）</span>
+        <v-text-field
+          :model-value="opts.proxyUsername"
+          density="compact"
+          :disabled="!opts.proxyEnabled"
+          @change="onProxyUsernameChange"
+        />
+      </div>
     </v-col>
     <v-col cols="6">
-      <v-text-field
-        :model-value="opts.proxyPassword"
-        label="密码（可选）"
-        type="password"
-        density="compact"
-        :disabled="!opts.proxyEnabled"
-        @change="onProxyPasswordChange"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">密码（可选）</span>
+        <v-text-field
+          :model-value="opts.proxyPassword"
+          type="password"
+          density="compact"
+          :disabled="!opts.proxyEnabled"
+          @change="onProxyPasswordChange"
+        />
+      </div>
     </v-col>
   </v-row>
   <div class="settings-dialog__hint">

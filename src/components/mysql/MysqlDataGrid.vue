@@ -70,16 +70,18 @@
       <!-- 左侧：表列表侧栏（表名/行数/引擎/注释） -->
       <div class="mysql-grid__sidebar" :style="{ width: sidebarWidth + 'px', flexBasis: sidebarWidth + 'px' }">
         <div class="d-flex align-center px-2 py-1">
-          <v-text-field
-            v-model="tableFilter"
-            label="筛选表"
-            density="compact"
-            single-line
-            hide-details
-            clearable
-            prepend-inner-icon="mdi-magnify"
-            class="mr-1"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">筛选表</span>
+            <v-text-field
+              v-model="tableFilter"
+              density="compact"
+              single-line
+              hide-details
+              clearable
+              prepend-inner-icon="mdi-magnify"
+              class="mr-1"
+            />
+          </div>
           <v-btn
             icon="mdi-refresh"
             size="x-small"
@@ -270,6 +272,9 @@
                 <th class="mysql-grid__head-cell--locked" style="width: 36px; left: 0">
                   <!-- 行选择复选框列（sticky 冻结在左上角） -->
                 </th>
+                <th class="mysql-grid__head-cell--locked" style="width: 32px; left: 36px">
+                  <!-- 行号 gutter（sticky 冻结，横向滚动时行号始终可见） -->
+                </th>
                 <th
                   v-for="(col, ci) in resultColumns"
                   :key="col"
@@ -304,6 +309,10 @@
                     hide-details
                     @update:model-value="(v: unknown) => toggleRow(row.originalIndex, v)"
                   />
+                </td>
+                <td class="mysql-grid__cell--locked mysql-grid__row-num" style="left: 36px">
+                  <!-- 全局行号（Navicat 式 gutter）：服务端分页下 = (page-1)*pageSize + 页内索引 + 1 -->
+                  {{ (page - 1) * pageSize + row.originalIndex + 1 }}
                 </td>
                 <td
                   v-for="(cell, ci) in row.cells"
@@ -358,6 +367,9 @@
           <span class="text-caption text-medium-emphasis mr-2">
             共 {{ store.lastResult.total.toLocaleString() }} 行
           </span>
+          <span v-if="lastCellPos" class="text-caption text-medium-emphasis mr-2">
+            行 {{ (page - 1) * pageSize + lastCellPos.ri + 1 }} · 列 {{ lastCellPos.ci + 1 }}
+          </span>
           <v-pagination
             :model-value="page"
             :length="pageCount"
@@ -366,16 +378,18 @@
             density="comfortable"
             @update:model-value="onPageChange"
           />
-          <v-select
-            :model-value="pageSize"
-            :items="PAGE_SIZES"
-            label="每页"
-            density="compact"
-            single-line
-            hide-details
-            style="max-width: 90px"
-            @update:model-value="onPageSizeChange"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">每页</span>
+            <v-select
+              :model-value="pageSize"
+              :items="PAGE_SIZES"
+              density="compact"
+              single-line
+              hide-details
+              style="max-width: 90px"
+              @update:model-value="onPageSizeChange"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -533,18 +547,28 @@
         <v-card-title class="d-flex align-center">
           <v-icon size="small" class="mr-2">mdi-arrow-expand-vertical</v-icon>
           自定义填充值
+        <v-spacer />
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="showFillDialog = false"
+        />
         </v-card-title>
         <v-divider />
         <v-card-text>
-          <v-text-field
-            v-model="fillValue"
-            label="填充值（选中区域内所有单元格）"
-            density="compact"
-            single-line
-            hide-details
-            autofocus
-            @keyup.enter="confirmFill"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">填充值（选中区域内所有单元格）</span>
+            <v-text-field
+              v-model="fillValue"
+              density="compact"
+              single-line
+              hide-details
+              autofocus
+              @keyup.enter="confirmFill"
+            />
+          </div>
         </v-card-text>
         <v-divider />
         <v-card-actions>
@@ -561,19 +585,29 @@
         <v-card-title class="d-flex align-center">
           <v-icon size="small" class="mr-2">mdi-arrow-up-down</v-icon>
           跳转到行
+        <v-spacer />
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="showGotoDialog = false"
+        />
         </v-card-title>
         <v-divider />
         <v-card-text>
-          <v-text-field
-            v-model="gotoRowNo"
-            label="行号（1 - 总行数）"
-            type="number"
-            density="compact"
-            single-line
-            hide-details
-            autofocus
-            @keyup.enter="confirmGoto"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">行号（1 - 总行数）</span>
+            <v-text-field
+              v-model="gotoRowNo"
+              type="number"
+              density="compact"
+              single-line
+              hide-details
+              autofocus
+              @keyup.enter="confirmGoto"
+            />
+          </div>
         </v-card-text>
         <v-divider />
         <v-card-actions>
@@ -590,6 +624,14 @@
         <v-card-title class="d-flex align-center">
           <v-icon size="small" class="mr-2">mdi-eye-outline</v-icon>
           {{ previewMode === 'edit' ? '编辑预览' : previewMode === 'delete' ? '删除预览' : '插入预览' }}
+        <v-spacer />
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="showPreview = false"
+        />
         </v-card-title>
         <v-divider />
         <v-card-text>
@@ -640,17 +682,28 @@
     <!-- 保存查询对话框：命名保存当前 SQL（可选绑定当前连接） -->
     <v-dialog v-model="showSaveQuery" max-width="420">
       <v-card>
-        <v-card-title class="text-subtitle-1">保存查询</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="saveQueryName"
-            label="查询名称"
-            density="compact"
-            variant="outlined"
-            autofocus
-            counter="100"
-            @keyup.enter="confirmSaveQuery"
+        <v-card-title class="d-flex align-center text-subtitle-1">保存查询
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="showSaveQuery = false"
           />
+        </v-card-title>
+        <v-card-text>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">查询名称</span>
+            <v-text-field
+              v-model="saveQueryName"
+              density="compact"
+              variant="outlined"
+              autofocus
+              counter="100"
+              @keyup.enter="confirmSaveQuery"
+            />
+          </div>
           <v-checkbox-btn
             v-model="saveBindConn"
             density="compact"
@@ -1010,6 +1063,9 @@ function isCellSelected(ri: number, ci: number): boolean {
 }
 
 /** 单击单元格：设为锚点；Shift+单击扩展矩形选区 */
+/** 当前点击单元格位置（状态条"行 X · 列 Y"展示；查询变化时随选区清除） */
+const lastCellPos = ref<{ ri: number; ci: number } | null>(null)
+
 function onCellClick(e: MouseEvent, ri: number, ci: number): void {
   const anchor = selAnchor.value
   if (e.shiftKey && anchor) {
@@ -1023,6 +1079,7 @@ function onCellClick(e: MouseEvent, ri: number, ci: number): void {
     selAnchor.value = { ri, ci }
     cellSelection.value = { r1: ri, c1: ci, r2: ri, c2: ci }
   }
+  lastCellPos.value = { ri, ci }
 }
 
 /** 列头单击：选中整列（全行 × 该列） */
@@ -1036,6 +1093,7 @@ function selectColumn(ci: number): void {
 function clearCellSelection(): void {
   selAnchor.value = null
   cellSelection.value = null
+  lastCellPos.value = null
 }
 
 /**
@@ -2114,6 +2172,25 @@ function onConnected(connLabel: string): void {
   background: rgba(var(--v-theme-primary), 0.08);
 }
 
+/* 奇偶行斑马纹（Navicat 式隔行着色，宽表横向扫描防串行）。
+   用 background-image 叠加而非替换 background-color：锁定列的不透明
+   surface 底色与选中/编辑态的着色保持原样，半透明层只叠在其上 */
+.mysql-grid__result-table :deep(tbody tr:nth-child(even)) td {
+  background-image: linear-gradient(
+    rgba(var(--v-theme-on-surface), 0.035),
+    rgba(var(--v-theme-on-surface), 0.035)
+  );
+}
+
+/* 行 hover 反馈：扫过行高亮（0.05 档，浅于行选中 0.08 / 单元格选区 0.1，
+   符合"hover < 选中"的层级直觉）；声明在斑马纹之后，hover 时覆盖之 */
+.mysql-grid__result-table :deep(tbody tr:hover) td {
+  background-image: linear-gradient(
+    rgba(var(--v-theme-on-surface), 0.05),
+    rgba(var(--v-theme-on-surface), 0.05)
+  );
+}
+
 /* 列锁定：sticky 冻结（不透明底色防止下方内容透出；表头层级高于单元格） */
 .mysql-grid__cell--locked,
 .mysql-grid__head-cell--locked {
@@ -2127,6 +2204,15 @@ function onConnected(connLabel: string): void {
 
 .mysql-grid__head-cell--locked {
   z-index: 2;
+}
+
+/* 行号 gutter：弱化小字 + 等宽右对齐（Navicat 式行号锚点，随 checkbox 列 sticky 冻结） */
+.mysql-grid__row-num {
+  color: rgb(var(--v-theme-on-surface) / 0.5);
+  font-size: 12px;
+  font-family: var(--fy-mono);
+  text-align: right;
+  padding: 2px 6px 2px 0;
 }
 
 /* 锁定列在选中/编辑状态下的底色与行高亮保持一致 */
@@ -2153,7 +2239,7 @@ th[title='单击选中整列'] {
 .mysql-grid__cell-input {
   width: 100%;
   border: 1px solid rgba(var(--v-theme-primary), 0.6);
-  border-radius: 3px;
+  border-radius: 4px;
   padding: 2px 4px;
   font-size: 14px;
   background: transparent;

@@ -84,8 +84,8 @@ async function sendCommand(text: string): Promise<void> {
   align-items: center;
   min-height: 28px;
   padding: 0 4px;
-  border-top: 1px solid var(--fy-chrome-border, #d5d9de);
-  background: var(--fy-chrome-bg, #f0f2f5);
+  border-top: 1px solid var(--fy-chrome-border);
+  background: var(--fy-chrome-bg);
   user-select: none;
 }
 
@@ -110,7 +110,7 @@ async function sendCommand(text: string): Promise<void> {
   color: rgb(var(--v-theme-primary, 46 111 219));
   background: rgba(var(--v-theme-primary), 0.08);
   border: 1px solid rgba(var(--v-theme-primary), 0.25);
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
   overflow: hidden;
@@ -118,7 +118,7 @@ async function sendCommand(text: string): Promise<void> {
 }
 
 .quick-bar__cmd-btn:hover {
-  background: rgba(var(--v-theme-primary), 0.16);
+  background: var(--fy-hover-bg);
 }
 
 .quick-bar__cmd-btn:focus-visible {

@@ -43,15 +43,17 @@
 
         <!-- 导出参数 -->
         <template v-if="mode === 'export'">
-          <v-textarea
-            v-model="exportSql"
-            label="查询 SQL"
-            density="compact"
-            rows="3"
-            auto-grow
-            variant="outlined"
-            hint="仅支持 SELECT 语句"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">查询 SQL</span>
+            <v-textarea
+              v-model="exportSql"
+              density="compact"
+              rows="3"
+              auto-grow
+              variant="outlined"
+              hint="仅支持 SELECT 语句"
+            />
+          </div>
           <v-radio-group v-model="exportFormat" label="导出格式" density="compact" hide-details class="mt-2">
             <v-radio label="CSV（逗号分隔）" value="csv" />
             <v-radio label="JSON" value="json" />
@@ -65,73 +67,81 @@
             hide-details
             class="mt-1"
           />
-          <v-text-field
-            :model-value="filePath"
-            label="保存路径"
-            density="compact"
-            single-line
-            readonly
-            hide-details
-            prepend-inner-icon="mdi-file-outline"
-            placeholder="点击右侧按钮选择保存位置"
-            class="mt-2"
-          >
-            <template #append-inner>
-              <v-btn
-                size="x-small"
-                variant="text"
-                icon="mdi-folder-open-outline"
-                title="选择保存路径"
-                @click="pickSavePath"
-              />
-            </template>
-          </v-text-field>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">保存路径</span>
+            <v-text-field
+              :model-value="filePath"
+              density="compact"
+              single-line
+              readonly
+              hide-details
+              prepend-inner-icon="mdi-file-outline"
+              placeholder="点击右侧按钮选择保存位置"
+              class="mt-2"
+            >
+              <template #append-inner>
+                <v-btn
+                  size="x-small"
+                  variant="text"
+                  icon="mdi-folder-open-outline"
+                  title="选择保存路径"
+                  @click="pickSavePath"
+                />
+              </template>
+            </v-text-field>
+          </div>
         </template>
 
         <!-- 导入参数 -->
         <template v-else>
-          <v-text-field
-            :model-value="filePath"
-            label="源文件路径"
-            density="compact"
-            single-line
-            readonly
-            hide-details
-            prepend-inner-icon="mdi-file-outline"
-            placeholder="点击右侧按钮选择导入文件"
-            class="mb-2"
-          >
-            <template #append-inner>
-              <v-btn
-                size="x-small"
-                variant="text"
-                icon="mdi-folder-open-outline"
-                title="选择文件"
-                @click="pickOpenPath"
-              />
-            </template>
-          </v-text-field>
-          <v-text-field
-            v-model="importTable"
-            label="目标表名"
-            density="compact"
-            single-line
-            :hint="importFormat === 'csv' ? 'CSV 格式必填' : 'SQL 格式的语句自带表名，此字段仅作展示'"
-            :persistent-hint="importFormat === 'csv'"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">源文件路径</span>
+            <v-text-field
+              :model-value="filePath"
+              density="compact"
+              single-line
+              readonly
+              hide-details
+              prepend-inner-icon="mdi-file-outline"
+              placeholder="点击右侧按钮选择导入文件"
+              class="mb-2"
+            >
+              <template #append-inner>
+                <v-btn
+                  size="x-small"
+                  variant="text"
+                  icon="mdi-folder-open-outline"
+                  title="选择文件"
+                  @click="pickOpenPath"
+                />
+              </template>
+            </v-text-field>
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">目标表名</span>
+            <v-text-field
+              v-model="importTable"
+              density="compact"
+              single-line
+              :hint="importFormat === 'csv' ? 'CSV 格式必填' : 'SQL 格式的语句自带表名，此字段仅作展示'"
+              :persistent-hint="importFormat === 'csv'"
+            />
+          </div>
           <v-radio-group v-model="importFormat" label="文件格式" density="compact" class="mt-2">
             <v-radio label="CSV（逗号分隔）" value="csv" />
             <v-radio label="SQL（INSERT 语句）" value="sql" />
           </v-radio-group>
-          <v-text-field
-            v-model.number="batchSize"
-            label="批量大小（每批行数，1-1000）"
-            type="number"
-            density="compact"
-            single-line
-            hide-details
-            class="mb-2"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">批量大小（每批行数，1-1000）</span>
+            <v-text-field
+              v-model.number="batchSize"
+              type="number"
+              density="compact"
+              single-line
+              hide-details
+              class="mb-2"
+            />
+          </div>
           <v-switch
             v-model="replace"
             label="REPLACE INTO 覆盖已有主键"

@@ -2,19 +2,21 @@
   <div class="redis-keys">
     <!-- 顶部筛选：pattern + 刷新 -->
     <div class="d-flex align-center px-2 py-1">
-      <v-text-field
-        v-model="pattern"
-        label="过滤 key"
-        placeholder="如 user:*，留空 = 全部"
-        density="compact"
-        single-line
-        hide-details
-        clearable
-        prepend-inner-icon="mdi-magnify"
-        class="mr-1"
-        @keydown.enter="loadKeys"
-        @click:clear="loadKeys"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">过滤 key</span>
+        <v-text-field
+          v-model="pattern"
+          placeholder="如 user:*，留空 = 全部"
+          density="compact"
+          single-line
+          hide-details
+          clearable
+          prepend-inner-icon="mdi-magnify"
+          class="mr-1"
+          @keydown.enter="loadKeys"
+          @click:clear="loadKeys"
+        />
+      </div>
       <v-btn
         icon="mdi-refresh"
         size="x-small"
@@ -55,7 +57,7 @@
         <v-chip v-if="detailType" size="x-small" variant="tonal" color="primary" class="mr-1">
           {{ detailType }}
         </v-chip>
-        <v-chip v-if="detailTtl !== null" size="x-small" variant="tonal" class="mr-1">
+        <v-chip v-if="detailTtl !== null" size="x-small" variant="tonal" :color="ttlColor" class="mr-1">
           {{ ttlLabel }}
         </v-chip>
         <v-spacer />
@@ -137,13 +139,22 @@ const detailLoading = ref(false)
 const detailError = ref('')
 const deletingKey = ref(false)
 
-/** TTL 语义：-1 无过期、-2 不存在、其余为剩余秒数 */
+/** TTL 语义：-1 无过期、-2 不存在、其余为剩余秒数（-2 文案与正文"key 不存在"口径一致） */
 const ttlLabel = computed(() => {
   const t = detailTtl.value
   if (t === null) return ''
   if (t === -1) return 'TTL 永不过期'
-  if (t === -2) return 'TTL 已过期'
+  if (t === -2) return 'key 不存在'
   return `TTL ${t} 秒`
+})
+
+/** TTL chip 语义色：-1 success / -2 error / 临期（<60s）warning / 其余默认主题色 */
+const ttlColor = computed((): string | undefined => {
+  const t = detailTtl.value
+  if (t === null) return undefined
+  if (t === -1) return 'success'
+  if (t === -2) return 'error'
+  return t < 60 ? 'warning' : undefined
 })
 
 function resetDetail(): void {
@@ -271,7 +282,7 @@ async function deleteKey(): Promise<void> {
 }
 
 .redis-keys__mono {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
 }
 
 .redis-keys__list {

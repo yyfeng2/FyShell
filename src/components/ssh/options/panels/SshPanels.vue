@@ -40,13 +40,15 @@
       class="mb-2"
       @update:model-value="(v: unknown) => opts.setTunnelAutoStart(!!v)"
     />
-    <v-text-field
-      :model-value="opts.tunnelListenHost"
-      label="新隧道规则默认监听地址"
-      density="compact"
-      class="settings-dialog__field"
-      @change="onListenHostChange"
-    />
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">新隧道规则默认监听地址</span>
+      <v-text-field
+        :model-value="opts.tunnelListenHost"
+        density="compact"
+        class="settings-dialog__field"
+        @change="onListenHostChange"
+      />
+    </div>
     <div class="settings-dialog__hint">
       全局总开关控制新会话连接时是否自动拉起已启用的隧道规则；隧道规则本身在隧道视图中管理。
     </div>
@@ -57,14 +59,16 @@
     <div class="settings-dialog__section-title">SSH：SFTP</div>
     <div class="settings-dialog__row">
       <div class="settings-dialog__field-row">
-        <v-text-field
-          :model-value="settings.sftpDownloadDir"
-          label="默认下载目录"
-          density="compact"
-          placeholder="留空使用系统下载目录"
-          hide-details
-          @change="onDownloadDirChange"
-        />
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">默认下载目录</span>
+          <v-text-field
+            :model-value="settings.sftpDownloadDir"
+            density="compact"
+            placeholder="留空使用系统下载目录"
+            hide-details
+            @change="onDownloadDirChange"
+          />
+        </div>
         <v-btn size="small" variant="tonal" prepend-icon="mdi-folder-open" title="选择目录" @click="pickDownloadDir">
           浏览
         </v-btn>

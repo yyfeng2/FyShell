@@ -19,8 +19,19 @@
 
   /* 经典浅灰 chrome 区（Xshell 传统桌面风格）：浅灰分层 + 1px 分隔线 */
   --fy-chrome-bg: #f0f2f5;
-  --fy-chrome-border: #d5d9de;
+  --fy-chrome-border: rgba(var(--v-theme-on-surface), 0.12);
   --fy-row-height-tree: 26px;
+
+  /* 反馈态公共变量（全应用统一 hover/焦点配方，勿在组件内另写灰度） */
+  --fy-hover-bg: rgba(var(--v-theme-on-surface), 0.08);
+  --fy-focus-color: rgb(var(--v-theme-primary));
+
+  /* 等宽字体：仅数据区使用（key/值/命令/IP/路径/行号），中文文案区保持 --fy-font 宋体 */
+  --fy-mono: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
+
+  /* 终端区背景（浅灰 chrome + 深色终端组合）：不随应用 light/dark 切换（始终深色）；
+     与 useXterm.ts TERMINAL_BG 同值，改动需两处同步 */
+  --fy-terminal-bg: #1e1e1e;
 }
 
 html,
@@ -157,8 +168,8 @@ body {
   --v-btn-height: 22px;
 }
 
-/* 表单字段高度：固定 36px（紧凑基线，与 14px 字号匹配，不再随分辨率变化）。
-   覆盖全部密度变体：compact=36 / default=48 / comfortable=56 → 一律 36px 紧凑，
+/* 表单字段高度：固定 26px（与树行高 26px 基线一致，文字尽量撑满框内）。
+   覆盖全部密度变体：compact=36 / default=48 / comfortable=56 → 一律 26px 紧凑，
    按钮/标签用 --v-btn-height 不受影响 */
 .v-application .v-input--density-compact .v-field,
 .v-overlay-container .v-input--density-compact .v-field,
@@ -166,8 +177,10 @@ body {
 .v-overlay-container .v-input--density-default .v-field,
 .v-application .v-input--density-comfortable .v-field,
 .v-overlay-container .v-input--density-comfortable .v-field {
-  --v-input-control-height: 36px;
-  --v-field-padding-bottom: 6px;
+  --v-input-control-height: 26px;
+  --v-field-padding-bottom: 4px;
+  /* Vuetify 默认 compact 档 padding-top 8px 把内容撑到 33px，压回 2px 让文字撑满框内 */
+  --v-input-padding-top: 2px;
 }
 
 /* 默认/舒适密度字段（未显式 density="compact" 的选择框/输入框）同样压到紧凑高度，
@@ -176,14 +189,52 @@ body {
 .v-application .v-input--density-comfortable,
 .v-overlay-container .v-input--density-default,
 .v-overlay-container .v-input--density-comfortable {
-  --v-input-control-height: 36px;
-  --v-field-padding-bottom: 6px;
+  --v-input-control-height: 26px;
+  --v-field-padding-bottom: 4px;
+  --v-input-padding-top: 2px;
 }
 
 /* 字段内部字号：Vuetify .v-field 硬编码 16px，统一 14px（选择框选中值/输入框文字） */
 .v-application .v-field,
 .v-overlay-container .v-field {
   font-size: 14px;
+  /* 边线颜色统一到 rgba(on-surface, 0.12~0.15) 区间：
+     Vuetify 默认 opacity 0.38 × currentColor(0.87) ≈ 0.33 过深，0.15×0.87 ≈ 0.13 落回区间 */
+  --v-field-border-opacity: 0.15;
+}
+
+/* 边框发丝线统一（最细 1 物理像素）：DPR 1.5 下 1px CSS 吸附为 1 物理像素；
+   变量定义在 .v-field__outline 元素规则上（元素规则优先于继承），覆盖须直接命中该元素。
+   Vuetify 聚焦态 .v-field--variant-outlined.v-field--focused 把宽度加到 2px（3 物理像素），
+   压回 1px 保持与未聚焦态一致 */
+.v-application .v-field--variant-outlined.v-field--focused .v-field__outline,
+.v-overlay-container .v-field--variant-outlined.v-field--focused .v-field__outline {
+  --v-field-border-width: 1px;
+}
+
+/* 必填标记：label 后红色 *（配 .fy-field-row--required 修饰类，静态标记不依赖校验触发） */
+.fy-field-row--required .fy-field-row__label::after {
+  content: ' *';
+  color: rgb(var(--v-theme-error));
+  font-weight: 400;
+}
+
+/* 表单字段行：名称在左（纯文字），边框字段在后；标签不嵌边框线（全局模式） */
+.fy-field-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.fy-field-row__label {
+  flex: 0 0 auto;
+  min-width: 84px;
+  font-size: 14px;
+  line-height: 26px; /* 对齐 26px 字段高 */
+  white-space: nowrap;
+}
+.fy-field-row > .v-input {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* 字段下方 details（错误/提示文字）：Vuetify 默认 0.75rem 过小，统一 14px */
@@ -251,10 +302,18 @@ body {
   font-weight: 400;
 }
 
-/* 对话框内边距：Vuetify 默认 16px 24px 偏松散，收紧为 12px 16px */
+/* 对话框内边距统一：边线内到文字保持 0.2 字符（em 随字号缩放，≈3px），
+   覆盖 Vuetify 默认（card-item/text 16px 24px、card-title 0.5rem 1rem）。
+   对话框 Teleport 到 .v-overlay-container（.v-application 之外），两层前缀都要写 */
 .v-application .v-dialog > .v-overlay__content > .v-card > .v-card-item,
-.v-application .v-dialog > .v-overlay__content > .v-card > .v-card-text {
-  padding: 12px 16px;
+.v-application .v-dialog > .v-overlay__content > .v-card > .v-card-title,
+.v-application .v-dialog > .v-overlay__content > .v-card > .v-card-text,
+.v-application .v-dialog > .v-overlay__content > .v-card > .v-card-actions,
+.v-overlay-container .v-dialog > .v-overlay__content > .v-card > .v-card-item,
+.v-overlay-container .v-dialog > .v-overlay__content > .v-card > .v-card-title,
+.v-overlay-container .v-dialog > .v-overlay__content > .v-card > .v-card-text,
+.v-overlay-container .v-dialog > .v-overlay__content > .v-card > .v-card-actions {
+  padding: 0.2em;
 }
 
 /* ---------- 子菜单 / 列表项紧凑化（2026-09-18 二次收紧） ---------- */
@@ -378,7 +437,9 @@ body {
 .v-application.v-theme--dark,
 .v-overlay.v-theme--dark {
   --fy-chrome-bg: #1f2224;
-  --fy-chrome-border: #34383c;
+  --fy-chrome-border: rgba(var(--v-theme-on-surface), 0.12);
+  /* 深色下边线整体提亮一档，维持面板分层感（浅色 0.08 hover 在深底上过弱） */
+  --fy-hover-bg: rgba(var(--v-theme-on-surface), 0.1);
   color-scheme: dark;
 }
 

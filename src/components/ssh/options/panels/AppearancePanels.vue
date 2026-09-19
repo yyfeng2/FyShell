@@ -48,13 +48,15 @@
       />
     </div>
     <div class="d-flex align-center mt-2">
-      <v-text-field
-        v-model="newKeyword"
-        label="关键词"
-        density="compact"
-        class="mr-2"
-        hide-details
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">关键词</span>
+        <v-text-field
+          v-model="newKeyword"
+          density="compact"
+          class="mr-2"
+          hide-details
+        />
+      </div>
       <input
         v-model="newColor"
         type="color"

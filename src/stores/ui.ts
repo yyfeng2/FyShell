@@ -129,6 +129,9 @@ export const useUiStore = defineStore('ui', () => {
   /** 快速命令栏可见性（查看菜单切换） */
   const quickBarVisible = ref(true)
 
+  /** 撰写栏可见性（查看菜单切换） */
+  const composeBarVisible = ref(true)
+
   // ---------------- 菜单命令分发（终端内键位映射触发） ----------------
 
   /** 待分发的菜单命令（seq 递增保证同一命令连续触发也能被 watch 到） */
@@ -234,6 +237,7 @@ export const useUiStore = defineStore('ui', () => {
     navWidth,
     setNavWidth,
     quickBarVisible,
+    composeBarVisible,
     menuActionRequest,
     requestMenuAction,
     shortcutOf,

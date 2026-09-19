@@ -34,17 +34,17 @@ function submit(): void {
 <template>
   <div class="toolbar">
     <!-- 新建组 -->
-    <v-btn icon="mdi-plus" size="20" variant="text" color="primary" title="新建会话 (Ctrl+N)" @click="emit('new-session')" />
-    <v-btn icon="mdi-folder-plus-outline" size="20" variant="text" color="primary" title="新建文件夹" @click="emit('new-folder')" />
+    <v-btn icon="mdi-plus" size="20" variant="text" title="新建会话 (Ctrl+N)" @click="emit('new-session')" />
+    <v-btn icon="mdi-folder-plus-outline" size="20" variant="text" title="新建文件夹" @click="emit('new-folder')" />
     <v-divider vertical inset class="mx-1 toolbar__divider" />
-    <!-- 连接组 -->
+    <!-- 连接组：连接/断开保留语义色（全工具栏唯一的彩色点缀） -->
     <v-btn icon="mdi-lan-connect" size="20" variant="text" color="success" title="连接选中的会话" @click="emit('connect')" />
     <v-btn icon="mdi-lan-disconnect" size="20" variant="text" color="error" title="断开当前会话" @click="emit('disconnect')" />
     <v-divider vertical inset class="mx-1 toolbar__divider" />
     <!-- 传输 / 视图组 -->
-    <v-btn icon="mdi-magnify" size="20" variant="text" color="info" title="搜索会话" @click="emit('search')" />
-    <v-btn icon="mdi-swap-vertical" size="20" variant="text" color="warning" title="传输队列" @click="emit('transfer')" />
-    <v-btn icon="mdi-folder-swap-outline" size="20" variant="text" color="accent" title="SFTP 文件传输" @click="emit('sftp')" />
+    <v-btn icon="mdi-magnify" size="20" variant="text" title="搜索会话" @click="emit('search')" />
+    <v-btn icon="mdi-swap-vertical" size="20" variant="text" title="传输队列" @click="emit('transfer')" />
+    <v-btn icon="mdi-folder-swap-outline" size="20" variant="text" title="SFTP 文件传输" @click="emit('sftp')" />
     <v-divider vertical inset class="mx-1 toolbar__divider" />
 
     <v-spacer />
@@ -71,9 +71,9 @@ function submit(): void {
 .toolbar {
   display: flex;
   align-items: center;
-  min-height: 20px;
+  min-height: 26px; /* 与 MenuBar/StatusBar 26px 节奏一致（原 20px 比相邻条带矮 6px） */
   padding: 0 4px;
-  background: var(--fy-chrome-bg, #f0f2f5);
+  background: var(--fy-chrome-bg);
   user-select: none;
 }
 
@@ -86,7 +86,7 @@ function submit(): void {
   margin-block: 0;
 }
 
-/* 图标按钮：24px 按钮 + 16px 图标（Vuetify 默认 20px 图标偏粗糙），细腻清晰 */
+/* 图标按钮：20px 按钮 + 16px 图标（Vuetify 默认 20px 图标偏粗糙），细腻清晰 */
 .toolbar :deep(.v-btn .v-icon) {
   font-size: 16px;
 }
@@ -94,13 +94,13 @@ function submit(): void {
 .toolbar__quickconnect {
   display: flex;
   align-items: center;
-  height: 22px;
+  height: 26px; /* 与全局单行控件基线一致（字段/搜索框 26px，原 22px） */
   /* 随窗口宽度自适应：窄窗口收缩，宽窗口不超过 180px */
   width: clamp(120px, 18vw, 180px);
   flex: none;
   padding: 0 6px;
-  border: 1px solid var(--fy-chrome-border, #d5d9de);
-  border-radius: 3px;
+  border: 1px solid var(--fy-chrome-border);
+  border-radius: 4px;
   background: rgb(var(--v-theme-surface));
 }
 
@@ -118,7 +118,7 @@ function submit(): void {
 .toolbar__quick-input:focus-visible {
   outline: 1px solid rgb(var(--v-theme-primary));
   outline-offset: 1px;
-  border-radius: 2px;
+  border-radius: 4px;
 }
 
 .toolbar__quick-input::placeholder {

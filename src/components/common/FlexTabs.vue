@@ -486,16 +486,27 @@ function onDragEnd(e: DragEvent): void {
     <!-- 重命名标签对话框 -->
     <v-dialog v-model="renameVisible" width="400">
       <v-card>
-        <v-card-title class="text-subtitle-1">重命名标签</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="renameValue"
-            label="标签名称"
-            density="compact"
-            variant="outlined"
-            autofocus
-            @keyup.enter="confirmRename"
+        <v-card-title class="d-flex align-center text-subtitle-1">重命名标签
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="renameVisible = false"
           />
+        </v-card-title>
+        <v-card-text>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">标签名称</span>
+            <v-text-field
+              v-model="renameValue"
+              density="compact"
+              variant="outlined"
+              autofocus
+              @keyup.enter="confirmRename"
+            />
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -513,8 +524,8 @@ function onDragEnd(e: DragEvent): void {
   align-items: center;
   height: 36px;
   min-height: 36px;
-  background: var(--fy-chrome-bg, #f0f2f5);
-  border-bottom: 1px solid var(--fy-chrome-border, #d5d9de);
+  background: var(--fy-chrome-bg);
+  border-bottom: 1px solid var(--fy-chrome-border);
   user-select: none;
 }
 
@@ -549,7 +560,7 @@ function onDragEnd(e: DragEvent): void {
 
 .flex-tabs__tab:hover {
   opacity: 0.85;
-  background: rgb(var(--v-theme-on-surface) / 0.06);
+  background: var(--fy-hover-bg);
 }
 
 /* 激活 Tab：顶边按连接着色 */
@@ -573,7 +584,7 @@ function onDragEnd(e: DragEvent): void {
 
 .flex-tabs__close {
   margin-left: 2px;
-  border-radius: 3px;
+  border-radius: 4px;
   opacity: 0.4; /* 普通态弱化显示（可发现、触屏可达），hover/焦点时强调 */
   transition: opacity 0.12s;
   flex: 0 0 auto;

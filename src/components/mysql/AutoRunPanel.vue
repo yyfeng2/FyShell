@@ -24,34 +24,38 @@
           <v-icon size="small" class="mr-1">mdi-plus-circle-outline</v-icon>
           {{ editId === null ? '新建备份任务' : '编辑备份任务' }}
         </div>
-        <v-text-field
-          v-model="editName"
-          label="任务名称"
-          density="compact"
-          single-line
-          variant="outlined"
-          placeholder="例如：每日全库备份"
-        />
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">任务名称</span>
+          <v-text-field
+            v-model="editName"
+            density="compact"
+            single-line
+            variant="outlined"
+            placeholder="例如：每日全库备份"
+          />
+        </div>
         <!-- 表多选：空 = 全库 -->
-        <v-select
-          v-model="editTables"
-          :items="tableNames"
-          label="备份表"
-          density="compact"
-          variant="outlined"
-          multiple
-          chips
-          closable-chips
-          clearable
-          hint="不选 = 备份全库所有表"
-          persistent-hint
-        >
-          <template #no-data>
-            <div class="px-4 py-2 text-body-2 text-medium-emphasis">
-              未加载表列表（可直接备份全库）
-            </div>
-          </template>
-        </v-select>
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">备份表</span>
+          <v-select
+            v-model="editTables"
+            :items="tableNames"
+            density="compact"
+            variant="outlined"
+            multiple
+            chips
+            closable-chips
+            clearable
+            hint="不选 = 备份全库所有表"
+            persistent-hint
+          >
+            <template #no-data>
+              <div class="px-4 py-2 text-body-2 text-medium-emphasis">
+                未加载表列表（可直接备份全库）
+              </div>
+            </template>
+          </v-select>
+        </div>
         <!-- 备份选项 -->
         <div class="d-flex flex-wrap mt-3">
           <v-switch
@@ -320,7 +324,7 @@ function onDialogToggle(v: boolean): void {
 }
 
 .autorun-panel__item {
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .autorun-panel__empty {

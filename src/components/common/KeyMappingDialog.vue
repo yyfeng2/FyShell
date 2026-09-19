@@ -8,6 +8,14 @@
       <v-card-title class="d-flex align-center">
         <v-icon icon="mdi-keyboard-outline" size="small" class="mr-2" />
         按键对应
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="emit('update:modelValue', false)"
+      />
       </v-card-title>
       <v-divider />
       <v-card-text class="key-mapping-dialog__body">
@@ -39,15 +47,17 @@
         <div class="settings-dialog__row-title">{{ editingId ? '编辑映射' : '添加映射' }}</div>
         <div class="key-mapping-dialog__form">
           <div class="key-mapping-dialog__field-row">
-            <v-text-field
-              v-model="keyCombo"
-              label="键位（如 ctrl+shift+x）"
-              density="compact"
-              hide-details
-              readonly
-              placeholder="点击「捕获」后按下键位"
-              class="flex-grow-1"
-            />
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">键位（如 ctrl+shift+x）</span>
+              <v-text-field
+                v-model="keyCombo"
+                density="compact"
+                hide-details
+                readonly
+                placeholder="点击「捕获」后按下键位"
+                class="flex-grow-1"
+              />
+            </div>
             <v-btn
               size="small"
               variant="tonal"
@@ -57,32 +67,32 @@
               {{ capturing ? '捕获中…' : '捕获' }}
             </v-btn>
           </div>
-          <v-select
-            v-model="actionType"
-            :items="ACTION_ITEMS"
-            item-title="title"
-            item-value="value"
-            label="动作类型"
-            density="compact"
-            class="mt-3"
-          />
-          <v-text-field
-            v-if="actionType === 'send_string'"
-            v-model="payload"
-            label="发送的字符串"
-            density="compact"
-            class="mt-3"
-          />
-          <v-select
-            v-else
-            v-model="payload"
-            :items="MENU_COMMANDS"
-            item-title="title"
-            item-value="value"
-            label="菜单命令"
-            density="compact"
-            class="mt-3"
-          />
+          <div class="fy-field-row mt-3">
+            <span class="fy-field-row__label">动作类型</span>
+            <v-select
+              v-model="actionType"
+              :items="ACTION_ITEMS"
+              item-title="title"
+              item-value="value"
+              density="compact"
+            />
+          </div>
+          <div class="fy-field-row mt-3">
+            <span class="fy-field-row__label">{{ actionType === 'send_string' ? '发送的字符串' : '菜单命令' }}</span>
+            <v-text-field
+              v-if="actionType === 'send_string'"
+              v-model="payload"
+              density="compact"
+            />
+            <v-select
+              v-else
+              v-model="payload"
+              :items="MENU_COMMANDS"
+              item-title="title"
+              item-value="value"
+              density="compact"
+            />
+          </div>
           <div class="key-mapping-dialog__actions">
             <v-btn size="small" variant="text" @click="cancelEdit">取消</v-btn>
             <v-btn size="small" color="primary" variant="tonal" :disabled="!canSave" @click="save">

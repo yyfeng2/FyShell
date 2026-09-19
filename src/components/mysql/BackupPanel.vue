@@ -31,48 +31,51 @@
         <v-window-item value="backup">
           <v-card-text>
             <!-- 表多选：空 = 全库 -->
-            <v-select
-              v-model="backupTables"
-              :items="tableNames"
-              label="备份表"
-              density="compact"
-              variant="outlined"
-              multiple
-              chips
-              closable-chips
-              clearable
-              hint="不选 = 备份全库所有表"
-              persistent-hint
-            >
-              <template #no-data>
-                <div class="px-4 py-2 text-body-2 text-medium-emphasis">
-                  未加载表列表（可直接备份全库）
-                </div>
-              </template>
-            </v-select>
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">备份表</span>
+              <v-select
+                v-model="backupTables"
+                :items="tableNames"
+                density="compact"
+                variant="outlined"
+                multiple
+                chips
+                closable-chips
+                clearable
+                hint="不选 = 备份全库所有表"
+                persistent-hint
+              >
+                <template #no-data>
+                  <div class="px-4 py-2 text-body-2 text-medium-emphasis">
+                    未加载表列表（可直接备份全库）
+                  </div>
+                </template>
+              </v-select>
+            </div>
 
             <!-- 保存路径 -->
-            <v-text-field
-              :model-value="backupPath"
-              label="保存路径"
-              density="compact"
-              single-line
-              readonly
-              hide-details
-              prepend-inner-icon="mdi-file-outline"
-              placeholder="点击右侧按钮选择保存位置"
-              class="mt-4"
-            >
-              <template #append-inner>
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  icon="mdi-folder-open-outline"
-                  title="选择保存路径"
-                  @click="pickBackupPath"
-                />
-              </template>
-            </v-text-field>
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">保存路径</span>
+              <v-text-field
+                :model-value="backupPath"
+                density="compact"
+                single-line
+                readonly
+                hide-details
+                prepend-inner-icon="mdi-file-outline"
+                placeholder="点击右侧按钮选择保存位置"
+              >
+                <template #append-inner>
+                  <v-btn
+                    size="x-small"
+                    variant="text"
+                    icon="mdi-folder-open-outline"
+                    title="选择保存路径"
+                    @click="pickBackupPath"
+                  />
+                </template>
+              </v-text-field>
+            </div>
 
             <!-- 备份选项 -->
             <div class="d-flex flex-wrap mt-3">
@@ -118,26 +121,28 @@
         <!-- 还原标签页 -->
         <v-window-item value="restore">
           <v-card-text>
-            <v-text-field
-              :model-value="restorePath"
-              label="备份文件"
-              density="compact"
-              single-line
-              readonly
-              hide-details
-              prepend-inner-icon="mdi-file-outline"
-              placeholder="点击右侧按钮选择备份文件"
-            >
-              <template #append-inner>
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  icon="mdi-folder-open-outline"
-                  title="选择文件"
-                  @click="pickRestorePath"
-                />
-              </template>
-            </v-text-field>
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">备份文件</span>
+              <v-text-field
+                :model-value="restorePath"
+                density="compact"
+                single-line
+                readonly
+                hide-details
+                prepend-inner-icon="mdi-file-outline"
+                placeholder="点击右侧按钮选择备份文件"
+              >
+                <template #append-inner>
+                  <v-btn
+                    size="x-small"
+                    variant="text"
+                    icon="mdi-folder-open-outline"
+                    title="选择文件"
+                    @click="pickRestorePath"
+                  />
+                </template>
+              </v-text-field>
+            </div>
 
             <v-alert type="warning" variant="tonal" density="compact" class="mt-3">
               还原将执行备份文件中的全部 SQL（含 DROP/CREATE/INSERT），目标库中的现有数据可能被覆盖。

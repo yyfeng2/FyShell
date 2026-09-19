@@ -144,7 +144,7 @@ const sqlPreview = computed<string>(() => {
 .explain-panel__header {
   display: flex;
   align-items: center;
-  padding: 10px 12px;
+  padding: 10px 12px; /* 与下方 SQL 预览（0 12px 8px）/ HistoryDrawer header 左右对齐（原 0.2em ≈3px 不齐） */
 }
 
 .explain-panel__title {

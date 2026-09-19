@@ -21,6 +21,10 @@ struct SessionConfig {
 }
 ```
 
+> 打开会话对话框扩展：SessionConfig 新增可选字段 `description`（备注/说明，Option<String>）与
+> `updated_at`（最后修改时间 Unix 秒，i64）。serde default 兼容老数据；updated_at 由 Rust 侧
+> 保存时取当前时间覆盖（前端不传）。
+
 ### AuthType（5 种认证方式）
 ```rust
 enum AuthType {

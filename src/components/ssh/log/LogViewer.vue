@@ -362,7 +362,7 @@ watch(dateContent, () => {
   flex: 0 0 140px;
   width: 140px;
   padding: 4px;
-  border-right: 1px solid rgb(var(--v-theme-surface-variant, 32 33 35));
+  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.15);
   overflow-y: auto;
 }
 

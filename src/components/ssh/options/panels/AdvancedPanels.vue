@@ -19,15 +19,17 @@
   <!-- 响铃：终端 bell 样式 -->
   <template v-else-if="page === 'bell'">
     <div class="settings-dialog__section-title">响铃</div>
-    <v-select
-      :model-value="opts.bellStyle"
-      :items="BELL_STYLES"
-      item-title="title"
-      item-value="value"
-      label="响铃方式"
-      class="settings-dialog__field"
-      @update:model-value="(v: unknown) => opts.setBellStyle(v as 'off' | 'sound' | 'visual' | 'both')"
-    />
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">响铃方式</span>
+      <v-select
+        :model-value="opts.bellStyle"
+        :items="BELL_STYLES"
+        item-title="title"
+        item-value="value"
+        class="settings-dialog__field"
+        @update:model-value="(v: unknown) => opts.setBellStyle(v as 'off' | 'sound' | 'visual' | 'both')"
+      />
+    </div>
     <div class="settings-dialog__hint">
       终端收到 BEL 字符（\a）时的行为：声音提示 / 屏幕闪烁 / 两者 / 关闭；实时生效。
     </div>

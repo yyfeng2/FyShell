@@ -56,6 +56,9 @@
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { Compartment, EditorState, Prec } from '@codemirror/state'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
+import { useTheme } from 'vuetify'
 import { basicSetup } from 'codemirror'
 import { MySQL, sql } from '@codemirror/lang-sql'
 import { compressSql, formatSql } from './sql-format'
@@ -79,6 +82,8 @@ const emit = defineEmits<{
 }>()
 
 // ---------- CodeMirror 实例与动态扩展分区 ----------
+/** Vuetify 主题引用：light/dark 切换时同步编辑器语法高亮配色 */
+const vuetifyTheme = useTheme()
 const editorHost = ref<HTMLDivElement | null>(null)
 /** CodeMirror 视图实例（onMounted 创建，onBeforeUnmount 销毁） */
 let view: EditorView | null = null
@@ -93,7 +98,7 @@ function sqlExtension(tables?: string[]): ReturnType<typeof sql> {
   return sql({ dialect: MySQL, upperCaseKeywords: true, schema })
 }
 
-/** 浅色主题：白底编辑区 + 浅灰容器，色调与现有 Xshell 浅灰风格协调 */
+/** 浅色主题：surface 底编辑区 + 浅灰行沟，色调与现有 Xshell 浅灰风格协调（CSS 变量随应用主题自动适配） */
 const lightTheme = EditorView.theme({
   '&': {
     minHeight: '96px',
@@ -120,6 +125,31 @@ const lightTheme = EditorView.theme({
     color: 'rgb(var(--v-theme-primary))',
   },
 })
+
+/** 语法高亮分区：应用主题切换（light/dark）时 reconfigure */
+const highlightCompartment = new Compartment()
+
+/** 浅色语法高亮：CodeMirror 默认高亮偏灰且与浅灰风格脱节，
+    换成与主题色板对应的克制配色（primary 蓝关键字/绿字符串/紫数字）。
+    basicSetup 的默认高亮带 fallback 标记，注册自定义后自动接管 */
+const lightHighlight = HighlightStyle.define([
+  { tag: t.keyword, color: '#2E6FDB' },
+  { tag: t.typeName, color: '#6A5AE0' },
+  { tag: [t.string, t.special(t.string)], color: '#2E7D32' },
+  { tag: t.number, color: '#6A5AE0' },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: '#8a8d92', fontStyle: 'italic' },
+  { tag: [t.operator, t.punctuation, t.separator, t.bracket], color: '#5a5d62' },
+])
+
+/** 深色语法高亮：深底上整体提亮一档（默认浅色方案在深底上不可读） */
+const darkHighlight = HighlightStyle.define([
+  { tag: t.keyword, color: '#7AA7F0' },
+  { tag: t.typeName, color: '#9C8FF5' },
+  { tag: [t.string, t.special(t.string)], color: '#66BB6A' },
+  { tag: t.number, color: '#9C8FF5' },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: '#6a6e73', fontStyle: 'italic' },
+  { tag: [t.operator, t.punctuation, t.separator, t.bracket], color: '#a8acb2' },
+])
 
 /** Ctrl+Enter 执行（Prec.highest 避免被 basicSetup 默认键位拦截） */
 const executeKeymap = Prec.highest(
@@ -187,6 +217,12 @@ onMounted(() => {
         basicSetup,
         sqlCompartment.of(sqlExtension(props.tables)),
         lightTheme,
+        // 语法高亮配色随当前应用主题（basicSetup 默认高亮带 fallback，注册自定义后自动接管）
+        highlightCompartment.of(
+          syntaxHighlighting(
+            vuetifyTheme.global.current.value.dark ? darkHighlight : lightHighlight,
+          ),
+        ),
         // 自动换行：长 SQL 折行展示，不出现横向滚动条
         EditorView.lineWrapping,
         placeholder(props.placeholder ?? ''),
@@ -239,6 +275,18 @@ watch(
     view?.dispatch({ effects: sqlCompartment.reconfigure(sqlExtension(props.tables)) })
   },
 )
+
+// 应用主题切换（light/dark）时同步编辑器语法高亮配色
+watch(
+  () => vuetifyTheme.global.current.value.dark,
+  (dark) => {
+    view?.dispatch({
+      effects: highlightCompartment.reconfigure(
+        syntaxHighlighting(dark ? darkHighlight : lightHighlight),
+      ),
+    })
+  },
+)
 </script>
 
 <style scoped>
@@ -254,10 +302,24 @@ watch(
   caret-color: rgb(var(--v-theme-primary));
 }
 
-/* 补全面板：跟随浅色主题（默认白底，覆盖暗色变量风险） */
+/* 补全面板：底色/边框走主题变量（CodeMirror 出厂白底在深色主题下刺眼）；
+   字号与编辑器内容一致（12px），弹出时不跳档 */
 .sql-editor :deep(.cm-tooltip.cm-tooltip-autocomplete > ul) {
   font-family: var(--fy-font);
-  font-size: 14px;
+  font-size: 12px;
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
+}
+
+/* 补全面板外框与选中项：跟随主题，选中态走 primary tonal */
+.sql-editor :deep(.cm-tooltip) {
+  background: rgb(var(--v-theme-surface));
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+
+.sql-editor :deep(.cm-tooltip-autocomplete > ul > li[aria-selected]) {
+  background: rgba(var(--v-theme-primary), 0.15);
+  color: rgb(var(--v-theme-primary));
 }
 
 /* 编辑器右键菜单覆盖层与菜单本体（fixed 定位，跟随鼠标坐标） */

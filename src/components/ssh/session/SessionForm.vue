@@ -21,6 +21,7 @@
             >
               <span
                 class="session-form__color-chip"
+                :class="{ 'session-form__color-chip--empty': !color }"
                 :style="{ backgroundColor: color ?? 'transparent' }"
               />
               {{ color ? '颜色' : '未设置' }}
@@ -34,95 +35,121 @@
             @update:model-value="onColorChange"
           />
         </v-menu>
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="emit('update:modelValue', false)"
+        />
       </v-card-title>
       <v-divider />
       <v-card-text class="session-form__body">
         <v-form ref="formRef" @submit.prevent="submit">
           <v-row dense>
             <v-col cols="12">
-              <v-text-field v-model="name" label="名称" density="compact" :rules="[rules.required]" />
+              <div class="fy-field-row fy-field-row--required">
+                <span class="fy-field-row__label">名称</span>
+                <v-text-field v-model="name" density="compact" :rules="[rules.required]" />
+              </div>
             </v-col>
             <v-col cols="12">
               <!-- 会话类型：SSH 或数据库（数据库会话连接后进入 MySQL 工作台） -->
-              <v-select
-                v-model="sessionKind"
-                label="会话类型"
-                density="compact"
-                :items="SESSION_KINDS"
-                item-title="title"
-                item-value="value"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">会话类型</span>
+                <v-select
+                  v-model="sessionKind"
+                  density="compact"
+                  :items="SESSION_KINDS"
+                  item-title="title"
+                  item-value="value"
+                />
+              </div>
             </v-col>
-            <v-col v-if="sessionKind !== 'serial'" cols="8">
-              <v-text-field v-model="host" label="主机" density="compact" :rules="[rules.required]" />
+            <v-col v-if="sessionKind !== 'serial'" cols="12" sm="8">
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">主机</span>
+                <v-text-field v-model="host" density="compact" :rules="[rules.required]" />
+              </div>
             </v-col>
-            <v-col v-if="sessionKind !== 'serial'" cols="4">
-              <v-text-field
-                v-model.number="port"
-                label="端口"
-                type="number"
-                density="compact"
-                :rules="[rules.required, rules.port]"
-              />
+            <v-col v-if="sessionKind !== 'serial'" cols="12" sm="4">
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">端口</span>
+                <v-text-field
+                  v-model.number="port"
+                  type="number"
+                  density="compact"
+                  :rules="[rules.required, rules.port]"
+                />
+              </div>
             </v-col>
-            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'mysql' || sessionKind === 'redis'" cols="6">
+            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'mysql' || sessionKind === 'redis'" cols="12" sm="6">
               <!-- Redis 用户名可空（RedisConnection.username 为 string|null），ssh/mysql 仍必填 -->
-              <v-text-field
-                v-model="username"
-                label="用户名"
-                density="compact"
-                :rules="sessionKind === 'redis' ? [] : [rules.required]"
-              />
+              <div class="fy-field-row" :class="{ 'fy-field-row--required': sessionKind !== 'redis' }">
+                <span class="fy-field-row__label">用户名</span>
+                <v-text-field
+                  v-model="username"
+                  density="compact"
+                  placeholder="例如 root"
+                  :rules="sessionKind === 'redis' ? [] : [rules.required]"
+                />
+              </div>
             </v-col>
-            <v-col v-if="sessionKind === 'ssh'" cols="6">
-              <v-select
-                v-model="authType"
-                label="认证方式"
-                density="compact"
-                :items="AUTH_OPTIONS"
-                item-title="title"
-                item-value="value"
-                :disabled="profileLocked"
-              />
+            <v-col v-if="sessionKind === 'ssh'" cols="12" sm="6">
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">认证方式</span>
+                <v-select
+                  v-model="authType"
+                  density="compact"
+                  :items="AUTH_OPTIONS"
+                  item-title="title"
+                  item-value="value"
+                  :disabled="profileLocked"
+                />
+              </div>
             </v-col>
 
             <!-- 串口会话：串口下拉 + 波特率（host/port 不适用） -->
             <v-col v-if="sessionKind === 'serial'" cols="12">
-              <v-select
-                v-model="serialPortName"
-                :items="portItems"
-                label="串口"
-                density="compact"
-                :loading="loadingPorts"
-                :rules="[rules.required]"
-              />
+              <div class="fy-field-row fy-field-row--required">
+                <span class="fy-field-row__label">串口</span>
+                <v-select
+                  v-model="serialPortName"
+                  :items="portItems"
+                  density="compact"
+                  :loading="loadingPorts"
+                  :rules="[rules.required]"
+                />
+              </div>
             </v-col>
             <v-col v-if="sessionKind === 'serial'" cols="12">
-              <v-select
-                v-model="serialBaud"
-                :items="baudRates"
-                label="波特率"
-                density="compact"
-                hint="默认 115200"
-                persistent-hint
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">波特率</span>
+                <v-select
+                  v-model="serialBaud"
+                  :items="baudRates"
+                  density="compact"
+                  hint="默认 115200"
+                  persistent-hint
+                />
+              </div>
             </v-col>
 
             <v-col v-if="sessionKind === 'ssh'" cols="12">
               <!-- 认证配置文件（P1）：选择后认证方式由配置文件接管，一处改全局生效 -->
-              <div class="d-flex align-center">
-                <v-select
-                  v-model="profileId"
-                  label="认证配置文件"
-                  density="compact"
-                  :items="profiles"
-                  item-title="name"
-                  item-value="id"
-                  clearable
-                  hint="选择后认证方式由配置文件接管；留空则手动填写"
-                  persistent-hint
-                  class="mr-2"
-                />
+              <div class="d-flex align-start">
+                <div class="fy-field-row mr-2 session-form__profile-row">
+                  <span class="fy-field-row__label">认证配置文件</span>
+                  <v-select
+                    v-model="profileId"
+                    :items="profiles"
+                    item-title="name"
+                    item-value="id"
+                    clearable
+                    hint="选择后认证方式由配置文件接管；留空则手动填写"
+                    persistent-hint
+                  />
+                </div>
                 <v-btn size="small" variant="outlined" class="profile-manage-btn" @click="showProfileForm = true">
                   管理
                 </v-btn>
@@ -134,40 +161,54 @@
               v-if="sessionKind === 'mysql' || sessionKind === 'redis' || (sessionKind === 'ssh' && (authType === 'password' || authType === 'interactive'))"
               cols="12"
             >
-              <v-text-field
-                v-model="password"
-                label="密码"
-                density="compact"
-                :type="showPassword ? 'text' : 'password'"
-                :rules="sessionKind === 'redis' ? [] : [rules.required]"
-                :disabled="profileLocked"
-                :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
-                @click:append-inner="showPassword = !showPassword"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">密码</span>
+                <v-text-field
+                  v-model="password"
+                  density="compact"
+                  :type="showPassword ? 'text' : 'password'"
+                  :rules="sessionKind === 'redis' ? [] : [rules.required]"
+                  :disabled="profileLocked"
+                  :hint="capsLockOn ? '大写锁定已开启' : ''"
+                  persistent-hint
+                  :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+                  @click:append-inner="showPassword = !showPassword"
+                  @keydown="checkCapsLock"
+                  @keyup="checkCapsLock"
+                />
+              </div>
             </v-col>
 
             <!-- 私钥 -->
             <template v-if="sessionKind === 'ssh' && authType === 'publicKey'">
               <v-col cols="12">
-                <v-text-field
-                  v-model="privateKeyPath"
-                  label="私钥路径"
-                  density="compact"
-                  placeholder="例如 C:\Users\you\.ssh\id_rsa"
-                  :rules="[rules.required]"
-                  :disabled="profileLocked"
-                />
+                <div class="fy-field-row fy-field-row--required">
+                  <span class="fy-field-row__label">私钥路径</span>
+                  <v-text-field
+                    v-model="privateKeyPath"
+                    density="compact"
+                    placeholder="例如 C:\Users\you\.ssh\id_rsa"
+                    :rules="[rules.required]"
+                    :disabled="profileLocked"
+                  />
+                </div>
               </v-col>
               <v-col cols="12">
-                <v-text-field
-                  v-model="passphrase"
-                  label="私钥口令（可选）"
-                  density="compact"
-                  :type="showPassphrase ? 'text' : 'password'"
-                  :disabled="profileLocked"
-                  :append-inner-icon="showPassphrase ? 'mdi-eye-off' : 'mdi-eye'"
-                  @click:append-inner="showPassphrase = !showPassphrase"
-                />
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">私钥口令（可选）</span>
+                  <v-text-field
+                    v-model="passphrase"
+                    density="compact"
+                    :type="showPassphrase ? 'text' : 'password'"
+                    :disabled="profileLocked"
+                    :hint="capsLockOn ? '大写锁定已开启' : ''"
+                    persistent-hint
+                    :append-inner-icon="showPassphrase ? 'mdi-eye-off' : 'mdi-eye'"
+                    @click:append-inner="showPassphrase = !showPassphrase"
+                    @keydown="checkCapsLock"
+                    @keyup="checkCapsLock"
+                  />
+                </div>
               </v-col>
             </template>
 
@@ -180,32 +221,47 @@
 
             <!-- 跳板机 -->
             <v-col v-if="sessionKind === 'ssh' && authType === 'jump'" cols="12">
-              <v-select
-                v-model="jumpSessionId"
-                label="跳板机会话"
-                density="compact"
-                :items="jumpCandidates"
-                item-title="title"
-                item-value="id"
-                :rules="[rules.required]"
-                :disabled="profileLocked"
-              />
+              <div class="fy-field-row fy-field-row--required">
+                <span class="fy-field-row__label">跳板机会话</span>
+                <v-select
+                  v-model="jumpSessionId"
+                  density="compact"
+                  :items="jumpCandidates"
+                  item-title="title"
+                  item-value="id"
+                  :rules="[rules.required]"
+                  :disabled="profileLocked"
+                />
+              </div>
             </v-col>
 
             <template v-if="sessionKind === 'ssh'">
-              <v-col cols="6">
-                <v-select v-model="encoding" label="编码" density="compact" :items="ENCODINGS" />
+              <v-col cols="12" sm="6">
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">编码</span>
+                  <v-select v-model="encoding" density="compact" :items="ENCODINGS" />
+                </div>
               </v-col>
-              <v-col cols="6">
-                <v-text-field
-                  v-model.number="keepalive"
-                  label="保活间隔（秒）"
-                  type="number"
-                  density="compact"
-                  :rules="[rules.required, rules.nonNegative]"
-                />
+              <v-col cols="12" sm="6">
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">保活间隔（秒）</span>
+                  <v-text-field
+                    v-model.number="keepalive"
+                    type="number"
+                    density="compact"
+                    :rules="[rules.required, rules.keepaliveRange]"
+                  />
+                </div>
               </v-col>
             </template>
+
+            <!-- 备注/说明（可选，打开会话列表"说明"列展示） -->
+            <v-col cols="12">
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">说明（可选）</span>
+                <v-text-field v-model="description" density="compact" />
+              </div>
+            </v-col>
           </v-row>
         </v-form>
 
@@ -254,6 +310,7 @@ import { serialConnect, serialDisconnect, serialList, type SerialPortInfo } from
 import type { AuthProfile } from '@/api/types'
 import AuthProfileForm from '@/components/ssh/session/AuthProfileForm.vue'
 import { useSessionStore, type SessionConfig, type AuthType } from '@/stores/session'
+import { useUiStore } from '@/stores/ui'
 
 type AuthTypeKind = AuthType extends { type: infer T } ? T : never
 
@@ -280,10 +337,11 @@ const emit = defineEmits<{
 }>()
 
 const store = useSessionStore()
+const ui = useUiStore()
 const theme = useTheme()
 
 /** 当前主题 primary 色值（颜色选择器未设置时的默认值，与应用主题色关联） */
-const themePrimary = computed<string>(() => theme.current.value.colors.primary ?? '#4F8CFF')
+const themePrimary = computed<string>(() => theme.current.value.colors.primary ?? '#2E6FDB')
 
 const ENCODINGS = ['UTF-8', 'GBK', 'GB18030', 'Big5', 'Shift_JIS', 'EUC-JP', 'EUC-KR', 'ISO-8859-1', 'Windows-1251', 'KOI8-R']
 
@@ -309,7 +367,8 @@ const rules = {
   required: (v: string | number | null | undefined) =>
     (v !== null && v !== undefined && String(v).trim() !== '') || '必填项',
   port: (v: number) => (Number.isInteger(v) && v >= 1 && v <= 65535) || '端口需为 1-65535 的整数',
-  nonNegative: (v: number) => (Number.isInteger(v) && v >= 0) || '需为非负整数',
+  keepaliveRange: (v: number) =>
+    (Number.isInteger(v) && v >= 0 && v <= 3600) || '保活间隔需为 0-3600 秒的整数',
 }
 
 // ---------- 表单状态 ----------
@@ -328,6 +387,8 @@ const jumpSessionId = ref<string | null>(null)
 const encoding = ref('UTF-8')
 const color = ref<string | null>(null)
 const keepalive = ref(30)
+/** 备注/说明（可选，打开会话列表"说明"列展示） */
+const description = ref('')
 
 // ---------- 串口会话字段（sessionKind === 'serial' 时生效） ----------
 const serialPortName = ref<string | null>(null)
@@ -342,9 +403,21 @@ const baudRates = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]
 const showPassword = ref(false)
 /** 私钥口令明文开关（与密码框独立，避免共用一个 ref 联动切换） */
 const showPassphrase = ref(false)
+/** Caps Lock 开启提醒（密码/私钥口令共享，同一时刻仅一个聚焦） */
+const capsLockOn = ref(false)
+/** 键事件读修饰键状态：开启时 hint 显示提醒 */
+function checkCapsLock(e: KeyboardEvent): void {
+  capsLockOn.value = e.getModifierState?.('CapsLock') ?? false
+}
 const testing = ref(false)
 const saving = ref(false)
 const testResult = ref<{ ok: boolean; message: string } | null>(null)
+
+/** 统一写入测试结果：alert 展示详细消息 + toast 即时通知 */
+function setTestResult(result: { ok: boolean; message: string } | null): void {
+  testResult.value = result
+  if (result) ui.toast(result.message, result.ok ? 'success' : 'error')
+}
 
 // ---------- 认证配置文件（P1） ----------
 /** 已存配置文件列表（authProfileList） */
@@ -448,6 +521,7 @@ function initForm(): void {
     keepalive.value = cfg.keepalive_interval
     serialPortName.value = cfg.serial_port ?? null
     serialBaud.value = cfg.baud_rate ?? 115200
+    description.value = cfg.description ?? ''
     const auth = cfg.auth_type
     authType.value = auth.type
     if (auth.type === 'password' || auth.type === 'interactive') {
@@ -466,7 +540,8 @@ function initForm(): void {
     host.value = props.presetHost ?? ''
     port.value = 22
     sessionKind.value = 'ssh'
-    username.value = 'root'
+    // 默认留空避免无脑 root（placeholder 提示输入格式，必填校验拦截空值）
+    username.value = ''
     authType.value = 'password'
     password.value = ''
     privateKeyPath.value = ''
@@ -477,6 +552,7 @@ function initForm(): void {
     keepalive.value = 30
     serialPortName.value = null
     serialBaud.value = 115200
+    description.value = ''
     profileId.value = null
     void loadProfiles()
   }
@@ -538,6 +614,7 @@ function buildConfig(): SessionConfigWithProfile {
     session_type: sessionKind.value,
     serial_port: isSerial ? serialPortName.value : null,
     baud_rate: isSerial ? serialBaud.value : null,
+    description: description.value.trim() || null,
   }
   return config
 }
@@ -567,9 +644,9 @@ async function runTest(): Promise<void> {
         schema: null,
       })
       await mysqlDisconnect(connId)
-      testResult.value = { ok: true, message: '连接成功' }
+      setTestResult({ ok: true, message: '连接成功' })
     } catch (err) {
-      testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }
+      setTestResult({ ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` })
     } finally {
       testing.value = false
     }
@@ -589,9 +666,9 @@ async function runTest(): Promise<void> {
         password: password.value ? password.value : null,
         db: 0,
       })
-      testResult.value = { ok: true, message: '连接成功' }
+      setTestResult({ ok: true, message: '连接成功' })
     } catch (err) {
-      testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }
+      setTestResult({ ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` })
     } finally {
       testing.value = false
     }
@@ -611,9 +688,9 @@ async function runTest(): Promise<void> {
         await telnetConnect(id, host.value.trim(), port.value, () => {})
         await telnetDisconnect(id)
       }
-      testResult.value = { ok: true, message: '连接成功' }
+      setTestResult({ ok: true, message: '连接成功' })
     } catch (err) {
-      testResult.value = { ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` }
+      setTestResult({ ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` })
     } finally {
       testing.value = false
     }
@@ -622,9 +699,9 @@ async function runTest(): Promise<void> {
   testing.value = true
   testResult.value = null
   try {
-    testResult.value = await sessionTest(buildConfig())
+    setTestResult(await sessionTest(buildConfig()))
   } catch (err) {
-    testResult.value = { ok: false, message: `测试失败：${typeof err === 'string' ? err : String(err)}` }
+    setTestResult({ ok: false, message: `测试失败：${typeof err === 'string' ? err : String(err)}` })
   } finally {
     testing.value = false
   }
@@ -655,6 +732,8 @@ async function submit(): Promise<void> {
 .session-form__body {
   max-height: 56vh;
   overflow-y: auto;
+  /* 裁剪 v-row dense 负左右 margin 造成的 8px 溢出（横向滚动条根因） */
+  overflow-x: hidden;
 }
 
 .session-form__color-btn {
@@ -668,6 +747,12 @@ async function submit(): Promise<void> {
   text-transform: none;
 }
 
+/* 认证配置文件行：fy-field-row 在 d-flex 内撑满剩余宽度（管理按钮在右） */
+.session-form__profile-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .session-form__color-chip {
   display: inline-block;
   width: 14px;
@@ -676,5 +761,10 @@ async function submit(): Promise<void> {
   margin-right: 6px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.15);
   vertical-align: middle;
+}
+
+/* 未设置颜色：虚线边框（与复选框区分，表达"未配置"语义） */
+.session-form__color-chip--empty {
+  border: 1px dashed rgba(var(--v-theme-on-surface), 0.4);
 }
 </style>

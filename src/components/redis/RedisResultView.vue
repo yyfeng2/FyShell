@@ -122,7 +122,7 @@ const blobSnippet = computed(() => {
 
 <style scoped>
 .redis-result__mono {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
 }
 
 .redis-result__status {
@@ -131,13 +131,13 @@ const blobSnippet = computed(() => {
 }
 
 .redis-result__code {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
   font-size: 14px;
   white-space: pre-wrap;
   word-break: break-all;
   padding: 4px 8px;
   background: rgba(var(--v-theme-on-surface), 0.04);
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 4px;
 }
 
@@ -146,13 +146,13 @@ const blobSnippet = computed(() => {
 }
 
 .redis-result__nil {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
 }
 
 .redis-result__table-wrap {
   overflow: auto;
   max-height: 280px;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 4px;
 }
 
@@ -167,13 +167,13 @@ const blobSnippet = computed(() => {
 .redis-result__list {
   max-height: 280px;
   overflow-y: auto;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 4px;
 }
 
 .redis-result__line {
   padding: 2px 8px;
-  border-bottom: 1px dashed rgba(var(--v-theme-on-surface), 0.06);
+  border-bottom: 1px dashed rgba(var(--v-theme-on-surface), 0.12);
   word-break: break-all;
   white-space: pre-wrap;
 }

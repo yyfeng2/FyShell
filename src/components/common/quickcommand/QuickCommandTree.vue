@@ -109,28 +109,42 @@
     <!-- 命令编辑 / 新建文件夹对话框 -->
     <v-dialog v-model="editor.visible" width="460">
       <v-card>
-        <v-card-title>{{ editorTitle }}</v-card-title>
+        <v-card-title class="d-flex align-center">{{ editorTitle }}
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="editor.visible = false"
+          />
+        </v-card-title>
         <v-card-text>
-          <v-text-field v-model="editor.name" label="名称" density="compact" autofocus @keyup.enter="submitEditor" />
-          <v-textarea
-            v-if="editor.mode === 'command-create' || editor.mode === 'command-rename'"
-            v-model="editor.commandText"
-            label="命令内容（支持多行，发送时按行回车）"
-            density="compact"
-            variant="outlined"
-            rows="3"
-            class="mt-2"
-          />
-          <v-select
-            v-if="editor.mode === 'command-create' || editor.mode === 'command-rename'"
-            v-model="editor.groupId"
-            :items="folderOptions"
-            label="所属分组"
-            density="compact"
-            variant="outlined"
-            clearable
-            class="mt-2"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">名称</span>
+            <v-text-field v-model="editor.name" density="compact" autofocus @keyup.enter="submitEditor" />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">命令内容（支持多行，发送时按行回车）</span>
+            <v-textarea
+              v-if="editor.mode === 'command-create' || editor.mode === 'command-rename'"
+              v-model="editor.commandText"
+              density="compact"
+              variant="outlined"
+              rows="3"
+            />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">所属分组</span>
+            <v-select
+              v-if="editor.mode === 'command-create' || editor.mode === 'command-rename'"
+              v-model="editor.groupId"
+              :items="folderOptions"
+              density="compact"
+              variant="outlined"
+              clearable
+            />
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -143,7 +157,16 @@
     <!-- 发送目标选择对话框 -->
     <v-dialog v-model="sendDialog.visible" width="420">
       <v-card>
-        <v-card-title>发送到会话</v-card-title>
+        <v-card-title class="d-flex align-center">发送到会话
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="sendDialog.visible = false"
+          />
+        </v-card-title>
         <v-card-text>
           <div v-if="connectedSessions.length === 0" class="text-medium-emphasis">
             暂无已连接会话，请先连接目标服务器
@@ -530,7 +553,7 @@ onMounted(() => {
 }
 
 .qc-tree__item:hover {
-  background: rgba(var(--v-theme-on-surface), 0.06);
+  background: var(--fy-hover-bg);
 }
 
 .qc-tree__label {

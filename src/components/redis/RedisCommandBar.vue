@@ -1,18 +1,20 @@
 <template>
   <div class="redis-cmdbar">
     <div class="d-flex align-center px-2 py-1">
-      <v-text-field
-        v-model="input"
-        label="Redis 命令"
-        placeholder="如 GET key / SET k v / HGETALL h"
-        density="compact"
-        single-line
-        hide-details
-        prepend-inner-icon="mdi-console-line"
-        class="mr-1"
-        :disabled="cmdRunning"
-        @keydown.enter="submitCmd"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">Redis 命令</span>
+        <v-text-field
+          v-model="input"
+          placeholder="如 GET key / SET k v / HGETALL h"
+          density="compact"
+          single-line
+          hide-details
+          prepend-inner-icon="mdi-console-line"
+          class="mr-1"
+          :disabled="cmdRunning"
+          @keydown.enter="submitCmd"
+        />
+      </div>
       <v-btn
         icon="mdi-play"
         size="small"
@@ -144,7 +146,8 @@ async function submitCmd(): Promise<void> {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 1 1 200px;
+  /* 高度交由父级 .redis-ws__cmdbar 的 flex: 0 1 220px 控制，此处不重复声明
+     （父子同时声明 flex 会让胜者取决于 CSS import 顺序，覆盖设计意图） */
 }
 
 /* 历史区：超高滚动（最多撑到工作台 40% 高度，压缩 keys 面板） */
@@ -155,7 +158,7 @@ async function submitCmd(): Promise<void> {
 }
 
 .redis-cmdbar__item {
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .redis-cmdbar__cmd {
@@ -173,6 +176,6 @@ async function submitCmd(): Promise<void> {
 }
 
 .redis-cmdbar__mono {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
 }
 </style>

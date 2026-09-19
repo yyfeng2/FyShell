@@ -2,25 +2,29 @@
   <!-- 用户身份验证：新建会话默认认证方式与认证配置文件（全局默认值） -->
   <template v-if="page === 'auth'">
     <div class="settings-dialog__section-title">用户身份验证</div>
-    <v-select
-      :model-value="opts.defaultAuthType"
-      :items="AUTH_OPTIONS"
-      item-title="title"
-      item-value="value"
-      label="默认认证方式"
-      class="settings-dialog__field"
-      @update:model-value="(v: unknown) => opts.setDefaultAuthType(String(v))"
-    />
-    <v-select
-      :model-value="opts.defaultProfileId || null"
-      :items="profileItems"
-      item-title="title"
-      item-value="value"
-      label="默认认证配置文件"
-      clearable
-      class="settings-dialog__field"
-      @update:model-value="(v: unknown) => opts.setDefaultProfileId(v as string | null)"
-    />
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">默认认证方式</span>
+      <v-select
+        :model-value="opts.defaultAuthType"
+        :items="AUTH_OPTIONS"
+        item-title="title"
+        item-value="value"
+        class="settings-dialog__field"
+        @update:model-value="(v: unknown) => opts.setDefaultAuthType(String(v))"
+      />
+    </div>
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">默认认证配置文件</span>
+      <v-select
+        :model-value="opts.defaultProfileId || null"
+        :items="profileItems"
+        item-title="title"
+        item-value="value"
+        clearable
+        class="settings-dialog__field"
+        @update:model-value="(v: unknown) => opts.setDefaultProfileId(v as string | null)"
+      />
+    </div>
     <div class="settings-dialog__hint">
       新建 SSH 会话时按以上默认值预填认证方式与配置文件；单个会话仍可在连接属性中覆盖。
     </div>
@@ -38,31 +42,37 @@
       class="mb-2"
       @update:model-value="(v: unknown) => opts.setPromptAutoRespond(!!v)"
     />
-    <v-text-field
-      :model-value="opts.promptUsername"
-      label="自动发送的用户名"
-      density="compact"
-      class="settings-dialog__field"
-      @change="onUsernameChange"
-    />
-    <v-text-field
-      :model-value="opts.promptPassword"
-      label="自动发送的密码"
-      type="password"
-      density="compact"
-      class="settings-dialog__field"
-      @change="onPasswordChange"
-    />
-    <v-text-field
-      :model-value="opts.promptMaxAttempts"
-      label="最大响应次数"
-      type="number"
-      min="1"
-      max="10"
-      density="compact"
-      class="settings-dialog__field"
-      @change="onMaxAttemptsChange"
-    />
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">自动发送的用户名</span>
+      <v-text-field
+        :model-value="opts.promptUsername"
+        density="compact"
+        class="settings-dialog__field"
+        @change="onUsernameChange"
+      />
+    </div>
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">自动发送的密码</span>
+      <v-text-field
+        :model-value="opts.promptPassword"
+        type="password"
+        density="compact"
+        class="settings-dialog__field"
+        @change="onPasswordChange"
+      />
+    </div>
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">最大响应次数</span>
+      <v-text-field
+        :model-value="opts.promptMaxAttempts"
+        type="number"
+        min="1"
+        max="10"
+        density="compact"
+        class="settings-dialog__field"
+        @change="onMaxAttemptsChange"
+      />
+    </div>
     <div class="settings-dialog__hint">
       终端出现行尾「login:」/「username:」/「password:」提示时自动发送以上内容；密码不回显。
     </div>

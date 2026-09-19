@@ -8,6 +8,14 @@
       <v-card-title class="d-flex align-center">
         <v-icon size="small" class="mr-2">{{ editing ? 'mdi-pencil-box-outline' : 'mdi-key-chain-variant' }}</v-icon>
         {{ editing ? '编辑认证配置文件' : '认证配置文件' }}
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="emit('update:modelValue', false)"
+      />
       </v-card-title>
       <!-- 列表态错误才显示在对话框顶部；编辑态错误移入表单字段附近 -->
       <v-alert
@@ -62,52 +70,63 @@
         <v-form ref="formRef" @submit.prevent="submit">
           <v-row dense>
             <v-col cols="12">
-              <v-text-field v-model="name" label="名称" density="compact" :rules="[rules.required]" />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">名称</span>
+                <v-text-field v-model="name" density="compact" :rules="[rules.required]" />
+              </div>
             </v-col>
             <v-col cols="12">
-              <v-select
-                v-model="authType"
-                label="认证方式"
-                density="compact"
-                :items="AUTH_OPTIONS"
-                item-title="title"
-                item-value="value"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">认证方式</span>
+                <v-select
+                  v-model="authType"
+                  density="compact"
+                  :items="AUTH_OPTIONS"
+                  item-title="title"
+                  item-value="value"
+                />
+              </div>
             </v-col>
 
             <!-- 密码 / 交互式 -->
             <v-col v-if="authType === 'password' || authType === 'interactive'" cols="12">
-              <v-text-field
-                v-model="password"
-                label="密码"
-                density="compact"
-                :type="showPassword ? 'text' : 'password'"
-                :rules="[rules.required]"
-                :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
-                @click:append-inner="showPassword = !showPassword"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">密码</span>
+                <v-text-field
+                  v-model="password"
+                  density="compact"
+                  :type="showPassword ? 'text' : 'password'"
+                  :rules="[rules.required]"
+                  :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+                  @click:append-inner="showPassword = !showPassword"
+                />
+              </div>
             </v-col>
 
             <!-- 私钥 -->
             <template v-if="authType === 'publicKey'">
               <v-col cols="12">
-                <v-text-field
-                  v-model="privateKeyPath"
-                  label="私钥路径"
-                  density="compact"
-                  placeholder="例如 C:\Users\you\.ssh\id_rsa"
-                  :rules="[rules.required]"
-                />
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">私钥路径</span>
+                  <v-text-field
+                    v-model="privateKeyPath"
+                    density="compact"
+                    placeholder="例如 C:\Users\you\.ssh\id_rsa"
+                    :rules="[rules.required]"
+                  />
+                </div>
               </v-col>
               <v-col cols="12">
-                <v-text-field
-                  v-model="passphrase"
-                  label="私钥口令（可选）"
-                  density="compact"
-                  :type="showPassphrase ? 'text' : 'password'"
-                  :append-inner-icon="showPassphrase ? 'mdi-eye-off' : 'mdi-eye'"
-                  @click:append-inner="showPassphrase = !showPassphrase"
-                />
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">私钥口令（可选）</span>
+                  <v-text-field
+                    v-model="passphrase"
+                    density="compact"
+                    :type="showPassphrase ? 'text' : 'password'"
+                    :append-inner-icon="showPassphrase ? 'mdi-eye-off' : 'mdi-eye'"
+                    @click:append-inner="showPassphrase = !showPassphrase"
+                  />
+                </div>
               </v-col>
             </template>
 

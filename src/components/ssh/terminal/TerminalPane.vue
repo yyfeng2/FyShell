@@ -109,11 +109,13 @@ onBeforeUnmount(() => {
 .terminal-pane {
   /* 深色主题全覆盖：容器背景与终端主题一致，避免闪白 */
   width: 100%;
-  height: 100%;
+  /* flex 收缩：命令栏/撰写栏内嵌后终端占满剩余高度（无两栏时仍为 100%） */
+  flex: 1 1 0;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-  background-color: #1e1e1e;
+  /* 终端背景单一来源 = theme.css --fy-terminal-bg（与 useXterm TERMINAL_BG 同值），避免闪白 */
+  background-color: var(--fy-terminal-bg);
 }
 
 /* xterm 填满窗格 */

@@ -31,6 +31,10 @@ export interface SessionConfig {
   serial_port?: string | null
   /** 串口会话：波特率（默认 115200） */
   baud_rate?: number | null
+  /** 备注/说明（可选） */
+  description?: string | null
+  /** 最后修改时间（Unix 秒；Rust 侧保存时覆盖，前端不传） */
+  updated_at?: number
 }
 
 export interface SessionFolder {

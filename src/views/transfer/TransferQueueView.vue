@@ -278,7 +278,7 @@ onUnmounted(() => {
 .transfer-queue__row {
   height: 56px;
   font-size: 14px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .transfer-queue__cell {

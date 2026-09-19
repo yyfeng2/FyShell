@@ -23,6 +23,7 @@ import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
 import HostkeyDialog from '@/components/ssh/terminal/HostkeyDialog.vue'
 import TerminalPane from '@/components/ssh/terminal/TerminalPane.vue'
+import ComposeBar from '@/components/ssh/terminal/ComposeBar.vue'
 import DualPane from '@/components/sftp/DualPane.vue'
 import TransferQueueView from '@/views/transfer/TransferQueueView.vue'
 import TunnelView from '@/views/tunnel/TunnelView.vue'
@@ -31,6 +32,7 @@ import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
 import ImportExportDialog from '@/components/mysql/ImportExportDialog.vue'
 import RedisDbWorkspace from '@/components/redis/RedisDbWorkspace.vue'
+import SessionListDialog from '@/components/ssh/session/SessionListDialog.vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { useRedisStore } from '@/stores/redis'
 import { mysqlDbList, mysqlDbSwitch, mysqlDbCreate, mysqlDbDrop } from '@/api/mysqlDb'
@@ -776,8 +778,20 @@ function onNodeKeydown(node: FlatNode, e: KeyboardEvent): void {
 const treeMenu = reactive({ visible: false, x: 0, y: 0, node: null as FlatNode | null })
 
 function onTreeContextmenu(node: FlatNode, e: MouseEvent): void {
-  // 分区头/分隔线/MySQL 兜底独立节点无菜单（独立节点无 SessionConfig，操作一律在工作台内）
-  if (node.isSection || node.isSeparator || node.id === 'db-standalone') return
+  // 分隔线/MySQL 兜底独立节点无菜单（独立节点无 SessionConfig，操作一律在工作台内）
+  if (node.isSeparator || node.id === 'db-standalone') return
+  // 分区头（SSH/数据库/Redis）：右键提供批量删除该分区下所有会话；
+  // 分区下没有可删除的会话时整个菜单不开（删除是唯一菜单项，空分区直接隐藏）
+  if (node.isSection) {
+    const section: 'ssh' | 'db' | 'redis' | null =
+      node.id === 'section-ssh' ? 'ssh' : node.id === 'section-db' ? 'db' : node.id === 'section-redis' ? 'redis' : null
+    if (!section || sectionSessionNodes(section).length === 0) return
+    treeMenu.x = e.clientX
+    treeMenu.y = e.clientY
+    treeMenu.node = node
+    treeMenu.visible = true
+    return
+  }
   selectedId.value = node.id
   treeMenu.x = e.clientX
   treeMenu.y = e.clientY
@@ -791,6 +805,10 @@ const treeMenuCtx = computed(() => {
   if (!node) return null
   const mysqlStore = useMysqlStore()
   const redisStore = useRedisStore()
+  // 分区头：仅提供删除项（批量删除该分区下所有会话）
+  if (node.isSection) {
+    return { kind: 'section' as const, isDb: false, isSessionNode: false, connected: false, connId: null }
+  }
   // 库叶子：操作对象即当前活动 MySQL 连接
   if (node.isDbLeaf) {
     return {
@@ -1006,11 +1024,38 @@ function menuRename(): void {
   showSessionForm.value = true
 }
 
-/** 右键菜单"删除"：二次确认后删除（会话/文件夹，含 Rust 侧清理） */
+/** 右键菜单"删除"：二次确认后删除。
+    已存连接常驻节点（savedconn-xxx / redisconn-xxx）走对应 store 的 removeConnection
+    （真实数据在 settings 表，session_delete 查无此行会静默失败）；
+    会话/文件夹走 session_delete。 */
 async function menuDelete(): Promise<void> {
   treeMenu.visible = false
   const node = treeMenu.node
   if (!node) return
+  // 已存连接常驻节点：删的是已保存的连接配置，按类型分流到 mysql/redis store
+  if (node.isSavedConn) {
+    const id = node.savedConnId ?? ''
+    if (!id) return
+    const store = node.isMysql ? useMysqlStore() : useRedisStore()
+    const ok = await ui.confirm({
+      title: '删除确认',
+      message: `确定删除连接「${node.name}」吗？此操作不可恢复。`,
+      danger: true,
+    })
+    if (!ok) return
+    try {
+      const ok = await store.removeConnection(id)
+      await loadTree()
+      if (ok) {
+        ui.toast(`已删除连接「${node.name}」`, 'success')
+      } else {
+        ui.toast(`已删除连接「${node.name}」，但保存列表落盘失败，重启后可能恢复`, 'warning')
+      }
+    } catch (e) {
+      ui.toast(`删除失败：${String(e)}`, 'error')
+    }
+    return
+  }
   const label = node.isFolder
     ? `文件夹「${node.name}」（含其中所有会话）`
     : `会话「${node.name}」`
@@ -1026,6 +1071,91 @@ async function menuDelete(): Promise<void> {
     ui.toast(`已删除${label}`, 'success')
   } catch (e) {
     ui.toast(`删除失败：${String(e)}`, 'error')
+  }
+}
+
+/** 分区待删除目标：session 会话（session_delete）或已存连接常驻节点（store.removeConnection） */
+type SectionTarget = { id: string; name: string; isSaved: boolean; isMysql: boolean }
+
+/** 分区头右键"删除"：收集该分区下所有可删对象（SSH 区为非数据库会话；数据库区/Redis 区
+    除 session 会话外，还包括已存连接常驻节点——常驻连接存于 settings 表不在 session 树，
+    漏收会导致分区批量删除永远"无可删会话"） */
+function sectionSessionNodes(section: 'ssh' | 'db' | 'redis'): SectionTarget[] {
+  const out: SectionTarget[] = []
+  const walk = (list: SessionNode[]): void => {
+    for (const n of list) {
+      const stype = n.config?.session_type
+      if (n.is_folder) {
+        walk(n.children ?? [])
+        continue
+      }
+      if (section === 'ssh' && (stype === 'mysql' || stype === 'redis')) continue
+      if (section === 'db' && stype !== 'mysql') continue
+      if (section === 'redis' && stype !== 'redis') continue
+      out.push({ id: n.id, name: n.name, isSaved: false, isMysql: stype === 'mysql' })
+    }
+  }
+  walk(nodes.value)
+  // 已存连接常驻节点：数据库区收集 MySQL 已存连接；Redis 区收集 Redis 已存连接
+  //（session 树已有同 host 会话的会在渲染时去重，这里按相同 host 规则同样跳过避免重复计数）
+  if (section === 'db' || section === 'redis') {
+    const isMysql = section === 'db'
+    const store = isMysql ? useMysqlStore() : useRedisStore()
+    const hostSet = new Set<string>()
+    for (const n of nodes.value) {
+      if (!n.is_folder && n.config?.session_type === (isMysql ? 'mysql' : 'redis') && n.config.host) {
+        hostSet.add(n.config.host)
+      }
+    }
+    for (const c of store.savedConnections) {
+      if (hostSet.has(c.host)) continue
+      out.push({ id: c.id, name: c.name, isSaved: true, isMysql })
+    }
+  }
+  return out
+}
+
+/** 分区头右键"删除"：确认后批量删除该分区下所有会话 */
+async function menuDeleteSection(): Promise<void> {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node || !node.isSection) return
+  const section: 'ssh' | 'db' | 'redis' | null =
+    node.id === 'section-ssh' ? 'ssh' : node.id === 'section-db' ? 'db' : node.id === 'section-redis' ? 'redis' : null
+  if (!section) return
+  const targets = sectionSessionNodes(section)
+  if (targets.length === 0) {
+    ui.toast(`「${node.name}」分区下没有可删除的会话`, 'warning')
+    return
+  }
+  const ok = await ui.confirm({
+    title: '删除确认',
+    message: `确定删除「${node.name}」分区下的所有会话（共 ${targets.length} 个）吗？此操作不可恢复。`,
+    danger: true,
+  })
+  if (!ok) return
+  const failed: string[] = []
+  for (const t of targets) {
+    try {
+      if (t.isSaved) {
+        // 已存连接常驻节点：走对应 store 的 removeConnection，落盘失败同样计入失败
+        const store = t.isMysql ? useMysqlStore() : useRedisStore()
+        const ok = await store.removeConnection(t.id)
+        if (!ok) failed.push(`${t.name}（保存列表落盘失败，重启后可能恢复）`)
+      } else {
+        await sessionStore.remove(t.id, false)
+      }
+    } catch (e) {
+      // 单条删除失败不中断整批：记录后继续删剩余项，最后统一汇总
+      failed.push(`${t.name}（${String(e)}）`)
+    }
+  }
+  await loadTree()
+  const removed = targets.length - failed.length
+  if (failed.length === 0) {
+    ui.toast(`已删除「${node.name}」分区下的 ${removed} 个会话`, 'success')
+  } else {
+    ui.toast(`已删除 ${removed} 个，${failed.length} 个失败：${failed[0]}`, 'error')
   }
 }
 
@@ -1097,12 +1227,17 @@ function menuCreateDb(): void {
   showNewDbDialog.value = true
 }
 
-/** 右键菜单"删除数据库"：二次确认 → mysql_db_drop → 刷新树中库节点 */
+/** 右键菜单"删除数据库"：二次确认 → mysql_db_drop → 刷新树中库节点。
+    未连接 MySQL 时给出提示（库叶子来自已存连接/历史库，未连接也可右键到） */
 async function menuDropDb(): Promise<void> {
   treeMenu.visible = false
   const node = treeMenu.node
   const connId = useMysqlStore().connId
-  if (!node?.dbName || !connId) return
+  if (!node?.dbName) return
+  if (!connId) {
+    ui.toast('请先连接 MySQL 数据库后再删除库', 'warning')
+    return
+  }
   const ok = await ui.confirm({
     title: '删除数据库',
     message: `确定删除数据库「${node.dbName}」吗？库中所有数据将丢失，此操作不可恢复。`,
@@ -1110,7 +1245,8 @@ async function menuDropDb(): Promise<void> {
   })
   if (!ok) return
   try {
-    await mysqlDbDrop(connId, node.dbName)
+    // UI 强确认通过后带 confirmed=true 重发（后端强确认管道约定，与工作台删除库一致）
+    await mysqlDbDrop(connId, node.dbName, true)
     ui.toast(`数据库「${node.dbName}」已删除`, 'success')
     await refreshMysqlTreeDbs()
   } catch (e) {
@@ -1512,7 +1648,7 @@ async function onSessionSaved(config: SessionConfig): Promise<void> {
 const showFolderDialog = ref(false)
 const folderName = ref('')
 
-// ---------------- 文件菜单"打开"：已添加会话列表对话框 ----------------
+// ---------------- 文件菜单"打开"：会话列表对话框（SessionListDialog） ----------------
 
 const showSessionListDialog = ref(false)
 
@@ -1530,27 +1666,19 @@ const sessionListFlat = computed(() => {
 })
 
 /** 打开会话列表中选中的会话终端 */
-function openSessionFromList(target: SessionNode): void {
+function openSessionFromList(target: { id: string; name: string }): void {
   showSessionListDialog.value = false
   selectedId.value = target.id
   openTerminal(target)
 }
 
-// ---------------- 文件菜单"打开"：列表右键菜单（打开/删除） ----------------
-
-const listCtxMenu = reactive({ visible: false, x: 0, y: 0, node: null as SessionNode | null })
-
-function openListContextMenu(e: MouseEvent, node: SessionNode): void {
-  listCtxMenu.x = e.clientX
-  listCtxMenu.y = e.clientY
-  listCtxMenu.node = node
-  listCtxMenu.visible = true
+/** 列表"属性"：打开会话选项对话框（会话模式，编辑写会话级键） */
+function openListProperties(node: { id: string; name: string }): void {
+  openSessionSettingsFor({ sessionId: node.id, title: node.name })
 }
 
-/** 列表右键"删除会话"：二次确认后删除（含 Rust 侧清理） */
-async function deleteFromList(): Promise<void> {
-  listCtxMenu.visible = false
-  const node = listCtxMenu.node
+/** 列表"删除会话"：二次确认后删除（含 Rust 侧清理） */
+async function deleteFromList(node: { id: string; name: string } | null): Promise<void> {
   if (!node) return
   const ok = await ui.confirm({
     title: '删除确认',
@@ -1561,6 +1689,7 @@ async function deleteFromList(): Promise<void> {
   try {
     await sessionStore.remove(node.id, false)
     ui.toast(`已删除会话「${node.name}」`, 'success')
+    await loadTree()
   } catch (e) {
     ui.toast(`删除失败：${String(e)}`, 'error')
   }
@@ -1690,6 +1819,9 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'toggle-quickbar':
       ui.quickBarVisible = !ui.quickBarVisible
+      break
+    case 'toggle-composebar':
+      ui.composeBarVisible = !ui.composeBarVisible
       break
     case 'transfer':
       openTransferTab()
@@ -1827,7 +1959,12 @@ onMounted(async () => {
     console.error('注册事件监听失败', e)
   }
 
-  await Promise.allSettled([loadTree(), useMysqlStore().loadSavedConnections(), loadTransferSnapshot()])
+  await Promise.allSettled([
+    loadTree(),
+    useMysqlStore().loadSavedConnections(),
+    useRedisStore().loadSavedConnections(),
+    loadTransferSnapshot(),
+  ])
 
   // 标签拖出新窗口（P1）：新窗口 URL 带 ?session=<id>，启动后自动打开对应会话终端
   const urlSessionId = new URLSearchParams(window.location.search).get('session')
@@ -1946,7 +2083,7 @@ onUnmounted(() => {
                 'workspace__tree-node--section': node.isSection,
                 'workspace__tree-node--grey': !!node.grey,
               }"
-              :style="{ paddingLeft: `${8 + node.depth * 32}px` }"
+              :style="{ paddingLeft: `${8 + node.depth * 20}px` }"
               @click="onNodeClick(node)"
               @keydown="onNodeKeydown(node, $event)"
               @contextmenu.prevent="onTreeContextmenu(node, $event)"
@@ -2081,6 +2218,13 @@ onUnmounted(() => {
             </v-list-item>
           </template>
 
+          <!-- 分区头（SSH/数据库/Redis）：批量删除该分区下所有会话 -->
+          <template v-else-if="treeMenuCtx?.kind === 'section'">
+            <v-list-item @click="menuDeleteSection">
+              <v-list-item-title class="text-error">删除</v-list-item-title>
+            </v-list-item>
+          </template>
+
           <!-- 文件夹：重命名/删除 -->
           <template v-else>
             <v-list-item @click="menuRename">
@@ -2114,11 +2258,12 @@ onUnmounted(() => {
             v-show="tab.id === activeId"
             class="workspace__pane"
           >
-            <TerminalPane
-              v-if="tab.type === 'terminal' && tab.connId"
-              :session-id="tab.connId"
-              :session-node-id="tab.sessionId"
-            />
+            <!-- 终端 Tab：终端 + 命令栏 + 撰写栏（命令栏/撰写栏随 Tab 内嵌，不再全局） -->
+            <template v-if="tab.type === 'terminal' && tab.connId">
+              <TerminalPane :session-id="tab.connId" :session-node-id="tab.sessionId" />
+              <QuickCommandBar :session-id="tab.connId" />
+              <ComposeBar :session-id="tab.connId" />
+            </template>
             <TransferQueueView v-else-if="tab.type === 'transfer'" />
             <DualPane
               v-else-if="tab.type === 'sftp'"
@@ -2138,9 +2283,6 @@ onUnmounted(() => {
         </div>
       </main>
     </div>
-
-    <!-- 快速命令栏（Xshell 风格，查看菜单可开关） -->
-    <QuickCommandBar :session-id="activeTerminalId" />
 
     <!-- 底部状态栏 -->
     <StatusBar
@@ -2169,15 +2311,26 @@ onUnmounted(() => {
     <!-- 新建文件夹对话框 -->
     <v-dialog v-model="showFolderDialog" width="360">
       <v-card>
-        <v-card-title class="text-subtitle-1">新建文件夹</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="folderName"
-            label="文件夹名称"
-            density="compact"
-            autofocus
-            @keydown.enter="createFolder"
+        <v-card-title class="d-flex align-center text-subtitle-1">新建文件夹
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="showFolderDialog = false"
           />
+        </v-card-title>
+        <v-card-text>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">文件夹名称</span>
+            <v-text-field
+              v-model="folderName"
+              density="compact"
+              autofocus
+              @keydown.enter="createFolder"
+            />
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -2190,15 +2343,26 @@ onUnmounted(() => {
     <!-- 新建数据库对话框（树右键"新建数据库..."入口；作用于当前活动 MySQL 连接） -->
     <v-dialog v-model="showNewDbDialog" width="360">
       <v-card>
-        <v-card-title class="text-subtitle-1">新建数据库</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="newDbName"
-            label="数据库名称"
-            density="compact"
-            autofocus
-            @keydown.enter="createDb"
+        <v-card-title class="d-flex align-center text-subtitle-1">新建数据库
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="showNewDbDialog = false"
           />
+        </v-card-title>
+        <v-card-text>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">数据库名称</span>
+            <v-text-field
+              v-model="newDbName"
+              density="compact"
+              autofocus
+              @keydown.enter="createDb"
+            />
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -2211,51 +2375,17 @@ onUnmounted(() => {
     <!-- 导入导出对话框（树右键"运行 SQL 文件..."入口；connId 挂当前活动 MySQL 连接） -->
     <ImportExportDialog v-model="ioDialogVisible" :conn-id="ioDialogConnId" />
 
-    <!-- 文件菜单"打开"：已添加会话列表（选择即打开终端） -->
-    <v-dialog v-model="showSessionListDialog" width="420">
-      <v-card>
-        <v-card-title class="text-subtitle-1">打开会话</v-card-title>
-        <v-divider />
-        <v-card-text style="max-height: 60vh; overflow-y: auto">
-          <v-list density="compact">
-            <v-list-item
-              v-for="s in sessionListFlat"
-              :key="s.id"
-              @click="openSessionFromList(s)"
-              @contextmenu.prevent="openListContextMenu($event, s)"
-            >
-              <v-list-item-title class="session-row">
-                <span
-                  class="session-row__type"
-                  :class="`session-row__type--${(s.config?.session_type as string) ?? 'ssh'}`"
-                >
-                  {{ s.config?.session_type === 'mysql' ? 'MySQL' : s.config?.session_type === 'redis' ? 'Redis' : 'SSH' }}
-                </span>
-                <span class="session-row__name">{{ s.name }}</span>
-                <span class="session-row__host">{{ (s.config?.host as string) || s.name }}</span>
-              </v-list-item-title>
-            </v-list-item>
-            <div v-if="sessionListFlat.length === 0" class="text-medium-emphasis">暂无已添加会话</div>
-          </v-list>
-          <!-- 列表右键菜单：打开/删除会话 -->
-          <v-menu
-            v-model="listCtxMenu.visible"
-            :target="[listCtxMenu.x, listCtxMenu.y]"
-            location="bottom start"
-            :close-on-content-click="true"
-          >
-            <v-list density="compact">
-              <v-list-item @click="openSessionFromList(listCtxMenu.node!)">
-                <v-list-item-title>打开连接</v-list-item-title>
-              </v-list-item>
-              <v-list-item @click="deleteFromList">
-                <v-list-item-title class="text-error">删除会话</v-list-item-title>
-              </v-list-item>
-            </v-list>
-          </v-menu>
-        </v-card-text>
-      </v-card>
-    </v-dialog>
+    <!-- 文件菜单"打开"：会话列表对话框（Xshell 会话管理器风格，选择/双击/右键即打开） -->
+    <SessionListDialog
+      v-model="showSessionListDialog"
+      :sessions="sessionListFlat"
+      @open-session="openSessionFromList"
+      @properties="openListProperties"
+      @delete="deleteFromList"
+      @new-session="openSessionForm"
+      @new-folder="showFolderDialog = true"
+      @refresh="loadTree"
+    />
 
     <!-- 主密码设置对话框（首次设置 + 修改/校验） -->
     <MasterPasswordDialog v-model="showMasterPassword" />
@@ -2321,8 +2451,8 @@ onUnmounted(() => {
   width: 240px;
   min-width: 0;
   padding: 6px 6px 0;
-  border-right: 1px solid var(--fy-chrome-border, #d5d9de);
-  background: var(--fy-chrome-bg, #f0f2f5);
+  border-right: 1px solid var(--fy-chrome-border);
+  background: var(--fy-chrome-bg);
   overflow: hidden;
 }
 
@@ -2363,11 +2493,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 24px;
+  height: 26px; /* 与全局单行控件基线一致（字段/快速连接 26px，原 24px） */
   flex: none;
   padding: 0 6px;
-  border: 1px solid var(--fy-chrome-border, #d5d9de);
-  border-radius: 3px;
+  border: 1px solid var(--fy-chrome-border);
+  border-radius: 4px;
   background: rgb(var(--v-theme-surface));
   color: rgb(var(--v-theme-on-surface) / 0.6);
 }
@@ -2388,7 +2518,7 @@ onUnmounted(() => {
 }
 
 .workspace__search:focus-within {
-  border-color: rgb(var(--v-theme-primary));
+  border-color: var(--fy-focus-color);
 }
 
 .workspace__search-input::placeholder {
@@ -2482,46 +2612,6 @@ onUnmounted(() => {
   padding: 12px 8px;
   font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
-}
-
-/* 打开会话对话框：类型 名称 主机IP 横排展示（v-dialog slot 内容带 data-v，scoped 样式生效） */
-.session-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.session-row__type {
-  flex: none;
-  font-size: 11px;
-  line-height: 1;
-  padding: 3px 6px;
-  border-radius: 3px;
-  color: rgb(var(--v-theme-primary));
-  background: rgb(var(--v-theme-primary) / 0.12);
-}
-
-.session-row__type--mysql,
-.session-row__type--redis {
-  color: rgb(var(--v-theme-success));
-  background: rgb(var(--v-theme-success) / 0.12);
-}
-
-.session-row__name {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.session-row__host {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgb(var(--v-theme-on-surface) / 0.55);
 }
 
 /* 右侧多 Tab 工作区 */

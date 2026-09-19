@@ -44,9 +44,10 @@ const MENUS: MenuDef[] = [
     title: '查看',
     accel: 'V',
     items: [
-      { title: '开启或关闭左导航', action: 'toggle-nav' },
-      { title: '快速命令栏', action: 'toggle-quickbar' },
-      { title: '切换主题（深色/浅色）', action: 'toggle-theme' },
+      { title: '左导航', action: 'toggle-nav' },
+      { title: '命令栏', action: 'toggle-quickbar' },
+      { title: '撰写栏', action: 'toggle-composebar' },
+      { title: '主题', action: 'toggle-theme' },
     ],
   },
   {
@@ -118,10 +119,10 @@ defineEmits<{ (e: 'action', action: string): void }>()
 .menubar {
   display: flex;
   align-items: center;
-  height: 18px;
+  height: 26px;
   padding: 0 4px;
-  border-bottom: 1px solid var(--fy-chrome-border, #d5d9de);
-  background: var(--fy-chrome-bg, #f0f2f5);
+  border-bottom: 1px solid var(--fy-chrome-border);
+  background: var(--fy-chrome-bg);
   user-select: none;
 }
 
@@ -150,12 +151,12 @@ defineEmits<{ (e: 'action', action: string): void }>()
 .menubar__item {
   font-size: 14px;
   padding: 0 10px;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   color: inherit;
   background: transparent;
   border: none;
-  line-height: 18px;
+  line-height: 26px;
 }
 
 .menubar__item:hover {

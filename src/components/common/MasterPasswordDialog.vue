@@ -8,6 +8,14 @@
       <v-card-title class="d-flex align-center">
         <v-icon icon="mdi-lock-outline" size="small" class="mr-2" />
         {{ isModifyMode ? '修改主密码' : '设置主密码' }}
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="emit('update:modelValue', false)"
+      />
       </v-card-title>
       <v-card-text>
         <p class="text-body-2 mb-3">
@@ -15,48 +23,54 @@
         </p>
 
         <!-- 修改模式：旧密码须先通过校验，防止未验证直接覆盖 -->
-        <v-text-field
-          v-if="isModifyMode"
-          v-model="oldPassword"
-          label="旧密码"
-          type="password"
-          density="compact"
-          class="mb-2"
-          :hint="oldVerified === false ? '旧密码不正确' : undefined"
-          :error="oldVerified === false"
-          autofocus
-          @keydown.enter="verifyOld"
-        >
-          <template #append-inner>
-            <v-btn
-              size="x-small"
-              variant="text"
-              :disabled="!oldPassword"
-              title="校验旧密码"
-              @click="verifyOld"
-            >
-              校验
-            </v-btn>
-          </template>
-        </v-text-field>
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">旧密码</span>
+          <v-text-field
+            v-if="isModifyMode"
+            v-model="oldPassword"
+            type="password"
+            density="compact"
+            class="mb-2"
+            :hint="oldVerified === false ? '旧密码不正确' : undefined"
+            :error="oldVerified === false"
+            autofocus
+            @keydown.enter="verifyOld"
+          >
+            <template #append-inner>
+              <v-btn
+                size="x-small"
+                variant="text"
+                :disabled="!oldPassword"
+                title="校验旧密码"
+                @click="verifyOld"
+              >
+                校验
+              </v-btn>
+            </template>
+          </v-text-field>
+        </div>
 
-        <v-text-field
-          v-model="newPassword"
-          label="新密码"
-          type="password"
-          density="compact"
-          class="mb-2"
-          :autofocus="!isModifyMode"
-          @keydown.enter="submit"
-        />
-        <v-text-field
-          v-model="confirmPassword"
-          label="确认新密码"
-          type="password"
-          density="compact"
-          :error="!!confirmPassword && newPassword !== confirmPassword"
-          @keydown.enter="submit"
-        />
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">新密码</span>
+          <v-text-field
+            v-model="newPassword"
+            type="password"
+            density="compact"
+            class="mb-2"
+            :autofocus="!isModifyMode"
+            @keydown.enter="submit"
+          />
+        </div>
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">确认新密码</span>
+          <v-text-field
+            v-model="confirmPassword"
+            type="password"
+            density="compact"
+            :error="!!confirmPassword && newPassword !== confirmPassword"
+            @keydown.enter="submit"
+          />
+        </div>
       </v-card-text>
       <v-card-actions>
         <v-spacer />

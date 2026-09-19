@@ -262,45 +262,53 @@
             <div class="table-designer__scroll table-designer__props">
               <v-row dense>
                 <v-col cols="4">
-                  <v-text-field
-                    v-model="tableName"
-                    label="表名"
-                    density="compact"
-                    variant="outlined"
-                    :disabled="!isNew"
-                    hint="仅新建表时可编辑"
-                  />
+                  <div class="fy-field-row">
+                    <span class="fy-field-row__label">表名</span>
+                    <v-text-field
+                      v-model="tableName"
+                      density="compact"
+                      variant="outlined"
+                      :disabled="!isNew"
+                      hint="仅新建表时可编辑"
+                    />
+                  </div>
                 </v-col>
                 <v-col cols="4">
-                  <v-combobox
-                    v-model="engine"
-                    :items="ENGINE_SUGGESTIONS"
-                    label="存储引擎"
-                    density="compact"
-                    variant="outlined"
-                    :disabled="!isNew"
-                    hint="仅新建表时可编辑"
-                  />
+                  <div class="fy-field-row">
+                    <span class="fy-field-row__label">存储引擎</span>
+                    <v-combobox
+                      v-model="engine"
+                      :items="ENGINE_SUGGESTIONS"
+                      density="compact"
+                      variant="outlined"
+                      :disabled="!isNew"
+                      hint="仅新建表时可编辑"
+                    />
+                  </div>
                 </v-col>
                 <v-col cols="4">
-                  <v-combobox
-                    v-model="charset"
-                    :items="CHARSET_SUGGESTIONS"
-                    label="字符集"
-                    density="compact"
-                    variant="outlined"
-                    :disabled="!isNew"
-                    hint="仅新建表时可编辑"
-                  />
+                  <div class="fy-field-row">
+                    <span class="fy-field-row__label">字符集</span>
+                    <v-combobox
+                      v-model="charset"
+                      :items="CHARSET_SUGGESTIONS"
+                      density="compact"
+                      variant="outlined"
+                      :disabled="!isNew"
+                      hint="仅新建表时可编辑"
+                    />
+                  </div>
                 </v-col>
                 <v-col cols="12">
-                  <v-text-field
-                    v-model="comment"
-                    label="表注释"
-                    density="compact"
-                    variant="outlined"
-                    :disabled="!isNew"
-                  />
+                  <div class="fy-field-row">
+                    <span class="fy-field-row__label">表注释</span>
+                    <v-text-field
+                      v-model="comment"
+                      density="compact"
+                      variant="outlined"
+                      :disabled="!isNew"
+                    />
+                  </div>
                 </v-col>
               </v-row>
               <v-alert v-if="!isNew" type="info" variant="tonal" density="compact" class="mt-2">

@@ -875,6 +875,10 @@ export type SessionConfig = {
 	serial_port?: string | null,
 	/**  串口会话：波特率（默认 115200，由前端给缺省值） */
 	baud_rate?: number | null,
+	/**  备注/说明（可选，serde default：老数据缺该字段时反序列化为 None，向后兼容） */
+	description?: string | null,
+	/**  最后修改时间（Unix 秒；serde default：老数据缺该字段时反序列化为 0，向后兼容） */
+	updated_at?: number,
 };
 
 /**  会话树文件夹 */

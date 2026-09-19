@@ -44,6 +44,8 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (e: 'row-click', row: Record<string, unknown>, index: number): void
+  (e: 'row-dblclick', row: Record<string, unknown>, index: number): void
+  (e: 'row-contextmenu', payload: { row: Record<string, unknown>; index: number; event: MouseEvent }): void
   /** 排序变化通知（内部已排序，父级可选择自行同步） */
   (e: 'sort', payload: { key: string; order: 'asc' | 'desc' }): void
 }>()
@@ -86,6 +88,16 @@ const sortedRows = computed(() => {
     return compareValues(av, bv) * order
   })
 })
+
+// ---------------- 选中态与数据同步 ----------------
+
+/** 行数据变化（过滤/排序/刷新）后重置选中索引，避免旧索引指向新行 */
+watch(
+  () => props.rows,
+  () => {
+    selectedIndex.value = null
+  },
+)
 
 // ---------------- 虚拟滚动 ----------------
 
@@ -183,6 +195,16 @@ function onRowClick(row: Record<string, unknown>, index: number): void {
   if (props.selectable) selectedIndex.value = index
   emit('row-click', row, index)
 }
+
+/** 行双击：转发给父级（如打开会话连接） */
+function onRowDblclick(row: Record<string, unknown>, index: number): void {
+  emit('row-dblclick', row, index)
+}
+
+/** 行右键：转发行与鼠标事件（父级定位上下文菜单） */
+function onRowContextmenu(event: MouseEvent, row: Record<string, unknown>, index: number): void {
+  emit('row-contextmenu', { row, index, event })
+}
 </script>
 
 <template>
@@ -213,14 +235,16 @@ function onRowClick(row: Record<string, unknown>, index: number): void {
     <!-- 表体（虚拟滚动） -->
     <div ref="viewport" class="adv-table__viewport" @scroll.passive="onScroll">
       <div class="adv-table__spacer" :style="{ height: `${totalHeight}px` }">
-        <div class="adv-table__body" :style="{ transform: `translateY(${offsetY}px)`, ...gridStyle }">
+        <div class="adv-table__body" :style="{ transform: `translateY(${offsetY}px)` }">
           <div
             v-for="item in displayRows"
             :key="String(item.row[rowKey] ?? item.index)"
             class="adv-table__row"
             :class="{ 'adv-table__row--selected': selectable && selectedIndex === item.index }"
-            :style="{ height: `${rowHeight}px` }"
+            :style="{ height: `${rowHeight}px`, ...gridStyle }"
             @click="onRowClick(item.row, item.index)"
+            @dblclick="onRowDblclick(item.row, item.index)"
+            @contextmenu.prevent="onRowContextmenu($event, item.row, item.index)"
           >
             <div
               v-for="col in columns"
@@ -258,7 +282,7 @@ function onRowClick(row: Record<string, unknown>, index: number): void {
 .adv-table__header {
   display: grid;
   min-height: 28px;
-  border-bottom: 1px solid rgb(var(--v-theme-surface-variant, 32 33 35));
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.15);
   background: rgb(var(--v-theme-surface-variant, 32 33 35) / 0.25);
   font-weight: 400;
   user-select: none;
@@ -324,7 +348,7 @@ function onRowClick(row: Record<string, unknown>, index: number): void {
   display: grid;
   align-items: center;
   cursor: default;
-  border-bottom: 1px solid rgb(var(--v-theme-surface-variant, 32 33 35) / 0.25);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .adv-table__row:hover {

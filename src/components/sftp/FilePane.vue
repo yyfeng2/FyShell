@@ -10,9 +10,7 @@
         title="上级目录"
         @click="goUp"
       >
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-          <path d="M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
-        </svg>
+        <v-icon icon="mdi-chevron-up" size="16" />
       </v-btn>
       <v-btn
         icon
@@ -22,11 +20,7 @@
         title="刷新"
         @click="refresh"
       >
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-          <path
-            d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.6-6.66h-2.16c-.7 2.37-2.82 4.06-5.44 4.06-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.16.68 4.24 1.76L13 11h7V4l-2.35 2.35z"
-          />
-        </svg>
+        <v-icon icon="mdi-refresh" size="16" />
       </v-btn>
       <v-text-field
         v-model="pathInput"
@@ -205,20 +199,31 @@
     <!-- 新建 / 重命名 / 删除确认弹层（危险操作二次确认） -->
     <v-dialog v-model="dialogVisible" max-width="420">
       <v-card>
-        <v-card-title class="text-subtitle-1">{{ dialogTitle }}</v-card-title>
+        <v-card-title class="d-flex align-center text-subtitle-1">{{ dialogTitle }}
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="dialogVisible = false"
+          />
+        </v-card-title>
         <v-card-text>
           <template v-if="dialogType === 'delete'">
             确认删除{{ targetEntry?.is_dir ? '文件夹' : '文件' }}「{{ targetEntry?.name }}」？此操作不可恢复。
           </template>
           <template v-else-if="dialogType === 'mkdir'">
-            <v-text-field
-              v-model="dialogValue"
-              label="文件夹名称"
-              density="compact"
-              variant="outlined"
-              autofocus
-              @keyup.enter="confirmDialog"
-            />
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">文件夹名称</span>
+              <v-text-field
+                v-model="dialogValue"
+                density="compact"
+                variant="outlined"
+                autofocus
+                @keyup.enter="confirmDialog"
+              />
+            </div>
           </template>
           <template v-else-if="dialogType === 'chmod'">
             <!-- 九宫格 rwx 勾选（行 = 属主/属组/其他，列 = 读/写/执行） -->
@@ -261,23 +266,27 @@
                 />
               </div>
             </div>
-            <v-text-field
-              v-model="chmodValue"
-              label="八进制权限（如 644）"
-              density="compact"
-              variant="outlined"
-              @update:model-value="onChmodOctalInput"
-            />
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">八进制权限（如 644）</span>
+              <v-text-field
+                v-model="chmodValue"
+                density="compact"
+                variant="outlined"
+                @update:model-value="onChmodOctalInput"
+              />
+            </div>
           </template>
           <template v-else-if="dialogType === 'rename'">
-            <v-text-field
-              v-model="dialogValue"
-              label="新名称"
-              density="compact"
-              variant="outlined"
-              autofocus
-              @keyup.enter="confirmDialog"
-            />
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">新名称</span>
+              <v-text-field
+                v-model="dialogValue"
+                density="compact"
+                variant="outlined"
+                autofocus
+                @keyup.enter="confirmDialog"
+              />
+            </div>
           </template>
         </v-card-text>
         <v-card-actions>
@@ -924,7 +933,7 @@ onUnmounted(() => {
   height: 28px;
   font-size: 14px;
   cursor: default;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .file-pane__row:hover {

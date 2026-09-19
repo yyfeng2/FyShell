@@ -100,22 +100,32 @@
           {{ editingId ? 'mdi-pencil-box-outline' : 'mdi-plus-box-outline' }}
         </v-icon>
         {{ editingId ? '编辑隧道规则' : '新建隧道规则' }}
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="showForm = false"
+      />
       </v-card-title>
       <v-divider />
       <v-card-text>
         <v-form ref="formRef" @submit.prevent="submit">
           <v-row dense>
             <v-col cols="12">
-              <v-select
-                v-model="form.session_id"
-                label="会话"
-                density="compact"
-                :items="sessionOptions"
-                item-title="name"
-                item-value="id"
-                :rules="[rules.required]"
-                placeholder="选择隧道所属会话"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">会话</span>
+                <v-select
+                  v-model="form.session_id"
+                  density="compact"
+                  :items="sessionOptions"
+                  item-title="name"
+                  item-value="id"
+                  :rules="[rules.required]"
+                  placeholder="选择隧道所属会话"
+                />
+              </div>
             </v-col>
             <v-col cols="12">
               <div class="tunnel-form__label">类型</div>
@@ -126,38 +136,46 @@
               </v-btn-toggle>
             </v-col>
             <v-col cols="8">
-              <v-text-field
-                v-model="form.listen_host"
-                label="监听主机"
-                density="compact"
-                :rules="[rules.required]"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">监听主机</span>
+                <v-text-field
+                  v-model="form.listen_host"
+                  density="compact"
+                  :rules="[rules.required]"
+                />
+              </div>
             </v-col>
             <v-col cols="4">
-              <v-text-field
-                v-model.number="form.listen_port"
-                label="监听端口"
-                type="number"
-                density="compact"
-                :rules="[rules.required, rules.port]"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">监听端口</span>
+                <v-text-field
+                  v-model.number="form.listen_port"
+                  type="number"
+                  density="compact"
+                  :rules="[rules.required, rules.port]"
+                />
+              </div>
             </v-col>
             <v-col v-if="form.kind !== 'Socks'" cols="8">
-              <v-text-field
-                v-model="form.target_host"
-                :label="form.kind === 'Remote' ? '目标主机（本地转发目标）' : '目标主机'"
-                density="compact"
-                :rules="[rules.required]"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">目标主机</span>
+                <v-text-field
+                  v-model="form.target_host"
+                  density="compact"
+                  :rules="[rules.required]"
+                />
+              </div>
             </v-col>
             <v-col v-if="form.kind !== 'Socks'" cols="4">
-              <v-text-field
-                v-model.number="form.target_port"
-                label="目标端口"
-                type="number"
-                density="compact"
-                :rules="[rules.required, rules.port]"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">目标端口</span>
+                <v-text-field
+                  v-model.number="form.target_port"
+                  type="number"
+                  density="compact"
+                  :rules="[rules.required, rules.port]"
+                />
+              </div>
             </v-col>
             <v-col v-if="form.kind === 'Socks'" cols="12">
               <v-alert type="info" variant="tonal" density="compact">
@@ -504,7 +522,7 @@ onMounted(() => {
 .tunnel-view__row {
   min-height: 52px;
   font-size: 14px;
-  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.06);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .tunnel-view__cell {

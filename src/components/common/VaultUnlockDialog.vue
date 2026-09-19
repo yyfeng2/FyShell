@@ -8,22 +8,32 @@
       <v-card-title class="d-flex align-center">
         <v-icon icon="mdi-lock-outline" size="small" class="mr-2" />
         解锁凭据保险库
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="emit('update:modelValue', false)"
+      />
       </v-card-title>
       <v-card-text>
         <p class="text-body-2 mb-3">
           已存连接密码受主密码保护，输入主密码解锁后方可查看与保存连接。
         </p>
-        <v-text-field
-          v-model="password"
-          label="主密码"
-          type="password"
-          density="compact"
-          autofocus
-          :error="!!errorText"
-          :persistent-hint="!!errorText"
-          :hint="errorText || undefined"
-          @keydown.enter="submit"
-        />
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">主密码</span>
+          <v-text-field
+            v-model="password"
+            type="password"
+            density="compact"
+            autofocus
+            :error="!!errorText"
+            :persistent-hint="!!errorText"
+            :hint="errorText || undefined"
+            @keydown.enter="submit"
+          />
+        </div>
       </v-card-text>
       <v-card-actions>
         <v-spacer />

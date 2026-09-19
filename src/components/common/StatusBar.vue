@@ -144,8 +144,8 @@ const transferText = computed(() => {
   padding: 0 10px;
   font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.75);
-  background: var(--fy-chrome-bg, #f0f2f5);
-  border-top: 1px solid var(--fy-chrome-border, #d5d9de);
+  background: var(--fy-chrome-bg);
+  border-top: 1px solid var(--fy-chrome-border);
   user-select: none;
 }
 
@@ -175,9 +175,9 @@ const transferText = computed(() => {
   align-self: center;
 }
 
-/* 等宽小字（IP/编码等字段） */
+/* 等宽小字（IP/编码等字段）：--fy-mono 真等宽，纵向可对齐 */
 .status-bar__mono {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
   font-size: 14px;
 }
 

@@ -126,17 +126,28 @@
     <!-- 重命名对话框（已保存查询） -->
     <v-dialog v-model="renameDialog" max-width="380">
       <v-card>
-        <v-card-title class="text-subtitle-1">重命名查询</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="renameName"
-            label="查询名称"
-            density="compact"
-            variant="outlined"
-            autofocus
-            counter="100"
-            @keyup.enter="confirmRename"
+        <v-card-title class="d-flex align-center text-subtitle-1">重命名查询
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="renameDialog = false"
           />
+        </v-card-title>
+        <v-card-text>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">查询名称</span>
+            <v-text-field
+              v-model="renameName"
+              density="compact"
+              variant="outlined"
+              autofocus
+              counter="100"
+              @keyup.enter="confirmRename"
+            />
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />

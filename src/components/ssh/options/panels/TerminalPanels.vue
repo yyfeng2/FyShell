@@ -45,31 +45,46 @@
     <!-- 新增/编辑对话框 -->
     <v-dialog :model-value="formVisible" width="420">
       <v-card>
-        <v-card-title class="text-subtitle-1">{{ editingId ? '编辑键位映射' : '新增键位映射' }}</v-card-title>
+        <v-card-title class="d-flex align-center text-subtitle-1">{{ editingId ? '编辑键位映射' : '新增键位映射' }}
+          <v-spacer />
+          <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="formVisible = false"
+          />
+        </v-card-title>
         <v-card-text>
-          <v-text-field
-            v-model="formCombo"
-            label="键位组合"
-            density="compact"
-            placeholder="例如 ctrl+shift+x"
-            hint="格式：修饰键用 + 连接（ctrl/alt/shift/meta）"
-            persistent-hint
-            class="mb-3"
-          />
-          <v-select
-            v-model="formActionType"
-            :items="ACTION_TYPES"
-            item-title="title"
-            item-value="value"
-            label="动作类型"
-            density="compact"
-            class="mb-3"
-          />
-          <v-text-field
-            v-model="formPayload"
-            :label="formActionType === 'send_string' ? '发送的字符串' : '菜单命令 action 名'"
-            density="compact"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">键位组合</span>
+            <v-text-field
+              v-model="formCombo"
+              density="compact"
+              placeholder="例如 ctrl+shift+x"
+              hint="格式：修饰键用 + 连接（ctrl/alt/shift/meta）"
+              persistent-hint
+              class="mb-3"
+            />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">动作类型</span>
+            <v-select
+              v-model="formActionType"
+              :items="ACTION_TYPES"
+              item-title="title"
+              item-value="value"
+              density="compact"
+              class="mb-3"
+            />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">{{ formActionType === 'send_string' ? '发送的字符串' : '菜单命令 action 名' }}</span>
+            <v-text-field
+              v-model="formPayload"
+              density="compact"
+            />
+          </div>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -83,13 +98,15 @@
   <!-- VT 模式：终端类型 -->
   <template v-else-if="page === 'vt-mode'">
     <div class="settings-dialog__section-title">VT 模式</div>
-    <v-select
-      :model-value="opts.vtTermType"
-      :items="TERM_TYPES"
-      label="终端类型（TERM）"
-      class="settings-dialog__field"
-      @update:model-value="(v: unknown) => opts.setVtTermType(String(v))"
-    />
+    <div class="fy-field-row">
+      <span class="fy-field-row__label">终端类型（TERM）</span>
+      <v-select
+        :model-value="opts.vtTermType"
+        :items="TERM_TYPES"
+        class="settings-dialog__field"
+        @update:model-value="(v: unknown) => opts.setVtTermType(String(v))"
+      />
+    </div>
     <div class="settings-dialog__hint">
       连接时请求 PTY 的终端类型（服务器据此调整转义序列行为）；对新连接生效。
     </div>
@@ -202,7 +219,7 @@ async function removeMapping(id: string): Promise<void> {
 .mapping-combo {
   display: inline-block;
   padding: 1px 8px;
-  border: 1px solid rgb(var(--v-theme-on-surface) / 0.2);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.15);
   border-radius: 4px;
   font-size: 14px;
   margin-right: 8px;

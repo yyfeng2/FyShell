@@ -8,6 +8,14 @@
       <v-card-title class="d-flex align-center">
         <v-icon icon="mdi-cog-outline" size="small" class="mr-2" />
         设置
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="emit('update:modelValue', false)"
+      />
       </v-card-title>
       <v-divider />
       <div class="settings-dialog__body">
@@ -31,16 +39,18 @@
           <!-- 外观 -->
           <template v-if="section === 'appearance'">
             <div class="settings-dialog__section-title">外观</div>
-            <v-select
-              :model-value="settings.themeMode"
-              :items="THEME_MODE_ITEMS"
-              item-title="title"
-              item-value="value"
-              label="主题模式"
-              density="compact"
-              class="settings-dialog__field"
-              @update:model-value="(v: unknown) => settings.setThemeMode(v as ThemeMode)"
-            />
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">主题模式</span>
+              <v-select
+                :model-value="settings.themeMode"
+                :items="THEME_MODE_ITEMS"
+                item-title="title"
+                item-value="value"
+                density="compact"
+                class="settings-dialog__field"
+                @update:model-value="(v: unknown) => settings.setThemeMode(v as ThemeMode)"
+              />
+            </div>
             <div class="settings-dialog__hint">
               「跟随系统」监听系统深浅色偏好并实时切换；手动选择浅色/深色后固定主题。
             </div>
@@ -49,34 +59,40 @@
           <!-- 终端 -->
           <template v-else-if="section === 'terminal'">
             <div class="settings-dialog__section-title">终端</div>
-            <v-text-field
-              :model-value="settings.terminalFontSize"
-              label="默认字体大小（px）"
-              type="number"
-              min="6"
-              max="72"
-              density="compact"
-              class="settings-dialog__field"
-              @change="onFontSizeChange"
-            />
-            <v-text-field
-              :model-value="settings.terminalFontFamily"
-              label="字体家族"
-              density="compact"
-              class="settings-dialog__field"
-              placeholder="&quot;Cascadia Mono&quot;, Consolas, monospace"
-              @change="onFontFamilyChange"
-            />
-            <v-text-field
-              :model-value="settings.terminalScrollback"
-              label="滚动缓冲行数"
-              type="number"
-              min="100"
-              max="1000000"
-              density="compact"
-              class="settings-dialog__field"
-              @change="onScrollbackChange"
-            />
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">默认字体大小（px）</span>
+              <v-text-field
+                :model-value="settings.terminalFontSize"
+                type="number"
+                min="6"
+                max="72"
+                density="compact"
+                class="settings-dialog__field"
+                @change="onFontSizeChange"
+              />
+            </div>
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">字体家族</span>
+              <v-text-field
+                :model-value="settings.terminalFontFamily"
+                density="compact"
+                class="settings-dialog__field"
+                placeholder="&quot;Cascadia Mono&quot;, Consolas, monospace"
+                @change="onFontFamilyChange"
+              />
+            </div>
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">滚动缓冲行数</span>
+              <v-text-field
+                :model-value="settings.terminalScrollback"
+                type="number"
+                min="100"
+                max="1000000"
+                density="compact"
+                class="settings-dialog__field"
+                @change="onScrollbackChange"
+              />
+            </div>
             <v-switch
               :model-value="settings.terminalCursorBlink"
               label="光标闪烁"
@@ -110,26 +126,30 @@
             <!-- 鼠标 -->
             <div class="key-mouse__group-title">鼠标</div>
             <div class="key-mouse__fields">
-              <v-select
-                :model-value="settings.mouseMiddleButton"
-                :items="MOUSE_BUTTON_ITEMS"
-                item-title="title"
-                item-value="value"
-                label="中间按钮"
-                density="compact"
-                class="settings-dialog__field"
-                @update:model-value="(v: unknown) => settings.setMouseMiddleButton(v as MouseButtonAction)"
-              />
-              <v-select
-                :model-value="settings.mouseRightButton"
-                :items="MOUSE_BUTTON_ITEMS"
-                item-title="title"
-                item-value="value"
-                label="向右按钮"
-                density="compact"
-                class="settings-dialog__field"
-                @update:model-value="(v: unknown) => settings.setMouseRightButton(v as MouseButtonAction)"
-              />
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">中间按钮</span>
+                <v-select
+                  :model-value="settings.mouseMiddleButton"
+                  :items="MOUSE_BUTTON_ITEMS"
+                  item-title="title"
+                  item-value="value"
+                  density="compact"
+                  class="settings-dialog__field"
+                  @update:model-value="(v: unknown) => settings.setMouseMiddleButton(v as MouseButtonAction)"
+                />
+              </div>
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">向右按钮</span>
+                <v-select
+                  :model-value="settings.mouseRightButton"
+                  :items="MOUSE_BUTTON_ITEMS"
+                  item-title="title"
+                  item-value="value"
+                  density="compact"
+                  class="settings-dialog__field"
+                  @update:model-value="(v: unknown) => settings.setMouseRightButton(v as MouseButtonAction)"
+                />
+              </div>
               <v-switch
                 :model-value="settings.mouseCtrlClickMoveCursor"
                 label="用(Ctrl +鼠标左单击)移动终端光标"
@@ -147,14 +167,16 @@
                 @update:model-value="(v: unknown) => settings.setMouseUrlHyperlink(!!v)"
               />
               <template v-if="settings.mouseUrlHyperlink">
-                <v-text-field
-                  :model-value="settings.mouseUrlPrefixes"
-                  label="URL prefix"
-                  density="compact"
-                  hint="以 | 分隔的 URL 前缀"
-                  class="settings-dialog__field key-mouse__indent"
-                  @change="onUrlPrefixesChange"
-                />
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">URL prefix</span>
+                  <v-text-field
+                    :model-value="settings.mouseUrlPrefixes"
+                    density="compact"
+                    hint="以 | 分隔的 URL 前缀"
+                    class="settings-dialog__field key-mouse__indent"
+                    @change="onUrlPrefixesChange"
+                  />
+                </div>
                 <v-switch
                   :model-value="settings.mouseCtrlClickOpenHyperlink"
                   label="[Ctrl +单击]以打开超链接"
@@ -171,14 +193,16 @@
             <div class="key-mouse__hint-line">双击指定选择时使用的分隔符。</div>
             <div class="key-mouse__fields">
               <div class="key-mouse__delimiter-row">
-                <v-text-field
-                  :model-value="settings.selectionWordSeparators"
-                  label="分隔符"
-                  density="compact"
-                  hide-details
-                  class="flex-grow-1"
-                  @change="onWordSeparatorsChange"
-                />
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">分隔符</span>
+                  <v-text-field
+                    :model-value="settings.selectionWordSeparators"
+                    density="compact"
+                    hide-details
+                    class="flex-grow-1"
+                    @change="onWordSeparatorsChange"
+                  />
+                </div>
                 <v-btn size="small" variant="tonal" @click="resetWordSeparators">重置</v-btn>
               </div>
               <v-switch
@@ -240,14 +264,16 @@
             <div class="settings-dialog__section-title">SFTP</div>
             <div class="settings-dialog__row">
               <div class="settings-dialog__field-row">
-                <v-text-field
-                  :model-value="settings.sftpDownloadDir"
-                  label="默认下载目录"
-                  density="compact"
-                  placeholder="留空使用系统下载目录"
-                  hide-details
-                  @change="onDownloadDirChange"
-                />
+                <div class="fy-field-row">
+                  <span class="fy-field-row__label">默认下载目录</span>
+                  <v-text-field
+                    :model-value="settings.sftpDownloadDir"
+                    density="compact"
+                    placeholder="留空使用系统下载目录"
+                    hide-details
+                    @change="onDownloadDirChange"
+                  />
+                </div>
                 <v-btn
                   size="small"
                   variant="tonal"
@@ -537,7 +563,7 @@ onMounted(async () => {
   flex: 0 0 160px;
   gap: 2px;
   padding: 10px 6px;
-  background: var(--fy-chrome-bg, #f0f2f5);
+  background: var(--fy-chrome-bg);
   overflow-y: auto;
 }
 
@@ -557,7 +583,13 @@ onMounted(async () => {
 }
 
 .settings-dialog__nav-item:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.08);
+  background: var(--fy-hover-bg);
+}
+
+/* 键盘焦点可见态：与 ToolBar 快速连接同规格（outline 1px primary），压掉浏览器默认矩形框 */
+.settings-dialog__nav-item:focus-visible {
+  outline: 1px solid var(--fy-focus-color);
+  outline-offset: -1px;
 }
 
 .settings-dialog__nav-item--active {
@@ -603,7 +635,7 @@ onMounted(async () => {
 }
 
 .settings-dialog__row + .settings-dialog__row {
-  border-top: 1px solid var(--fy-chrome-border, #d5d9de);
+  border-top: 1px solid var(--fy-chrome-border);
 }
 
 .settings-dialog__row-title {

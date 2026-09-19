@@ -40,19 +40,21 @@
       </v-btn>
       <v-divider vertical inset class="mx-1" />
       <!-- 数据库级管理（仿 Navicat）：切换下拉 + 新建/删除库 + 复制 Host -->
-      <v-select
-        :model-value="currentDb"
-        :items="databases"
-        label="数据库"
-        density="compact"
-        variant="outlined"
-        single-line
-        hide-details
-        :loading="databasesLoading"
-        :disabled="!store.isConnected"
-        class="mysql-ws__db-select"
-        @update:model-value="switchDb"
-      />
+      <div class="fy-field-row">
+        <span class="fy-field-row__label">数据库</span>
+        <v-select
+          :model-value="currentDb"
+          :items="databases"
+          density="compact"
+          variant="outlined"
+          single-line
+          hide-details
+          :loading="databasesLoading"
+          :disabled="!store.isConnected"
+          class="mysql-ws__db-select"
+          @update:model-value="switchDb"
+        />
+      </div>
       <v-btn
         size="small"
         variant="text"
@@ -232,16 +234,18 @@
           </v-btn-toggle>
         </div>
         <div class="d-flex align-center px-2 py-1">
-          <v-text-field
-            v-model="objectFilter"
-            label="筛选对象"
-            density="compact"
-            single-line
-            hide-details
-            clearable
-            prepend-inner-icon="mdi-magnify"
-            class="mr-1"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">筛选对象</span>
+            <v-text-field
+              v-model="objectFilter"
+              density="compact"
+              single-line
+              hide-details
+              clearable
+              prepend-inner-icon="mdi-magnify"
+              class="mr-1"
+            />
+          </div>
           <v-btn
             icon="mdi-refresh"
             size="x-small"
@@ -336,16 +340,18 @@
     <div v-else-if="activeTab === 'user'" class="mysql-ws__body">
       <div class="mysql-ws__sidebar" :style="{ width: sidebarWidth + 'px', flexBasis: sidebarWidth + 'px' }">
         <div class="d-flex align-center px-2 py-1">
-          <v-text-field
-            v-model="userFilter"
-            label="筛选用户"
-            density="compact"
-            single-line
-            hide-details
-            clearable
-            prepend-inner-icon="mdi-magnify"
-            class="mr-1"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">筛选用户</span>
+            <v-text-field
+              v-model="userFilter"
+              density="compact"
+              single-line
+              hide-details
+              clearable
+              prepend-inner-icon="mdi-magnify"
+              class="mr-1"
+            />
+          </div>
           <v-btn
             icon="mdi-refresh"
             size="x-small"
@@ -513,25 +519,29 @@
         </v-card-title>
         <v-divider />
         <v-card-text>
-          <v-text-field
-            v-model="dialogName"
-            :label="dialogMode === 'create' ? '对象名称' : '对象名称（编辑模式不可改名）'"
-            density="compact"
-            variant="outlined"
-            :readonly="dialogMode === 'edit'"
-            class="mb-2"
-          />
-          <v-textarea
-            v-model="dialogSql"
-            label="CREATE 语句"
-            density="compact"
-            variant="outlined"
-            rows="10"
-            auto-grow
-            hide-details
-            class="mysql-ws__ddl-input"
-            @input="dialogSqlDirty = true"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">对象名称</span>
+            <v-text-field
+              v-model="dialogName"
+              density="compact"
+              variant="outlined"
+              :readonly="dialogMode === 'edit'"
+              class="mb-2"
+            />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">CREATE 语句</span>
+            <v-textarea
+              v-model="dialogSql"
+              density="compact"
+              variant="outlined"
+              rows="10"
+              auto-grow
+              hide-details
+              class="mysql-ws__ddl-input"
+              @input="dialogSqlDirty = true"
+            />
+          </div>
           <v-alert type="warning" variant="tonal" density="compact" class="mt-2">
             保存时后端会先 DROP 旧对象再执行新 CREATE，请确认语句无误。
           </v-alert>
@@ -556,15 +566,23 @@
         </v-card-title>
         <v-divider />
         <v-card-text>
-          <v-text-field v-model="newUser.user" label="用户名" density="compact" variant="outlined" class="mb-2" />
-          <v-text-field v-model="newUser.host" label="主机（host）" density="compact" variant="outlined" class="mb-2" />
-          <v-text-field
-            v-model="newUser.password"
-            label="密码（留空 = 无密码）"
-            density="compact"
-            variant="outlined"
-            type="password"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">用户名</span>
+            <v-text-field v-model="newUser.user" density="compact" variant="outlined" class="mb-2" />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">主机（host）</span>
+            <v-text-field v-model="newUser.host" density="compact" variant="outlined" class="mb-2" />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">密码（留空 = 无密码）</span>
+            <v-text-field
+              v-model="newUser.password"
+              density="compact"
+              variant="outlined"
+              type="password"
+            />
+          </div>
         </v-card-text>
         <v-divider />
         <v-card-actions>
@@ -586,14 +604,16 @@
         </v-card-title>
         <v-divider />
         <v-card-text>
-          <v-text-field
-            v-model="dbCreateName"
-            label="数据库名"
-            density="compact"
-            variant="outlined"
-            autofocus
-            @keyup.enter="createDb"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">数据库名</span>
+            <v-text-field
+              v-model="dbCreateName"
+              density="compact"
+              variant="outlined"
+              autofocus
+              @keyup.enter="createDb"
+            />
+          </div>
         </v-card-text>
         <v-divider />
         <v-card-actions>
@@ -615,24 +635,28 @@
         </v-card-title>
         <v-divider />
         <v-card-text>
-          <v-select
-            v-model="tableOpTable"
-            :items="tableNames"
-            label="选择表"
-            density="compact"
-            variant="outlined"
-            single-line
-            hide-details
-            class="mb-2"
-          />
-          <v-text-field
-            v-if="tableOpMode === 'rename'"
-            v-model="tableOpNewName"
-            label="新表名"
-            density="compact"
-            variant="outlined"
-            class="mb-2"
-          />
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">选择表</span>
+            <v-select
+              v-model="tableOpTable"
+              :items="tableNames"
+              density="compact"
+              variant="outlined"
+              single-line
+              hide-details
+              class="mb-2"
+            />
+          </div>
+          <div class="fy-field-row">
+            <span class="fy-field-row__label">新表名</span>
+            <v-text-field
+              v-if="tableOpMode === 'rename'"
+              v-model="tableOpNewName"
+              density="compact"
+              variant="outlined"
+              class="mb-2"
+            />
+          </div>
           <v-alert
             v-if="tableOpMode === 'truncate'"
             type="warning"
@@ -1583,7 +1607,7 @@ onMounted(() => {
 }
 
 .mysql-ws__tab {
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 /* 当前选中项高亮：蓝色 tonal 背景（仿 Navicat 选中 tab） */
@@ -1682,7 +1706,7 @@ onMounted(() => {
   word-break: break-all;
   white-space: pre-wrap;
   padding: 2px 0;
-  border-bottom: 1px dashed rgba(var(--v-theme-on-surface), 0.08);
+  border-bottom: 1px dashed rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .mysql-ws__ddl-hint {
@@ -1783,7 +1807,7 @@ onMounted(() => {
   width: 100%;
   max-height: 280px;
   overflow-y: auto;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 4px;
 }
 </style>

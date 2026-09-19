@@ -94,18 +94,20 @@
     <!-- 已连接：工作台主区（工具条 + Keys 面板 + 底部命令执行条） -->
     <template v-else>
       <div class="redis-ws__toolbar">
-        <v-select
-          :model-value="store.db"
-          :items="dbItems"
-          label="数据库"
-          density="compact"
-          variant="outlined"
-          single-line
-          hide-details
-          prepend-inner-icon="mdi-database"
-          class="redis-ws__db-select mr-2"
-          @update:model-value="onSelectDb"
-        />
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">数据库</span>
+          <v-select
+            :model-value="store.db"
+            :items="dbItems"
+            density="compact"
+            variant="outlined"
+            single-line
+            hide-details
+            prepend-inner-icon="mdi-database"
+            class="redis-ws__db-select mr-2"
+            @update:model-value="onSelectDb"
+          />
+        </div>
         <v-btn
           size="small"
           variant="text"
@@ -318,7 +320,7 @@ watch(
   width: 100%;
   max-height: 280px;
   overflow-y: auto;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 4px;
 }
 </style>

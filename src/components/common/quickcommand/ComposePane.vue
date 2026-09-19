@@ -53,21 +53,23 @@
           <v-radio value="pick" label="指定会话" />
         </v-radio-group>
 
-        <v-select
-          v-if="target === 'pick'"
-          v-model="pickedIds"
-          :items="connectedSessions"
-          item-title="name"
-          item-value="id"
-          label="选择目标会话（可多选）"
-          density="compact"
-          variant="outlined"
-          hide-details
-          multiple
-          chips
-          closable-chips
-          class="compose-pane__pick"
-        />
+        <div class="fy-field-row">
+          <span class="fy-field-row__label">选择目标会话（可多选）</span>
+          <v-select
+            v-if="target === 'pick'"
+            v-model="pickedIds"
+            :items="connectedSessions"
+            item-title="name"
+            item-value="id"
+            density="compact"
+            variant="outlined"
+            hide-details
+            multiple
+            chips
+            closable-chips
+            class="compose-pane__pick"
+          />
+        </div>
 
         <div class="compose-pane__actions">
           <span v-if="targetHint" class="compose-pane__hint">{{ targetHint }}</span>
@@ -262,8 +264,8 @@ async function send(): Promise<void> {
   width: 100%;
   height: 100%;
   resize: none;
-  border: 1px solid rgba(var(--v-theme-on-surface), 0.24);
-  border-radius: 6px;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.15);
+  border-radius: 4px;
   background: rgba(var(--v-theme-surface), 0.4);
   color: rgb(var(--v-theme-on-surface));
   padding: 8px 10px;

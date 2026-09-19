@@ -200,27 +200,28 @@ export const useRedisStore = defineStore('redis', {
     },
 
     /**
-     * 持久化已保存连接到 settings 表（失败静默：不阻塞 UI，下次变更会重试覆盖）。
-     *
-     * Vault 感知：已设主密码时先加密再落盘；未解锁（正常路径不会发生，保存入口已被
-     * 拦截）则以 toast 提示并跳过本次保存，防止覆盖成明文造成凭据裸奔。
+     * 持久化已保存连接到 settings 表。返回是否成功落盘：
+     * - true：已写入，或主密码未解锁被 toast 拦截（预期跳过本次）
+     * - false：加密/落盘异常（内存列表已生效但未持久化，下次变更会重试覆盖）
      */
-    async persistSavedConnections(): Promise<void> {
+    async persistSavedConnections(): Promise<boolean> {
       try {
         const status = await vaultStatus()
         let raw: string
         if (status.has_master_password) {
           if (!status.unlocked) {
             useUiStore().toast('已存连接受主密码保护，请先解锁后再保存', 'warning')
-            return
+            return true
           }
           raw = await vaultEncrypt(JSON.stringify(this.savedConnections))
         } else {
           raw = JSON.stringify(this.savedConnections)
         }
         await settingsSet(SAVED_CONN_KEY, raw)
+        return true
       } catch {
-        // 加密/落盘失败不抛出：下次变更会重试覆盖
+        // 加密/落盘失败不抛出：返回 false 由调用方决定如何提示
+        return false
       }
     },
 
@@ -258,11 +259,14 @@ export const useRedisStore = defineStore('redis', {
       return id
     },
 
-    /** 删除已保存连接（仅持久化列表，不影响后端连接）；删除的是当前连接时复位 activeSavedId */
-    removeConnection(id: string): void {
+    /**
+     * 删除已保存连接（持久化列表）；删除的是当前连接时复位 activeSavedId。
+     * 返回是否成功落盘：false 时内存已同步删除但未持久化（重启后可能复活），供调用方提示。
+     */
+    async removeConnection(id: string): Promise<boolean> {
       this.savedConnections = this.savedConnections.filter((c) => c.id !== id)
       if (this.activeSavedId === id) this.activeSavedId = null
-      this.persistSavedConnections()
+      return this.persistSavedConnections()
     },
 
     /**

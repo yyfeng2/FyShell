@@ -19,12 +19,15 @@ import { useKeyMappingStore } from '@/stores/keyMapping'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useUiStore } from '@/stores/ui'
 
+/** 终端背景色：theme.css --fy-terminal-bg 同值（单一色彩来源，改动需两处同步） */
+export const TERMINAL_BG = '#1e1e1e'
+
 /** 深色主题配色（终端背景/前景/光标 + 完整 16 色 ANSI 调色板） */
 export const TERMINAL_DARK_THEME = {
-  background: '#1e1e1e',
+  background: TERMINAL_BG,
   foreground: '#d4d4d4',
   cursor: '#528bff',
-  cursorAccent: '#1e1e1e',
+  cursorAccent: TERMINAL_BG,
   selectionBackground: '#3a4b5c',
   black: '#000000',
   red: '#cd313c',

@@ -89,6 +89,12 @@ pub struct SessionConfig {
     /// 串口会话：波特率（默认 115200，由前端给缺省值）
     #[serde(default)]
     pub baud_rate: Option<u32>,
+    /// 备注/说明（可选，serde default：老数据缺该字段时反序列化为 None，向后兼容）
+    #[serde(default)]
+    pub description: Option<String>,
+    /// 最后修改时间（Unix 秒；serde default：老数据缺该字段时反序列化为 0，向后兼容）
+    #[serde(default)]
+    pub updated_at: i64,
 }
 
 /// 会话树文件夹

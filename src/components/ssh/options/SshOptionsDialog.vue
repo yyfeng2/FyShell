@@ -11,6 +11,14 @@
         <span class="ssh-options__subtitle ml-2">
           {{ isSessionMode ? '设置仅对当前会话生效（覆盖全局值）' : '设置对所有 SSH 连接全局生效' }}
         </span>
+      <v-spacer />
+      <v-btn
+        icon="mdi-close"
+        size="x-small"
+        variant="text"
+        title="关闭"
+        @click="emit('update:modelValue', false)"
+      />
       </v-card-title>
       <v-divider />
       <!-- 会话模式生效范围提示 -->
@@ -236,7 +244,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   flex: 0 0 172px;
   gap: 2px;
   padding: 10px 6px;
-  background: var(--fy-chrome-bg, #f0f2f5);
+  background: var(--fy-chrome-bg);
   overflow-y: auto;
 }
 
@@ -332,7 +340,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options .settings-dialog__row + .settings-dialog__row {
-  border-top: 1px solid var(--fy-chrome-border, #d5d9de);
+  border-top: 1px solid var(--fy-chrome-border);
 }
 
 .ssh-options .settings-dialog__row-title {

@@ -94,6 +94,21 @@ impl ConfigStore {
                 if msg.contains("duplicate column name") => {}
             Err(e) => return Err(e.into()),
         }
+        // 备注/说明 + 最后修改时间列（打开会话对话框 7 列展示）
+        match conn.execute("ALTER TABLE sessions ADD COLUMN description TEXT", []) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") => {}
+            Err(e) => return Err(e.into()),
+        }
+        match conn.execute("ALTER TABLE sessions ADD COLUMN updated_at INTEGER", []) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") => {}
+            Err(e) => return Err(e.into()),
+        }
+        // 迁移加列前已存在的行 updated_at 为 NULL，回填 0 保持数据一致
+        conn.execute("UPDATE sessions SET updated_at = 0 WHERE updated_at IS NULL", [])?;
         Ok(())
     }
 
@@ -138,7 +153,7 @@ impl ConfigStore {
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
                         encoding, color, keepalive_interval, profile_id, session_type,
-                        serial_port, baud_rate
+                        serial_port, baud_rate, description, updated_at
                  FROM sessions
                  WHERE name LIKE ?1 OR host LIKE ?1",
             )?;
@@ -179,7 +194,7 @@ impl ConfigStore {
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
                         encoding, color, keepalive_interval, profile_id, session_type,
-                        serial_port, baud_rate
+                        serial_port, baud_rate, description, updated_at
                  FROM sessions ORDER BY name",
             )?;
             let sessions: Vec<SessionConfig> = stmt
@@ -197,22 +212,28 @@ impl ConfigStore {
         let mut stmt = conn.prepare_cached(
             "SELECT id, name, folder_id, host, port, username, auth_type,
                     encoding, color, keepalive_interval, profile_id, session_type,
-                    serial_port, baud_rate
+                    serial_port, baud_rate, description, updated_at
              FROM sessions WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map([id], row_to_session)?;
         Ok(rows.next().transpose()?)
     }
 
-    /// 保存会话（按 id upsert；新会话的 id 由 commands 层生成后传入）
+    /// 保存会话（按 id upsert；新会话的 id 由 commands 层生成后传入）。
+    ///
+    /// `updated_at` 由 Rust 侧每次保存时取当前 Unix 秒覆盖（前端不传，保证修改时间真实）。
     pub fn save_session(&self, config: &SessionConfig) -> Result<(), AppError> {
         let conn = self.lock();
         let auth_json = serde_json::to_string(&config.auth_type)?;
+        let updated_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         conn.execute(
             "INSERT INTO sessions (id, name, folder_id, host, port, username, auth_type,
                                    encoding, color, keepalive_interval, profile_id, session_type,
-                                   serial_port, baud_rate)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+                                   serial_port, baud_rate, description, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
                  folder_id = excluded.folder_id,
@@ -226,7 +247,9 @@ impl ConfigStore {
                  profile_id = excluded.profile_id,
                  session_type = excluded.session_type,
                  serial_port = excluded.serial_port,
-                 baud_rate = excluded.baud_rate",
+                 baud_rate = excluded.baud_rate,
+                 description = excluded.description,
+                 updated_at = excluded.updated_at",
             params![
                 config.id,
                 config.name,
@@ -242,6 +265,8 @@ impl ConfigStore {
                 config.session_type,
                 config.serial_port,
                 config.baud_rate,
+                config.description,
+                updated_at,
             ],
         )?;
         Ok(())
@@ -390,6 +415,9 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionConfig> {
             session_type: row.get("session_type")?,
             serial_port: row.get("serial_port")?,
             baud_rate: row.get("baud_rate")?,
+            description: row.get("description")?,
+            // 迁移加列前已存在的行该列为 NULL，直接读 i64 会报 InvalidColumnType
+            updated_at: row.get::<_, Option<i64>>("updated_at")?.unwrap_or(0),
         })
 }
 
