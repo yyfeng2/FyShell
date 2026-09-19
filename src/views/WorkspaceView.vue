@@ -1563,7 +1563,7 @@ const tabItems = computed<FlexTabItem[]>(() =>
   tabs.value.map((t) => ({
     id: t.id,
     title: t.title,
-    color: terminalStore.sessionFlash[t.connId] ? 'rgb(var(--v-theme-success))' : t.color ?? undefined,
+    color: t.connId && terminalStore.sessionFlash[t.connId] ? 'rgb(var(--v-theme-success))' : t.color ?? undefined,
     closable: true,
   })),
 )

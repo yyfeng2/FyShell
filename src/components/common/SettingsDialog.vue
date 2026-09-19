@@ -586,10 +586,10 @@ onMounted(async () => {
   background: var(--fy-hover-bg);
 }
 
-/* 键盘焦点可见态：与 ToolBar 快速连接同规格（outline 1px primary），压掉浏览器默认矩形框 */
+/* 键盘焦点可见态：2px primary 焦点环（浅灰底上 1px 偏细），压掉浏览器默认矩形框 */
 .settings-dialog__nav-item:focus-visible {
-  outline: 1px solid var(--fy-focus-color);
-  outline-offset: -1px;
+  outline: 2px solid var(--fy-focus-color);
+  outline-offset: -2px;
 }
 
 .settings-dialog__nav-item--active {

@@ -17,7 +17,7 @@
               size="x-small"
               variant="text"
               class="session-form__color-btn"
-              title="标签颜色"
+              title="设置标签颜色"
             >
               <span
                 class="session-form__color-chip"
