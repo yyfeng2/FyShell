@@ -126,11 +126,11 @@ export const useUiStore = defineStore('ui', () => {
   /** 自动隐藏模式：开启后导航悬浮于内容之上，鼠标移开即收起 */
   const navAutoHide = ref(false)
 
-  /** 快速命令栏可见性（查看菜单切换） */
-  const quickBarVisible = ref(true)
+  /** 快速命令栏可见性（查看菜单切换，默认不开启） */
+  const quickBarVisible = ref(false)
 
-  /** 撰写栏可见性（查看菜单切换） */
-  const composeBarVisible = ref(true)
+  /** 撰写栏可见性（查看菜单切换，默认不开启） */
+  const composeBarVisible = ref(false)
 
   // ---------------- 菜单命令分发（终端内键位映射触发） ----------------
 
