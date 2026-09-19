@@ -203,6 +203,24 @@ body {
   --v-field-border-opacity: 0.15;
 }
 
+/* 字段反馈区（details）空态完全收缩：Vuetify 默认 min-height 22px 让带 rules 的字段
+   每行空占 22px（整表松散根因，8 行累计 176px）。
+   有 hint/校验错误时（.v-messages__message 存在）恢复 6px 顶距，文字不贴框底 */
+.v-application .v-input__details,
+.v-overlay-container .v-input__details {
+  min-height: 0;
+  padding-top: 0;
+}
+.v-application .v-input__details:has(.v-messages__message),
+.v-overlay-container .v-input__details:has(.v-messages__message) {
+  padding-top: 6px;
+}
+/* messages 容器自身也保留 14px 最小高——一并压掉（空态 0，有文字时随内容自动撑开） */
+.v-application .v-input__details .v-messages,
+.v-overlay-container .v-input__details .v-messages {
+  min-height: 0;
+}
+
 /* 边框发丝线统一（最细 1 物理像素）：DPR 1.5 下 1px CSS 吸附为 1 物理像素；
    变量定义在 .v-field__outline 元素规则上（元素规则优先于继承），覆盖须直接命中该元素。
    Vuetify 聚焦态 .v-field--variant-outlined.v-field--focused 把宽度加到 2px（3 物理像素），
