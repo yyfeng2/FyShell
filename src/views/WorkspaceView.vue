@@ -1301,6 +1301,61 @@ const tabs = ref<WorkTab[]>([])
 const activeId = ref<string | null>(null)
 const activeTab = computed(() => tabs.value.find((t) => t.id === activeId.value) ?? null)
 
+// ---------------- 地址栏 ----------------
+
+/** 会话节点地址文本：user@host:port（Xshell 会话树风格，无 host 时用显示名兜底） */
+function sessionAddress(n: SessionNode): string {
+  const cfg = n.config
+  if (!cfg?.host) return n.name
+  const user = cfg.username ? `${cfg.username}@` : ''
+  const port = cfg.port ? `:${cfg.port}` : ''
+  return `${user}${cfg.host}${port}`
+}
+
+/** 当前活动标签的地址文本：会话终端显示地址，其他显示标签标题（Xshell 地址栏惯例） */
+const activeAddress = computed(() => {
+  const tab = activeTab.value
+  if (!tab) return ''
+  if (tab.type === 'terminal' && tab.sessionId) {
+    const node = findNode(nodes.value, tab.sessionId)
+    if (node) return sessionAddress(node)
+  }
+  return tab.title
+})
+
+/** 地址栏下拉会话列表：全量持久会话（不受搜索关键词与分区折叠影响） */
+const addressBarSessions = computed<{ id: string; label: string }[]>(() => {
+  const out: { id: string; label: string }[] = []
+  const walk = (list: SessionNode[]): void => {
+    for (const n of list) {
+      if (n.is_folder) walk(n.children ?? [])
+      else out.push({ id: n.id, label: sessionAddress(n) })
+    }
+  }
+  walk(nodes.value)
+  return out
+})
+
+/** 地址栏跳转：转扁平节点形状后复用左树连接路由（同会话 Tab 激活/按类型建连） */
+function gotoSession(id: string): void {
+  const node = findNode(nodes.value, id)
+  if (!node) {
+    ui.toast(`会话「${id}」不存在或已删除`, 'error')
+    return
+  }
+  onNodeClick({
+    id: node.id,
+    name: node.config?.host || node.name,
+    depth: 0,
+    isFolder: false,
+    color: node.config?.color ?? null,
+    isOpen: false,
+    hostLabel: sessionAddress(node),
+    encoding: node.config?.encoding ?? null,
+    isMysql: node.config?.session_type === 'mysql' || node.config?.session_type === 'redis',
+  })
+}
+
 /** 生成 Tab 唯一 ID（Tab ID 与会话 ID 无关） */
 function genTabId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -2022,6 +2077,8 @@ onUnmounted(() => {
     <!-- 顶部菜单栏 + 工具栏 + 快速连接地址栏（参考 Xshell） -->
     <MenuBar @action="onMenuAction" />
     <ToolBar
+      :address="activeAddress"
+      :sessions="addressBarSessions"
       @new-session="openSessionForm"
       @new-folder="showFolderDialog = true"
       @connect="onCreate"
@@ -2031,6 +2088,7 @@ onUnmounted(() => {
       @sftp="openSftpTab"
       @help="openAbout"
       @quick-connect="quickConnect"
+      @goto-session="gotoSession"
     />
 
     <div class="workspace__body">

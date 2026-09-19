@@ -2,8 +2,9 @@
 /**
  * MenuBar —— 桌面风格菜单栏（参考 Xshell）
  *
- * 文件/编辑/查看/工具/选项/窗口/帮助 七个菜单，带加速下划线字母。
- * 菜单项通过 action 事件抛给父级接线，本组件不含业务逻辑。
+ * 文件/编辑/查看/工具/设置/窗口/帮助 七个菜单，带加速下划线字母。
+ * 配置类项（全局/会话设置、主密码、主题、自动隐藏）集中到"设置"菜单，
+ * "工具"只留功能入口。菜单项通过 action 事件抛给父级接线，本组件不含业务逻辑。
  */
 interface MenuItem {
   title: string
@@ -47,7 +48,6 @@ const MENUS: MenuDef[] = [
       { title: '左导航', action: 'toggle-nav' },
       { title: '命令栏', action: 'toggle-quickbar' },
       { title: '撰写栏', action: 'toggle-composebar' },
-      { title: '切换主题', action: 'toggle-theme' },
     ],
   },
   {
@@ -58,20 +58,19 @@ const MENUS: MenuDef[] = [
       { title: 'SFTP 文件传输', action: 'sftp' },
       { title: '快捷命令', action: 'quick-command' },
       { title: 'SSH 隧道', action: 'tunnel' },
-      // 会话工具与全局配置两组语义，分隔线隔开（二轮审查 P2）
-      { title: '会话设置', action: 'session-settings', dividerBefore: true },
       { title: 'MySQL', action: 'mysql' },
       { title: 'Redis', action: 'redis' },
       { title: '会话日志', action: 'session-log', dividerBefore: true },
-      { title: '主密码设置', action: 'master-password' },
     ],
   },
   {
-    title: '选项',
-    accel: 'B',
+    title: '设置',
+    accel: 'S',
     items: [
-      { title: '设置', action: 'settings' },
-      { title: '切换主题', action: 'toggle-theme' },
+      { title: '全局设置', action: 'settings' },
+      { title: '会话设置', action: 'session-settings' },
+      { title: '主密码设置', action: 'master-password', dividerBefore: true },
+      { title: '切换主题', action: 'toggle-theme', dividerBefore: true },
       { title: '左导航自动隐藏', action: 'toggle-nav-autohide' },
     ],
   },
