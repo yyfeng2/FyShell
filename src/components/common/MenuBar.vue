@@ -107,9 +107,10 @@ defineEmits<{ (e: 'action', action: string): void }>()
           <v-divider v-if="item.dividerBefore" />
           <v-list-item :value="item.action" @click="$emit('action', item.action)">
             <v-list-item-title>{{ item.title }}</v-list-item-title>
-            <v-list-item-action v-if="item.shortcut">
-              <span class="menubar__shortcut">{{ item.shortcut }}</span>
-            </v-list-item-action>
+            <!-- 快捷键提示放 append 槽：同行右对齐（v-list-item-action 嵌默认槽会渲染为标题下方块级元素） -->
+            <template #append>
+              <span v-if="item.shortcut" class="menubar__shortcut">{{ item.shortcut }}</span>
+            </template>
           </v-list-item>
         </template>
       </v-list>

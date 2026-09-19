@@ -24,7 +24,7 @@
                 :class="{ 'session-form__color-chip--empty': !color }"
                 :style="{ backgroundColor: color ?? 'transparent' }"
               />
-              {{ color ? '颜色' : '未设置' }}
+              标签颜色
             </v-btn>
             <v-btn v-if="color" variant="text" size="x-small" @click="color = null">清除</v-btn>
           </template>

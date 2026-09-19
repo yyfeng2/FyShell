@@ -429,6 +429,11 @@ body {
   line-height: 1.3;
 }
 
+/* MenuBar 弹出菜单 append spacer 收窄：快捷键右对齐后 Vuetify 默认 spacer 把文字推离右缘 */
+.v-overlay-container .v-menu .menubar__list .v-list-item__append > .v-list-item__spacer {
+  width: 8px;
+}
+
 /* ---------- 终端区 ---------- */
 
 /* xterm 终端容器：占满父级、无内边距，避免终端区周围出现白边 */
