@@ -743,10 +743,11 @@ async function submit(): Promise<void> {
   text-transform: none;
 }
 
-/* 管理按钮：底边对齐 hint 基线（persistent-hint 占据底部一行），不用顶部魔法数字 */
+/* 管理按钮：与认证配置文件下拉框顶对齐（固定 26px 高 ≈ 27px 字段框；
+   Vuetify small+compact 高度计算 24-8=16px 太矮，且 flex-end 对齐 hint 错位） */
 .profile-manage-btn {
-  align-self: flex-end;
-  margin-bottom: 6px;
+  align-self: flex-start;
+  height: 26px;
   text-transform: none;
 }
 
