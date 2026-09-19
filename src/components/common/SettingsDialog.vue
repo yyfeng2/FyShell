@@ -556,13 +556,18 @@ onMounted(async () => {
   height: 380px;
 }
 
+/* 标题行收紧（Vuetify v-card-title 默认 16px 内边距） */
+.v-card-title {
+  padding: 10px 16px;
+}
+
 /* 左侧分类导航 */
 .settings-dialog__nav {
   display: flex;
   flex-direction: column;
-  flex: 0 0 160px;
+  flex: 0 0 148px;
   gap: 2px;
-  padding: 10px 6px;
+  padding: 8px 6px;
   background: var(--fy-chrome-bg);
   overflow-y: auto;
 }
@@ -570,7 +575,7 @@ onMounted(async () => {
 .settings-dialog__nav-item {
   display: flex;
   align-items: center;
-  padding: 6px 10px;
+  padding: 4px 10px;
   border-radius: 4px;
   border: none;
   background: transparent;
@@ -605,14 +610,14 @@ onMounted(async () => {
 .settings-dialog__content {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 14px 18px;
+  padding: 12px 16px;
   overflow-y: auto;
 }
 
 .settings-dialog__section-title {
   font-size: 14px;
   font-weight: 400;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .settings-dialog__field {
@@ -620,8 +625,8 @@ onMounted(async () => {
 }
 
 .settings-dialog__hint {
-  margin-top: 10px;
-  font-size: 14px;
+  margin-top: 8px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
 }
 
@@ -631,7 +636,7 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 0;
+  padding: 6px 0;
 }
 
 .settings-dialog__row + .settings-dialog__row {
@@ -644,7 +649,7 @@ onMounted(async () => {
 }
 
 .settings-dialog__row-desc {
-  font-size: 14px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   margin-top: 2px;
 }

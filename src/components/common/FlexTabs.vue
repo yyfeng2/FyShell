@@ -6,7 +6,7 @@
  * - 新增（加号）/关闭按钮、中键关闭、点击切换
  * - HTML5 拖拽排序（拖动后 emit reorder，携带新 id 顺序）
  * - Tab 着色支持：tab.color（hex）作为激活态指示色（参考 Xshell 按连接着色）
- * - 右键菜单：复制名称 / 固定 / 重命名 / 新窗口打开 / 关闭组（固定标签受关闭保护）
+ * - 右键菜单：复制名称 / 复制会话 / 固定 / 重命名 / 新窗口打开 / 关闭组（固定标签受关闭保护）
  *
  * 布局约定：紧凑行高，深色主题友好，可被任意视图复用。
  */
@@ -23,6 +23,8 @@ export interface FlexTabItem {
   color?: string | null
   /** 单个 Tab 是否可关闭（缺省回落到全局 showClose） */
   closable?: boolean
+  /** 是否为会话终端 Tab（可「复制会话」；缺省不限制，由父级 handler 兜底判定） */
+  duplicatable?: boolean
 }
 
 const props = withDefaults(
@@ -54,6 +56,8 @@ const emit = defineEmits<{
   (e: 'rename', id: string, title: string): void
   /** 右键菜单打开 SSH 会话设置，携带目标 tab id */
   (e: 'session-settings', id: string): void
+  /** 右键菜单复制会话：同一会话再开一个 Tab（独立连接），携带目标 tab id */
+  (e: 'duplicate-session', id: string): void
 }>()
 
 /** 全局 UI store：右键菜单操作反馈走全局 toast */
@@ -229,6 +233,13 @@ function openSessionSettings(): void {
   const id = menu.value.tabId
   if (!id) return
   emit('session-settings', id)
+}
+
+/** 复制会话：同一会话再开一个 Tab（emit 给父级走 openTerminal 连接路由） */
+function duplicateSession(): void {
+  const id = menu.value.tabId
+  if (!id) return
+  emit('duplicate-session', id)
 }
 
 // 菜单禁用态：按当前 tabs 快照计算各关闭项是否可执行
@@ -431,6 +442,13 @@ function onDragEnd(e: DragEvent): void {
       <v-list density="compact" min-width="180">
         <v-list-item prepend-icon="mdi-content-copy" @click="copyTabName">
           <v-list-item-title>复制名称</v-list-item-title>
+        </v-list-item>
+        <v-list-item
+          prepend-icon="mdi-content-duplicate"
+          :disabled="menuTab?.duplicatable === false"
+          @click="duplicateSession"
+        >
+          <v-list-item-title>复制会话</v-list-item-title>
         </v-list-item>
         <v-list-item
           :prepend-icon="isFixed(menu.tabId) ? 'mdi-pin-off' : 'mdi-pin'"

@@ -1672,6 +1672,7 @@ const tabItems = computed<FlexTabItem[]>(() =>
     title: t.title,
     color: t.connId && terminalStore.sessionFlash[t.connId] ? 'rgb(var(--v-theme-success))' : t.color ?? undefined,
     closable: true,
+    duplicatable: t.type === 'terminal' && !!t.sessionId && !t.sessionId.startsWith('local-'),
   })),
 )
 
@@ -1864,6 +1865,20 @@ function openSessionSettingsFor(tab: { sessionId?: string; title: string } | nul
 /** 标签右键菜单"会话设置"：按目标 Tab 解析会话并打开 */
 function onSessionSettings(tabId: string): void {
   openSessionSettingsFor(tabs.value.find((t) => t.id === tabId) ?? null)
+}
+
+/** 标签右键菜单"复制会话"：同一会话再开一个 Tab（每标签一条独立连接，Xshell 多标签惯例） */
+function onDuplicateSession(tabId: string): void {
+  const tab = tabs.value.find((t) => t.id === tabId)
+  if (!tab) return
+  if (tab.type === 'terminal' && tab.sessionId) {
+    const node = findNode(nodes.value, tab.sessionId)
+    if (node) {
+      openTerminal(node)
+      return
+    }
+  }
+  ui.toast('该标签不支持复制会话', 'info')
 }
 
 /** 活动终端 Tab 的连接路由键（监控/快速命令/日志均按连接键路由；无终端 Tab 时为 null） */
@@ -2368,6 +2383,7 @@ onUnmounted(() => {
           @drag-out="onDragOut"
           @rename="onRenameTab"
           @session-settings="onSessionSettings"
+          @duplicate-session="onDuplicateSession"
         />
         <div class="workspace__content">
           <!-- v-show 保持终端 Tab 存活，切换不销毁会话状态 -->

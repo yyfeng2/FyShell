@@ -8,9 +8,6 @@
       <v-card-title class="d-flex align-center">
         <v-icon icon="mdi-tune-vertical" size="small" class="mr-2" />
         {{ isSessionMode ? `会话选项 - ${sessionName}` : 'SSH 选项' }}
-        <span class="ssh-options__subtitle ml-2">
-          {{ isSessionMode ? '设置仅对当前会话生效（覆盖全局值）' : '设置对所有 SSH 连接全局生效' }}
-        </span>
       <v-spacer />
       <v-btn
         icon="mdi-close"
@@ -21,16 +18,19 @@
       />
       </v-card-title>
       <v-divider />
-      <!-- 会话模式生效范围提示 -->
-      <div v-if="isSessionMode" class="ssh-options__session-hint">
+      <!-- 生效范围提示（全局/会话模式共用一行，替代原标题行内联副标题） -->
+      <div class="ssh-options__session-hint">
         <v-icon icon="mdi-information-outline" size="13" class="mr-1" />
         <template v-if="byteType">
           {{ byteType === 'serial' ? '串口' : byteType === 'rlogin' ? 'RLOGIN' : 'Telnet' }} 会话「{{ sessionName }}」：
           连接面板编辑会话字段（保存后刷新会话树）；终端 / 外观 / 高级按会话覆盖全局值。
         </template>
-        <template v-else>
+        <template v-else-if="isSessionMode">
           当前编辑会话「{{ sessionName }}」：响铃 / 关键词高亮 / 登录提示符自动响应按会话覆盖全局值；
           连接级选项（认证 / 压缩 / 代理等）当前仅全局生效。
+        </template>
+        <template v-else>
+          设置对所有 SSH 连接全局生效。
         </template>
       </div>
       <div class="ssh-options settings-dialog__body">
@@ -241,15 +241,15 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 .ssh-options__nav {
   display: flex;
   flex-direction: column;
-  flex: 0 0 172px;
+  flex: 0 0 170px;
   gap: 2px;
-  padding: 10px 6px;
+  padding: 8px 6px;
   background: var(--fy-chrome-bg);
   overflow-y: auto;
 }
 
 .ssh-options__nav-group {
-  padding: 8px 10px 4px;
+  padding: 6px 10px 3px;
   font-size: 14px;
   font-weight: 400;
   color: rgb(var(--v-theme-on-surface) / 0.85);
@@ -259,7 +259,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 .ssh-options__leaf {
   display: flex;
   align-items: center;
-  padding: 5px 10px 6px 26px;
+  padding: 4px 10px 5px 24px;
   border-radius: 4px;
   border: none;
   background: transparent;
@@ -296,18 +296,12 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   text-align: center;
 }
 
-/* 副标题 */
-.ssh-options__subtitle {
-  font-size: 13px;
-  color: rgb(var(--v-theme-on-surface) / 0.5);
-}
-
-/* 会话模式生效范围提示条 */
+/* 生效范围提示条 */
 .ssh-options__session-hint {
   display: flex;
   align-items: center;
-  padding: 6px 16px;
-  font-size: 14px;
+  padding: 4px 16px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.6);
   background: rgb(var(--v-theme-primary) / 0.06);
 }
@@ -318,7 +312,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 .ssh-options .settings-dialog__section-title {
   font-size: 14px;
   font-weight: 400;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .ssh-options .settings-dialog__field {
@@ -326,8 +320,8 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options .settings-dialog__hint {
-  margin-top: 10px;
-  font-size: 14px;
+  margin-top: 8px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
 }
 
@@ -336,7 +330,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 0;
+  padding: 6px 0;
 }
 
 .ssh-options .settings-dialog__row + .settings-dialog__row {
@@ -349,7 +343,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options .settings-dialog__row-desc {
-  font-size: 14px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
   margin-top: 2px;
 }
@@ -371,7 +365,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 .ssh-options .settings-dialog__content {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 14px 18px;
+  padding: 12px 16px;
   overflow-y: auto;
 }
 </style>
