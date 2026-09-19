@@ -43,117 +43,99 @@
           @click="emit('update:modelValue', false)"
         />
       </v-card-title>
-      <v-divider />
       <v-card-text class="session-form__body">
         <v-form ref="formRef" @submit.prevent="submit">
           <v-row dense>
             <v-col cols="12">
-              <div class="fy-field-row fy-field-row--required">
-                <span class="fy-field-row__label">名称</span>
-                <v-text-field v-model="name" density="compact" :rules="[rules.required]" />
-              </div>
+              <label class="session-field__label">名称<span class="session-field__req"> *</span></label>
+              <v-text-field v-model="name" density="compact" :rules="[rules.required]" />
             </v-col>
             <v-col cols="12">
               <!-- 会话类型：SSH 或数据库（数据库会话连接后进入 MySQL 工作台） -->
-              <div class="fy-field-row">
-                <span class="fy-field-row__label">会话类型</span>
-                <v-select
-                  v-model="sessionKind"
-                  density="compact"
-                  :items="SESSION_KINDS"
-                  item-title="title"
-                  item-value="value"
-                />
-              </div>
+              <label class="session-field__label">会话类型</label>
+              <v-select
+                v-model="sessionKind"
+                density="compact"
+                :items="SESSION_KINDS"
+                item-title="title"
+                item-value="value"
+              />
             </v-col>
-            <v-col v-if="sessionKind !== 'serial'" cols="12" sm="8">
-              <div class="fy-field-row">
-                <span class="fy-field-row__label">主机</span>
-                <v-text-field v-model="host" density="compact" :rules="[rules.required]" />
-              </div>
+            <v-col v-if="sessionKind !== 'serial'" cols="12" sm="6">
+              <label class="session-field__label">主机<span class="session-field__req"> *</span></label>
+              <v-text-field v-model="host" density="compact" :rules="[rules.required]" />
             </v-col>
-            <v-col v-if="sessionKind !== 'serial'" cols="12" sm="4">
-              <div class="fy-field-row">
-                <span class="fy-field-row__label">端口</span>
-                <v-text-field
-                  v-model.number="port"
-                  type="number"
-                  density="compact"
-                  :rules="[rules.required, rules.port]"
-                />
-              </div>
+            <v-col v-if="sessionKind !== 'serial'" cols="12" sm="6">
+              <label class="session-field__label">端口<span class="session-field__req"> *</span></label>
+              <v-text-field
+                v-model.number="port"
+                type="number"
+                density="compact"
+                :rules="[rules.required, rules.port]"
+              />
             </v-col>
             <v-col v-if="sessionKind === 'ssh' || sessionKind === 'mysql' || sessionKind === 'redis'" cols="12" sm="6">
               <!-- Redis 用户名可空（RedisConnection.username 为 string|null），ssh/mysql 仍必填 -->
-              <div class="fy-field-row" :class="{ 'fy-field-row--required': sessionKind !== 'redis' }">
-                <span class="fy-field-row__label">用户名</span>
-                <v-text-field
-                  v-model="username"
-                  density="compact"
-                  placeholder="例如 root"
-                  :rules="sessionKind === 'redis' ? [] : [rules.required]"
-                />
-              </div>
+              <label class="session-field__label">
+                用户名<span v-if="sessionKind !== 'redis'" class="session-field__req"> *</span>
+              </label>
+              <v-text-field
+                v-model="username"
+                density="compact"
+                placeholder="例如 root"
+                :rules="sessionKind === 'redis' ? [] : [rules.required]"
+              />
             </v-col>
             <v-col v-if="sessionKind === 'ssh'" cols="12" sm="6">
-              <div class="fy-field-row">
-                <span class="fy-field-row__label">认证方式</span>
-                <v-select
-                  v-model="authType"
-                  density="compact"
-                  :items="AUTH_OPTIONS"
-                  item-title="title"
-                  item-value="value"
-                  :disabled="profileLocked"
-                />
-              </div>
+              <label class="session-field__label">认证方式</label>
+              <v-select
+                v-model="authType"
+                density="compact"
+                :items="AUTH_OPTIONS"
+                item-title="title"
+                item-value="value"
+                :disabled="profileLocked"
+              />
             </v-col>
 
             <!-- 串口会话：串口下拉 + 波特率（host/port 不适用） -->
-            <v-col v-if="sessionKind === 'serial'" cols="12">
-              <div class="fy-field-row fy-field-row--required">
-                <span class="fy-field-row__label">串口</span>
-                <v-select
-                  v-model="serialPortName"
-                  :items="portItems"
-                  density="compact"
-                  :loading="loadingPorts"
-                  :rules="[rules.required]"
-                />
-              </div>
+            <v-col v-if="sessionKind === 'serial'" cols="12" sm="6">
+              <label class="session-field__label">串口<span class="session-field__req"> *</span></label>
+              <v-select
+                v-model="serialPortName"
+                :items="portItems"
+                density="compact"
+                :loading="loadingPorts"
+                :rules="[rules.required]"
+              />
             </v-col>
-            <v-col v-if="sessionKind === 'serial'" cols="12">
-              <div class="fy-field-row">
-                <span class="fy-field-row__label">波特率</span>
-                <v-select
-                  v-model="serialBaud"
-                  :items="baudRates"
-                  density="compact"
-                  hint="默认 115200"
-                  persistent-hint
-                />
-              </div>
+            <v-col v-if="sessionKind === 'serial'" cols="12" sm="6">
+              <label class="session-field__label">波特率</label>
+              <v-select
+                v-model="serialBaud"
+                :items="baudRates"
+                density="compact"
+              />
+              <div class="session-field__hint">默认 115200</div>
             </v-col>
 
             <v-col v-if="sessionKind === 'ssh'" cols="12">
               <!-- 认证配置文件（P1）：选择后认证方式由配置文件接管，一处改全局生效 -->
-              <div class="d-flex align-start">
-                <div class="fy-field-row mr-2 session-form__profile-row">
-                  <span class="fy-field-row__label">认证配置文件</span>
-                  <v-select
-                    v-model="profileId"
-                    :items="profiles"
-                    item-title="name"
-                    item-value="id"
-                    clearable
-                    hint="选择后认证方式由配置文件接管；留空则手动填写"
-                    persistent-hint
-                  />
-                </div>
-                <v-btn size="small" variant="outlined" class="profile-manage-btn" @click="showProfileForm = true">
+              <label class="session-field__label">认证配置文件</label>
+              <div class="d-flex align-center session-form__profile-line">
+                <v-select
+                  v-model="profileId"
+                  :items="profiles"
+                  item-title="name"
+                  item-value="id"
+                  clearable
+                  class="session-form__profile-row"
+                />
+                <v-btn size="small" variant="outlined" class="session-form__manage-btn" @click="showProfileForm = true">
                   管理
                 </v-btn>
               </div>
+              <div class="session-field__hint">选择后认证方式由配置文件接管；留空则手动填写</div>
             </v-col>
 
             <!-- 密码 / 交互式 -->
@@ -161,54 +143,48 @@
               v-if="sessionKind === 'mysql' || sessionKind === 'redis' || (sessionKind === 'ssh' && (authType === 'password' || authType === 'interactive'))"
               cols="12"
             >
-              <div class="fy-field-row">
-                <span class="fy-field-row__label">密码</span>
-                <v-text-field
-                  v-model="password"
-                  density="compact"
-                  :type="showPassword ? 'text' : 'password'"
-                  :rules="sessionKind === 'redis' ? [] : [rules.required]"
-                  :disabled="profileLocked"
-                  :hint="capsLockOn ? '大写锁定已开启' : ''"
-                  persistent-hint
-                  :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
-                  @click:append-inner="showPassword = !showPassword"
-                  @keydown="checkCapsLock"
-                  @keyup="checkCapsLock"
-                />
-              </div>
+              <label class="session-field__label">
+                密码<span v-if="sessionKind !== 'redis'" class="session-field__req"> *</span>
+              </label>
+              <v-text-field
+                v-model="password"
+                density="compact"
+                :type="showPassword ? 'text' : 'password'"
+                :rules="sessionKind === 'redis' ? [] : [rules.required]"
+                :disabled="profileLocked"
+                :append-inner-icon="showPassword ? 'mdi-eye-off' : 'mdi-eye'"
+                @click:append-inner="showPassword = !showPassword"
+                @keydown="checkCapsLock"
+                @keyup="checkCapsLock"
+              />
+              <div v-if="capsLockOn" class="session-field__caps">大写锁定已开启</div>
             </v-col>
 
             <!-- 私钥 -->
             <template v-if="sessionKind === 'ssh' && authType === 'publicKey'">
               <v-col cols="12">
-                <div class="fy-field-row fy-field-row--required">
-                  <span class="fy-field-row__label">私钥路径</span>
-                  <v-text-field
-                    v-model="privateKeyPath"
-                    density="compact"
-                    placeholder="例如 C:\Users\you\.ssh\id_rsa"
-                    :rules="[rules.required]"
-                    :disabled="profileLocked"
-                  />
-                </div>
+                <label class="session-field__label">私钥路径<span class="session-field__req"> *</span></label>
+                <v-text-field
+                  v-model="privateKeyPath"
+                  density="compact"
+                  placeholder="例如 C:\Users\you\.ssh\id_rsa"
+                  :rules="[rules.required]"
+                  :disabled="profileLocked"
+                />
               </v-col>
               <v-col cols="12">
-                <div class="fy-field-row">
-                  <span class="fy-field-row__label">私钥口令（可选）</span>
-                  <v-text-field
-                    v-model="passphrase"
-                    density="compact"
-                    :type="showPassphrase ? 'text' : 'password'"
-                    :disabled="profileLocked"
-                    :hint="capsLockOn ? '大写锁定已开启' : ''"
-                    persistent-hint
-                    :append-inner-icon="showPassphrase ? 'mdi-eye-off' : 'mdi-eye'"
-                    @click:append-inner="showPassphrase = !showPassphrase"
-                    @keydown="checkCapsLock"
-                    @keyup="checkCapsLock"
-                  />
-                </div>
+                <label class="session-field__label">私钥口令<span class="session-field__opt">（可选）</span></label>
+                <v-text-field
+                  v-model="passphrase"
+                  density="compact"
+                  :type="showPassphrase ? 'text' : 'password'"
+                  :disabled="profileLocked"
+                  :append-inner-icon="showPassphrase ? 'mdi-eye-off' : 'mdi-eye'"
+                  @click:append-inner="showPassphrase = !showPassphrase"
+                  @keydown="checkCapsLock"
+                  @keyup="checkCapsLock"
+                />
+                <div v-if="capsLockOn" class="session-field__caps">大写锁定已开启</div>
               </v-col>
             </template>
 
@@ -221,62 +197,42 @@
 
             <!-- 跳板机 -->
             <v-col v-if="sessionKind === 'ssh' && authType === 'jump'" cols="12">
-              <div class="fy-field-row fy-field-row--required">
-                <span class="fy-field-row__label">跳板机会话</span>
-                <v-select
-                  v-model="jumpSessionId"
-                  density="compact"
-                  :items="jumpCandidates"
-                  item-title="title"
-                  item-value="id"
-                  :rules="[rules.required]"
-                  :disabled="profileLocked"
-                />
-              </div>
+              <label class="session-field__label">跳板机会话<span class="session-field__req"> *</span></label>
+              <v-select
+                v-model="jumpSessionId"
+                density="compact"
+                :items="jumpCandidates"
+                item-title="title"
+                item-value="id"
+                :rules="[rules.required]"
+                :disabled="profileLocked"
+              />
             </v-col>
 
             <template v-if="sessionKind === 'ssh'">
               <v-col cols="12" sm="6">
-                <div class="fy-field-row">
-                  <span class="fy-field-row__label">编码</span>
-                  <v-select v-model="encoding" density="compact" :items="ENCODINGS" />
-                </div>
+                <label class="session-field__label">编码</label>
+                <v-select v-model="encoding" density="compact" :items="ENCODINGS" />
               </v-col>
               <v-col cols="12" sm="6">
-                <div class="fy-field-row">
-                  <span class="fy-field-row__label">保活间隔（秒）</span>
-                  <v-text-field
-                    v-model.number="keepalive"
-                    type="number"
-                    density="compact"
-                    :rules="[rules.required, rules.keepaliveRange]"
-                  />
-                </div>
+                <label class="session-field__label">保活间隔（秒）</label>
+                <v-text-field
+                  v-model.number="keepalive"
+                  type="number"
+                  density="compact"
+                  :rules="[rules.required, rules.keepaliveRange]"
+                />
               </v-col>
             </template>
 
             <!-- 备注/说明（可选，打开会话列表"说明"列展示） -->
             <v-col cols="12">
-              <div class="fy-field-row">
-                <span class="fy-field-row__label">说明（可选）</span>
-                <v-text-field v-model="description" density="compact" />
-              </div>
+              <label class="session-field__label">说明<span class="session-field__opt">（可选）</span></label>
+              <v-text-field v-model="description" density="compact" placeholder="备注信息，方便日后识别" />
             </v-col>
           </v-row>
         </v-form>
-
-        <v-alert
-          v-if="testResult"
-          :type="testResult.ok ? 'success' : 'error'"
-          variant="tonal"
-          density="compact"
-          class="mt-2"
-          closable
-        >
-          {{ testResult.message }}
-        </v-alert>
       </v-card-text>
-      <v-divider />
       <v-card-actions>
         <v-btn
           variant="text"
@@ -287,6 +243,12 @@
         >
           测试连接
         </v-btn>
+        <!-- 测试结果 inline 在测试按钮旁（参考设计），避免底部 alert 占一整行 -->
+        <span
+          v-if="testResult"
+          class="session-form__test-result"
+          :class="testResult.ok ? 'session-form__test-result--ok' : 'session-form__test-result--fail'"
+        >{{ testResult.message }}</span>
         <v-spacer />
         <v-btn variant="text" @click="emit('update:modelValue', false)">取消</v-btn>
         <v-btn color="primary" :loading="saving" @click="submit">保存</v-btn>
@@ -729,28 +691,116 @@ async function submit(): Promise<void> {
 <style scoped>
 /* 响应式宽度由 v-dialog width="min(560px, 92vw)" 控制（写在 overlay content 上才能正确居中） */
 
+/* ---------- 标题栏 / 底部操作栏：参考式 border 分隔 + 16/12px 20px 内边距 ---------- */
+/* !important 压过 theme.css 对话框 0.2em 内边距（0,3,0 特异性，scoped 与其同特异性需后手保险） */
+.session-form :deep(.v-card-title) {
+  padding: 16px 20px !important;
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+
+.session-form :deep(.v-card-actions) {
+  padding: 12px 20px !important;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+}
+
+/* ---------- 表单体：滚动容器 + 网格行距（gap 16px 20px，对齐参考设计） ---------- */
 .session-form__body {
   max-height: 56vh;
   overflow-y: auto;
-  /* 裁剪 v-row dense 负左右 margin 造成的 8px 溢出（横向滚动条根因） */
+  /* 裁剪 v-row 负左右 margin 造成的溢出（横向滚动条根因） */
   overflow-x: hidden;
+  padding: 20px;
+}
+
+/* v-col 默认 padding 4px → 8px 10px：行间 16px、列间 20px（v-row margin 同步取负） */
+.session-form :deep(.v-row) {
+  margin: -8px -10px;
+}
+
+.session-form :deep(.v-col) {
+  padding: 8px 10px;
+}
+
+/* ---------- 标签上置：block 标签在框上方（参考设计全局模式） ---------- */
+.session-field__label {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 6px;
+  line-height: normal;
+}
+
+/* 必填标记：红色 *（label 内联 span，跟随标签基线） */
+.session-field__req {
+  color: rgb(var(--v-theme-error));
+  margin-left: 2px;
+}
+
+/* 可选标记：灰色（可选） */
+.session-field__opt {
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  margin-left: 2px;
+}
+
+/* 字段下方提示文字：12px 灰（独立 div，不经 persistent-hint 的 details 通道） */
+.session-field__hint {
+  font-size: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.6);
+  margin-top: 4px;
+}
+
+/* Caps Lock 提醒：12px 琥珀（warning 语义色，双主题自适应） */
+.session-field__caps {
+  font-size: 12px;
+  color: rgb(var(--v-theme-warning));
+  margin-top: 4px;
+}
+
+/* ---------- 字段视觉：36px 高 + 圆角 6px + focus 光环（参考设计，仅此对话框内） ---------- */
+/* !important 压过 theme.css 全局 26px 字段高（.v-input--density-* .v-field 0,3,0 特异性） */
+.session-form :deep(.v-field) {
+  --v-input-control-height: 36px !important;
+  --v-field-padding-bottom: 4px !important;
+  --v-input-padding-top: 4px !important;
+  border-radius: 6px !important;
+}
+
+/* focus 光环：边框已由 Vuetify 聚焦态变 primary 色，补 3px 半透明外圈 */
+.session-form :deep(.v-field--focused) {
+  box-shadow: 0 0 0 3px rgba(var(--v-theme-primary), 0.12);
+}
+
+/* ---------- 底部测试结果 inline 文字 ---------- */
+.session-form__test-result {
+  font-size: 12px;
+  margin-left: 8px;
+}
+
+.session-form__test-result--ok {
+  color: rgb(var(--v-theme-success));
+}
+
+.session-form__test-result--fail {
+  color: rgb(var(--v-theme-error));
+}
+
+/* ---------- 认证配置文件行：select 撑满 + 管理按钮 36px 等高 ---------- */
+.session-form__profile-line {
+  gap: 8px;
+}
+
+.session-form__profile-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.session-form__manage-btn {
+  --v-btn-height: 36px;
+  flex: none;
+  text-transform: none;
 }
 
 .session-form__color-btn {
   text-transform: none;
-}
-
-/* 管理按钮：底边对齐 hint 基线（persistent-hint 占据底部一行），不用顶部魔法数字 */
-.profile-manage-btn {
-  align-self: flex-end;
-  margin-bottom: 6px;
-  text-transform: none;
-}
-
-/* 认证配置文件行：fy-field-row 在 d-flex 内撑满剩余宽度（管理按钮在右） */
-.session-form__profile-row {
-  flex: 1 1 auto;
-  min-width: 0;
 }
 
 .session-form__color-chip {
