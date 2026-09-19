@@ -1174,15 +1174,19 @@ async function menuCloseConnection(): Promise<void> {
   }
 }
 
-/** 右键菜单"复制连接"：session_clone（自动保存，名称加"副本"后缀）后刷新树 */
+/** 右键菜单"复制连接"：session_clone（自动保存，名称加"副本"后缀）后弹出编辑对话框（复制后改名是高频后续操作，与菜单省略号语义一致） */
 async function menuCloneConnection(): Promise<void> {
   treeMenu.visible = false
   const node = treeMenu.node
   if (!node || node.isFolder) return
   try {
-    await sessionClone(node.id)
-    ui.toast(`已复制连接「${node.name}」`, 'success')
+    const cloned = await sessionClone(node.id)
+    ui.toast(`已复制连接「${node.name}」，请确认新名称`, 'success')
     await loadTree()
+    // 复制后立即弹出编辑：装载副本配置（新 uuid，保存即更新副本）
+    editingSession.value = cloned as unknown as SessionConfig
+    presetHost.value = ''
+    showSessionForm.value = true
   } catch (e) {
     ui.toast(`复制连接失败：${String(e)}`, 'error')
   }
@@ -1554,12 +1558,12 @@ function cycleTab(): void {
   activeId.value = next.id
 }
 
-/** FlexTabs 渲染数据（按会话 color 着色） */
+/** FlexTabs 渲染数据（按会话 color 着色；连接成功瞬间闪绿，1.5s 后恢复原色） */
 const tabItems = computed<FlexTabItem[]>(() =>
   tabs.value.map((t) => ({
     id: t.id,
     title: t.title,
-    color: t.color ?? undefined,
+    color: terminalStore.sessionFlash[t.connId] ? 'rgb(var(--v-theme-success))' : t.color ?? undefined,
     closable: true,
   })),
 )
@@ -1804,7 +1808,7 @@ async function onMenuAction(action: string): Promise<void> {
     case 'copy':
     case 'paste':
     case 'select-all':
-      ui.toast('请在终端内使用对应快捷键', 'info')
+      ui.toast('终端内 Ctrl+Shift+C 复制 / Ctrl+Shift+V 粘贴 / Ctrl+Shift+A 全选', 'info')
       break
     case 'toggle-nav':
       ui.navCollapsed = !ui.navCollapsed

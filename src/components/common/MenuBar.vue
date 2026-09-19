@@ -24,7 +24,7 @@ const MENUS: MenuDef[] = [
     title: '文件',
     accel: 'F',
     items: [
-      { title: '新建会话', action: 'new-session', shortcut: 'Ctrl+N' },
+      { title: '新建会话', action: 'new-session', shortcut: 'Ctrl+T' },
       { title: '新建文件夹', action: 'new-folder' },
       { title: '打开', action: 'open-session-list' },
       { title: '终端', action: 'local-terminal' },
@@ -35,9 +35,9 @@ const MENUS: MenuDef[] = [
     title: '编辑',
     accel: 'E',
     items: [
-      { title: '复制', action: 'copy' },
-      { title: '粘贴', action: 'paste' },
-      { title: '全选', action: 'select-all' },
+      { title: '复制', action: 'copy', shortcut: 'Ctrl+Shift+C' },
+      { title: '粘贴', action: 'paste', shortcut: 'Ctrl+Shift+V' },
+      { title: '全选', action: 'select-all', shortcut: 'Ctrl+Shift+A' },
     ],
   },
   {
@@ -143,7 +143,7 @@ defineEmits<{ (e: 'action', action: string): void }>()
 }
 
 .menubar__shortcut {
-  font-size: 14px;
+  font-size: 13px;
   color: rgb(var(--v-theme-on-surface) / 0.45);
   font-family: var(--fy-font);
 }

@@ -87,6 +87,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   const sessionStatus = ref<Record<string, SessionStatus>>({})
   /** 各会话连接失败信息（key = session_id） */
   const sessionError = ref<Record<string, string>>({})
+  /** 连接成功闪光（key = session_id）：连接成功瞬间标签闪绿，1.5s 后恢复原色 */
+  const sessionFlash = ref<Record<string, boolean>>({})
 
   /** 活动标签（computed） */
   const activeTab = computed<TerminalTab | null>(
@@ -198,6 +200,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     sessionTypes.delete(sessionId)
     delete sessionStatus.value[sessionId]
     delete sessionError.value[sessionId]
+    delete sessionFlash.value[sessionId]
   }
 
   /** 查询会话传输类型（byte-stream 终端读写路由用，默认 ssh） */
@@ -306,6 +309,9 @@ export const useTerminalStore = defineStore('terminal', () => {
       }
       debugLog(`${type} connect resolved (connected): ${key}`)
       sessionStatus.value[key] = 'connected'
+      // 连接成功峰值反馈：标签短暂闪绿（setTimeout 恢复原色）
+      sessionFlash.value[key] = true
+      setTimeout(() => delete sessionFlash.value[key], 1500)
     } catch (e) {
       debugLog(`${type} connect failed: ${key} ${e instanceof Error ? e.message : String(e)}`)
       sessionStatus.value[key] = 'disconnected'
@@ -431,6 +437,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     activeTab,
     sessionStatus,
     sessionError,
+    sessionFlash,
     // getter
     isConnected,
     sessionTypeOf,

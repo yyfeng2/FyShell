@@ -34,7 +34,7 @@ function submit(): void {
 <template>
   <div class="toolbar">
     <!-- 新建组 -->
-    <v-btn icon="mdi-plus" size="20" variant="text" title="新建会话 (Ctrl+N)" @click="emit('new-session')" />
+    <v-btn icon="mdi-plus" size="20" variant="text" title="新建会话 (Ctrl+T)" @click="emit('new-session')" />
     <v-btn icon="mdi-folder-plus-outline" size="20" variant="text" title="新建文件夹" @click="emit('new-folder')" />
     <v-divider vertical inset class="mx-1 toolbar__divider" />
     <!-- 连接组：连接/断开保留语义色（全工具栏唯一的彩色点缀） -->

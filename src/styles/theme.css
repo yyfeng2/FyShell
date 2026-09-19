@@ -397,10 +397,10 @@ body {
 
 /* ---------- 右键菜单/下拉菜单收紧（2026-09-19 三次调整：去掉行间空白） ---------- */
 
-/* 右键菜单与下拉菜单项：32px → 22px，行与行紧贴无空白；
+/* 右键菜单与下拉菜单项：32px → 24px，行与行紧贴无空白；
    0,4,0 特异性压过 Vuetify density-compact 默认与全局 28px !important */
 .v-overlay-container .v-menu .v-list .v-list-item {
-  min-height: 22px !important;
+  min-height: 24px !important;
   padding-block: 0 !important;
 }
 
@@ -409,23 +409,23 @@ body {
   padding: 2px 0;
 }
 
-/* 次级菜单文字 12px（比主菜单 14px 小 2 号）；图标随字号缩放 */
+/* 次级菜单文字 13px（中文宋体 12px 接近可读性下限，13px 档平衡密度与可读）；图标随字号缩放 */
 .v-overlay-container .v-menu .v-list-item-title {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .v-overlay-container .v-menu .v-list-item .v-icon {
-  font-size: 12px;
+  font-size: 13px;
 }
 
-/* MenuBar 顶栏弹出菜单：行距同样收紧（0.1 字符级 18px），字号 12px 与右键菜单一致 */
+/* MenuBar 顶栏弹出菜单：行距同样收紧（20px），字号 13px 与右键菜单一致 */
 .v-overlay-container .v-menu .menubar__list .v-list-item {
-  min-height: 18px !important;
+  min-height: 20px !important;
   padding-block: 1px !important;
 }
 
 .v-overlay-container .v-menu .menubar__list .v-list-item-title {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.3;
 }
 

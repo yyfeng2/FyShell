@@ -726,6 +726,20 @@ export function useXterm(options: UseXtermOptions = {}) {
         if (!interceptor(ev)) return false
       }
       if (ev.type !== 'keydown') return true
+      // 终端复制/粘贴/全选：Ctrl+Shift 组合（Xshell 惯例，避免 Ctrl+C 与中断信号冲突）
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'C' || ev.key === 'c')) {
+        const sel = term?.getSelection()
+        if (sel) void navigator.clipboard.writeText(sel).catch(() => {})
+        return false
+      }
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'V' || ev.key === 'v')) {
+        void pasteFromClipboard()
+        return false
+      }
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'A' || ev.key === 'a')) {
+        term?.selectAll()
+        return false
+      }
       if (ev.ctrlKey && ev.key === 't') return false
       if (ev.ctrlKey && ev.key === 'T') return false
       if (ev.ctrlKey && ev.key === 'Tab') return false
