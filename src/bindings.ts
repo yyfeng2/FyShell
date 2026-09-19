@@ -898,9 +898,9 @@ export type SessionFolder = {
  *  层级由 `folder_id` / `parent_id` 表达，`session_list` 返回扁平全量列表。
  */
 export type SessionNode = {
-	kind: "Folder",
+	kind: "folder",
 } & SessionFolder | {
-	kind: "Session",
+	kind: "session",
 } & SessionConfig;
 
 /**  收藏路径条目（side: local | remote，便于下拉按窗格侧过滤，避免跨侧误跳转） */

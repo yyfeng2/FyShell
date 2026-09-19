@@ -113,7 +113,7 @@ pub struct SessionFolder {
 /// serde tag 字段为 `kind`，值为 `"folder" | "session"`；
 /// 层级由 `folder_id` / `parent_id` 表达，`session_list` 返回扁平全量列表。
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionNode {
     Folder(SessionFolder),
     Session(SessionConfig),

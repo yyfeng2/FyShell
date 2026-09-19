@@ -168,6 +168,22 @@ body {
   --v-btn-height: 22px;
 }
 
+/* small/x-small + compact 按钮高度：Vuetify 的 density-compact 高度公式是硬编码
+   height: calc(var(--v-btn-height) + -12px)（不读 --v-btn-density-offset 变量，见
+   VBtn.css L75-77），small=28-12=16px、x-small=24-12=14px（2026-09-19 CDP 实测），
+   14px 文字过挤。覆盖 height 把偏移归零，令 --v-btn-height 即实际高度（26/22px） */
+.v-application .v-btn--size-small.v-btn--density-compact,
+.v-overlay-container .v-btn--size-small.v-btn--density-compact {
+  height: calc(var(--v-btn-height) + 0px);
+  --v-btn-height: 26px;
+}
+
+.v-application .v-btn--size-x-small.v-btn--density-compact,
+.v-overlay-container .v-btn--size-x-small.v-btn--density-compact {
+  height: calc(var(--v-btn-height) + 0px);
+  --v-btn-height: 22px;
+}
+
 /* 表单字段高度：固定 26px（与树行高 26px 基线一致，文字尽量撑满框内）。
    覆盖全部密度变体：compact=36 / default=48 / comfortable=56 → 一律 26px 紧凑，
    按钮/标签用 --v-btn-height 不受影响 */

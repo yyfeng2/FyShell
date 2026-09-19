@@ -3,17 +3,6 @@
     <!-- 顶部对象工具条（仿 Navicat）：图标+文字按钮组，当前选中项蓝色高亮 -->
     <div class="mysql-ws__toolbar">
       <v-btn
-        size="small"
-        variant="text"
-        prepend-icon="mdi-console-line"
-        :disabled="!store.isConnected"
-        title="新建查询（由顶部工作台处理）"
-        @click="onNewQuery"
-      >
-        新建查询
-      </v-btn>
-      <v-divider vertical inset class="mx-1" />
-      <v-btn
         v-for="tab in TABS"
         :key="tab.key"
         size="small"
@@ -838,11 +827,6 @@ const KIND_COLORS: Record<MySqlObjectKind, string> = {
   event: 'info',
 }
 
-/** 新建查询：toast 提示（父级无监听方，仅作引导） */
-function onNewQuery(): void {
-  ui.toast('已发出新建查询请求，可在 SQL 编辑区输入并执行', 'info')
-}
-
 // ---------- 通用对象列表（视图 / 函数 / 其它三个 tab 共用） ----------
 
 /** 当前对象面板对应的对象类型；user/table/model tab 下为 null */
@@ -1612,7 +1596,7 @@ onMounted(() => {
 
 /* 当前选中项高亮：蓝色 tonal 背景（仿 Navicat 选中 tab） */
 .mysql-ws__tab--active {
-  background: rgba(var(--v-theme-primary), 0.16);
+  background: rgba(var(--v-theme-primary), 0.15);
   color: rgb(var(--v-theme-primary));
 }
 
@@ -1688,7 +1672,7 @@ onMounted(() => {
 }
 
 .mysql-ws__ddl-text {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
   font-size: 14px;
   white-space: pre-wrap;
   word-break: break-all;
@@ -1696,12 +1680,12 @@ onMounted(() => {
 }
 
 .mysql-ws__ddl-input {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
   font-size: 14px;
 }
 
 .mysql-ws__grant-line {
-  font-family: var(--fy-font);
+  font-family: var(--fy-mono);
   font-size: 14px;
   word-break: break-all;
   white-space: pre-wrap;

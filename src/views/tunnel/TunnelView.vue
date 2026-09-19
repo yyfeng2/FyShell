@@ -17,6 +17,7 @@
         hide-details
         clearable
         placeholder="全部会话"
+        min-width="120"
         max-width="220"
         class="tunnel-view__filter"
         @update:model-value="(v: string | null) => store.setFilter(v)"

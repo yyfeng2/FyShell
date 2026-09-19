@@ -353,6 +353,7 @@ export const aliases: Partial<IconAliases> = {
   treeviewExpand: ChevronRight,
   eyeDropper: Pipette,
   upload: Upload,
+  download: Download,
   color: Palette,
 }
 

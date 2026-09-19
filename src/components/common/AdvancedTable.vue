@@ -356,7 +356,7 @@ function onRowContextmenu(event: MouseEvent, row: Record<string, unknown>, index
 }
 
 .adv-table__row--selected {
-  background: rgba(var(--v-theme-primary), 0.18);
+  background: rgba(var(--v-theme-primary), 0.15);
 }
 
 .adv-table__cell {

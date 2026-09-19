@@ -1734,6 +1734,12 @@ const settingsSection = ref<'appearance' | 'terminal' | 'sftp' | 'data' | 'secur
 
 /** SSH 选项对话框开关（标签右键菜单/菜单栏"会话设置"入口） */
 const showSshOptionsDialog = ref(false)
+
+/** 工具栏帮助按钮：打开设置对话框"关于"分区（与菜单"关于 FyShell"一致） */
+function openAbout(): void {
+  settingsSection.value = 'about'
+  showSettings.value = true
+}
 /** 会话设置目标：会话节点 id 与会话名（会话模式，编辑写会话级键覆盖全局值） */
 const sshOptionsSessionId = ref<string | null>(null)
 const sshOptionsSessionName = ref('')
@@ -2023,7 +2029,7 @@ onUnmounted(() => {
       @search="focusSearch"
       @transfer="openTransferTab"
       @sftp="openSftpTab"
-      @help="ui.toast('FyShell P0 — Tauri 2 + Vue 3 + Vuetify 3', 'info')"
+      @help="openAbout"
       @quick-connect="quickConnect"
     />
 
@@ -2151,12 +2157,6 @@ onUnmounted(() => {
               <v-list-item-title class="text-error">删除数据库</v-list-item-title>
             </v-list-item>
             <v-divider />
-            <v-list-item @click="menuNewQuery">
-              <v-list-item-title>新建查询</v-list-item-title>
-            </v-list-item>
-            <v-list-item @click="menuNewQuery">
-              <v-list-item-title>命令列界面...</v-list-item-title>
-            </v-list-item>
             <v-list-item :disabled="!treeMenuCtx.connId" @click="menuRunSqlFile">
               <v-list-item-title>运行 SQL 文件...</v-list-item-title>
             </v-list-item>
@@ -2192,9 +2192,6 @@ onUnmounted(() => {
             </v-list-item>
             <v-list-item @click="menuNewQuery">
               <v-list-item-title>新建查询</v-list-item-title>
-            </v-list-item>
-            <v-list-item @click="menuNewQuery">
-              <v-list-item-title>命令列界面...</v-list-item-title>
             </v-list-item>
             <v-list-item :disabled="!treeMenuCtx.isDb || !treeMenuCtx.connected" @click="menuRunSqlFile">
               <v-list-item-title>运行 SQL 文件...</v-list-item-title>
@@ -2307,7 +2304,22 @@ onUnmounted(() => {
 
     <!-- 会话日志查看器（P1：活动会话日志落盘开关与查看） -->
     <v-dialog v-model="showLogViewer" width="640">
-      <LogViewer v-if="activeTerminalId" :session-id="activeTerminalId" />
+      <v-card class="log-dialog">
+        <v-card-title class="d-flex align-center">
+          <v-icon icon="mdi-text-box-outline" size="small" class="mr-2" />
+          会话日志
+          <v-spacer />
+          <v-btn
+            icon="mdi-close"
+            size="x-small"
+            variant="text"
+            title="关闭"
+            @click="showLogViewer = false"
+          />
+        </v-card-title>
+        <v-divider />
+        <LogViewer v-if="activeTerminalId" :session-id="activeTerminalId" />
+      </v-card>
     </v-dialog>
 
     <!-- 会话表单（新建 / 编辑 / 快速连接） -->
@@ -2331,6 +2343,7 @@ onUnmounted(() => {
           @click="showFolderDialog = false"
           />
         </v-card-title>
+        <v-divider />
         <v-card-text>
           <div class="fy-field-row">
             <span class="fy-field-row__label">文件夹名称</span>
@@ -2363,6 +2376,7 @@ onUnmounted(() => {
           @click="showNewDbDialog = false"
           />
         </v-card-title>
+        <v-divider />
         <v-card-text>
           <div class="fy-field-row">
             <span class="fy-field-row__label">数据库名称</span>
@@ -2433,6 +2447,11 @@ onUnmounted(() => {
   overflow: hidden;
   background: rgb(var(--v-theme-surface));
   color: rgb(var(--v-theme-on-surface));
+}
+
+/* 会话日志对话框：标题行+divider 之外给 LogViewer 固定内容高度 */
+.log-dialog :deep(.log-viewer) {
+  height: 420px;
 }
 
 .workspace__body {
@@ -2598,7 +2617,7 @@ onUnmounted(() => {
 }
 
 .workspace__node--selected {
-  background: rgb(var(--v-theme-primary, 82 132 255) / 0.18);
+  background: rgb(var(--v-theme-primary) / 0.15);
 }
 
 .workspace__node-name {
@@ -2609,7 +2628,7 @@ onUnmounted(() => {
 /* 分区虚线分隔（SSH 服务 / 数据库服务） */
 .workspace__tree-sep {
   height: 0;
-  border-top: 1px dashed #c6c9ce;
+  border-top: 1px dashed rgba(var(--v-theme-on-surface), 0.12);
   margin: 4px 10px;
   user-select: none;
 }

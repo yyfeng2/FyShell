@@ -496,6 +496,7 @@ function onDragEnd(e: DragEvent): void {
           @click="renameVisible = false"
           />
         </v-card-title>
+        <v-divider />
         <v-card-text>
           <div class="fy-field-row">
             <span class="fy-field-row__label">标签名称</span>

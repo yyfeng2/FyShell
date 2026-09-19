@@ -38,20 +38,12 @@
             class="transfer-queue__cell transfer-queue__cell--name"
             :title="`${asTask(item).local_path} → ${asTask(item).remote_path}`"
           >
-            <svg
+            <v-icon
               class="transfer-queue__icon"
               :class="`transfer-queue__icon--${asTask(item).kind}`"
-              viewBox="0 0 24 24"
-              width="16"
-              height="16"
-              fill="currentColor"
-            >
-              <path
-                v-if="asTask(item).kind === 'Upload'"
-                d="M9 16h6v-6h4l-7-7-7 7h4zM5 18h14v2H5z"
-              />
-              <path v-else d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18h14v2H5z" />
-            </svg>
+              :icon="asTask(item).kind === 'Upload' ? 'mdi-upload' : 'mdi-download'"
+              size="16"
+            />
             {{ displayName(asTask(item)) }}
           </span>
           <span class="transfer-queue__cell">

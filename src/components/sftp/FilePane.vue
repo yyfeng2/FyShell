@@ -134,26 +134,13 @@
             @contextmenu.stop.prevent="openMenu($event, asEntry(item))"
           >
             <span class="file-pane__cell file-pane__cell--name" :title="asEntry(item).name">
-              <svg
+              <v-icon
                 v-if="asEntry(item).is_dir"
+                icon="mdi-folder"
+                size="16"
                 class="file-pane__icon file-pane__icon--dir"
-                viewBox="0 0 24 24"
-                width="16"
-                height="16"
-                fill="currentColor"
-              >
-                <path d="M10 4H4c-1.1 0-1.99.9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
-              </svg>
-              <svg
-                v-else
-                class="file-pane__icon"
-                viewBox="0 0 24 24"
-                width="16"
-                height="16"
-                fill="currentColor"
-              >
-                <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
-              </svg>
+              />
+              <v-icon v-else icon="mdi-file-outline" size="16" class="file-pane__icon" />
               <span class="file-pane__name-text">{{ asEntry(item).name }}</span>
             </span>
             <span class="file-pane__cell">{{ asEntry(item).is_dir ? '—' : formatSize(asEntry(item).size) }}</span>
@@ -209,6 +196,7 @@
           @click="dialogVisible = false"
           />
         </v-card-title>
+        <v-divider />
         <v-card-text>
           <template v-if="dialogType === 'delete'">
             确认删除{{ targetEntry?.is_dir ? '文件夹' : '文件' }}「{{ targetEntry?.name }}」？此操作不可恢复。
@@ -941,7 +929,7 @@ onUnmounted(() => {
 }
 
 .file-pane__row--selected {
-  background: rgba(var(--v-theme-primary), 0.18);
+  background: rgba(var(--v-theme-primary), 0.15);
 }
 
 .file-pane__cell {

@@ -382,7 +382,7 @@ watch(dateContent, () => {
 }
 
 .log-viewer__date--active {
-  background: rgb(var(--v-theme-primary, 82 132 255) / 0.18);
+  background: rgb(var(--v-theme-primary) / 0.15);
 }
 
 .log-viewer__empty {

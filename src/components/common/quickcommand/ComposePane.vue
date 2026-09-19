@@ -16,7 +16,7 @@
           @click="sidebarVisible = !sidebarVisible"
         />
         <v-icon size="small" class="mr-1">mdi-script-text-outline</v-icon>
-        <span class="compose-pane__title">Compose Pane</span>
+        <span class="compose-pane__title">撰写面板</span>
         <v-spacer />
         <v-tooltip text="清空草稿" location="bottom">
           <template #activator="{ props: activatorProps }">
