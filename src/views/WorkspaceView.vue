@@ -20,6 +20,7 @@ import ShortcutListDialog from '@/components/common/ShortcutListDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
 import SshOptionsDialog from '@/components/ssh/options/SshOptionsDialog.vue'
 import ToolBar from '@/components/common/ToolBar.vue'
+import AddressBar from '@/components/common/AddressBar.vue'
 import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
 import HostkeyDialog from '@/components/ssh/terminal/HostkeyDialog.vue'
@@ -1356,6 +1357,23 @@ function gotoSession(id: string): void {
   })
 }
 
+/** 地址栏回车连接：输入命中已有会话（地址/主机/名称精确匹配）直接连，否则打开会话表单预填主机 */
+function connectAddress(addr: string): void {
+  const key = addr.toLowerCase()
+  const hit =
+    addressBarSessions.value.find((s) => s.label.toLowerCase() === key) ??
+    nodes.value.find(
+      (n) =>
+        !n.is_folder &&
+        ((n.config?.host ?? '').toLowerCase() === key || n.name.toLowerCase() === key),
+    )
+  if (hit) {
+    gotoSession(hit.id)
+    return
+  }
+  quickConnect(addr)
+}
+
 /** 生成 Tab 唯一 ID（Tab ID 与会话 ID 无关） */
 function genTabId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -2077,8 +2095,6 @@ onUnmounted(() => {
     <!-- 顶部菜单栏 + 工具栏 + 快速连接地址栏（参考 Xshell） -->
     <MenuBar @action="onMenuAction" />
     <ToolBar
-      :address="activeAddress"
-      :sessions="addressBarSessions"
       @new-session="openSessionForm"
       @new-folder="showFolderDialog = true"
       @connect="onCreate"
@@ -2087,7 +2103,12 @@ onUnmounted(() => {
       @transfer="openTransferTab"
       @sftp="openSftpTab"
       @help="openAbout"
-      @quick-connect="quickConnect"
+    />
+    <!-- 地址栏（Xshell 惯例：工具栏下独立一整行，可输入地址回车连接，下拉切换会话） -->
+    <AddressBar
+      :address="activeAddress"
+      :sessions="addressBarSessions"
+      @connect-address="connectAddress"
       @goto-session="gotoSession"
     />
 
