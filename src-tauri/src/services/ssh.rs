@@ -256,6 +256,15 @@ async fn authenticate(
 ) -> Result<(), AppError> {
     match &cfg.auth_type {
         AuthType::Password { password } => {
+            // 保险库已锁定时 auth_type 里是密文（解密容错原样透传）——连接前给出明确引导
+            // 而非让密文走密码认证报"认证被拒绝"
+            if crate::services::vault::is_ciphertext(password)
+                && !crate::services::vault::is_unlocked()
+            {
+                return Err(AppError::Ssh(
+                    "会话密码受主密码保护，请先在工具菜单解锁保险库后连接".into(),
+                ));
+            }
             match handle.authenticate_password(&cfg.username, password).await? {
                 AuthResult::Success => Ok(()),
                 AuthResult::Failure { .. } => {

@@ -222,9 +222,12 @@ impl ConfigStore {
     /// 保存会话（按 id upsert；新会话的 id 由 commands 层生成后传入）。
     ///
     /// `updated_at` 由 Rust 侧每次保存时取当前 Unix 秒覆盖（前端不传，保证修改时间真实）。
+    /// 主密码已设置且已解锁时 auth_type 内 password 加密落盘；未解锁时原样写入
+    ///（密文 round-trip 无损，明文由下次解锁时的存量迁移兜底）。
     pub fn save_session(&self, config: &SessionConfig) -> Result<(), AppError> {
         let conn = self.lock();
-        let auth_json = serde_json::to_string(&config.auth_type)?;
+        let auth_json =
+            crate::services::vault::encrypt_auth_json(&serde_json::to_string(&config.auth_type)?)?;
         let updated_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
@@ -386,6 +389,8 @@ impl ConfigStore {
 fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionConfig> {
         // serde_json::Error 需手动转入 rusqlite::Error（query_map 闭包内无法提前用 ?）
         let auth_json: String = row.get("auth_type")?;
+        // 已解锁时把密文 password 解回明文；未解锁/解密失败原样透传（密文 round-trip 无损）
+        let auth_json = crate::services::vault::decrypt_auth_json(&auth_json);
         let auth_type: crate::models::session::AuthType =
             serde_json::from_str(&auth_json).map_err(|e| {
                 rusqlite::Error::FromSqlConversionFailure(

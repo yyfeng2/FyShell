@@ -34,7 +34,12 @@ pub fn master_password_set(
     } else {
         crate::services::vault::rekey(&password)?;
     }
-    state.config_store.set_master_password(&password)
+    state.config_store.set_master_password(&password)?;
+    // 设密/改密成功后迁移明文凭据存量；失败仅记录不阻塞设密
+    if let Err(e) = crate::services::vault::migrate_plaintext() {
+        eprintln!("vault 明文凭据迁移失败：{e}");
+    }
+    Ok(())
 }
 
 /// 验证主密码；尚未设置时返回 Ok(false)

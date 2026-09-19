@@ -281,6 +281,134 @@ pub fn decrypt(encoded: &str) -> Result<String, AppError> {
     String::from_utf8(plain).map_err(|_| AppError::general("凭据解密内容编码错误"))
 }
 
+/// 值是否为本库密文格式（`v1$...` 前缀；明文密码恰以此开头时解密失败走容错保持原样）
+pub fn is_ciphertext(value: &str) -> bool {
+    value.starts_with("v1$")
+}
+
+/// 会话 auth_type JSON 写入前加密：已解锁且 password 字段非空非密文时加密该字段
+///（JSON 结构保留），否则原样返回（未解锁时沿用明文，迁移在解锁时兜底）。
+pub fn encrypt_auth_json(auth_json: &str) -> Result<String, AppError> {
+    if !is_unlocked() {
+        return Ok(auth_json.to_string());
+    }
+    encrypt_json_field(auth_json)
+}
+
+/// 会话 auth_type JSON 读取后解密：已解锁且 password 字段为密文时解回明文；
+/// 未解锁 / 解密失败一律原样返回（密文 round-trip 无损，连接报错由调用方引导）。
+pub fn decrypt_auth_json(auth_json: &str) -> String {
+    if !is_unlocked() {
+        return auth_json.to_string();
+    }
+    decrypt_json_field(auth_json).unwrap_or_else(|_| auth_json.to_string())
+}
+
+/// 加密 auth_type JSON 的 password 字段（内部：调用方已保证解锁检查）
+fn encrypt_json_field(auth_json: &str) -> Result<String, AppError> {
+    let mut auth: serde_json::Value = serde_json::from_str(auth_json)
+        .map_err(|e| AppError::general(&format!("auth_type JSON 解析失败：{e}")))?;
+    let Some(password) = auth.get_mut("password").and_then(|p| p.as_str().map(str::to_string)) else {
+        return Ok(auth_json.to_string());
+    };
+    if password.is_empty() || is_ciphertext(&password) {
+        return Ok(auth_json.to_string());
+    }
+    auth["password"] = serde_json::Value::String(encrypt(&password)?);
+    serde_json::to_string(&auth).map_err(|e| AppError::general(&format!("auth_type JSON 序列化失败：{e}")))
+}
+
+/// 解密 auth_type JSON 的 password 字段（内部：调用方已保证解锁检查）
+fn decrypt_json_field(auth_json: &str) -> Result<String, AppError> {
+    let mut auth: serde_json::Value = serde_json::from_str(auth_json)
+        .map_err(|e| AppError::general(&format!("auth_type JSON 解析失败：{e}")))?;
+    let Some(password) = auth.get_mut("password").and_then(|p| p.as_str().map(str::to_string)) else {
+        return Ok(auth_json.to_string());
+    };
+    if password.is_empty() || !is_ciphertext(&password) {
+        return Ok(auth_json.to_string());
+    }
+    auth["password"] = serde_json::Value::String(decrypt(&password)?);
+    serde_json::to_string(&auth).map_err(|e| AppError::general(&format!("auth_type JSON 序列化失败：{e}")))
+}
+
+/// 明文存量迁移：解锁后一次性扫描全部明文凭据并加密写回。
+///
+/// 覆盖：settings 表 mysql/redis_saved_connections（整 JSON 加密，与前端读写路径
+/// 一致）、sshopt_proxy_password（单值）、sessions 表 auth_type JSON 的 password
+/// 字段（结构保留，仅加密 password 值）。解密失败的条目跳过保持原样。
+/// 在 `master_password_set` / `vault_unlock` 成功后调用（DEK 已在内存）。
+pub fn migrate_plaintext() -> Result<usize, AppError> {
+    if !is_unlocked() {
+        return Err(AppError::general("保险库未解锁，无法迁移明文凭据"));
+    }
+    let mut migrated = 0usize;
+    migrated += migrate_setting_value("mysql_saved_connections")?;
+    migrated += migrate_setting_value("redis_saved_connections")?;
+    migrated += migrate_setting_value("sshopt_proxy_password")?;
+    migrated += migrate_session_auth_types()?;
+    Ok(migrated)
+}
+
+/// 迁移 settings 表单个键：值非空且非密文时整体加密写回
+fn migrate_setting_value(key: &str) -> Result<usize, AppError> {
+    let Some(value) = meta_get(key)? else {
+        return Ok(0);
+    };
+    if value.is_empty() || is_ciphertext(&value) {
+        return Ok(0);
+    }
+    meta_set(key, &encrypt(&value)?)?;
+    Ok(1)
+}
+
+/// 迁移 sessions 表 auth_type JSON：password 字段非空且非密文时加密写回整行
+fn migrate_session_auth_types() -> Result<usize, AppError> {
+    // 先在锁内读取待迁移行，锁释放后再解密写回（Mutex 不可重入，避免嵌套 lock_conn 死锁）
+    let rows: Vec<(String, String)> = {
+        let conn = lock_conn();
+        let mut stmt =
+            conn.prepare("SELECT id, auth_type FROM sessions WHERE auth_type LIKE '%password%'")?;
+        let collected =
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<Vec<_>, _>>()?;
+        collected
+    };
+
+    let mut updates: Vec<(String, String)> = Vec::new();
+    for (id, auth_json) in rows {
+        let Ok(mut auth) =
+            serde_json::from_str::<serde_json::Value>(&auth_json)
+        else {
+            continue;
+        };
+        let Some(password) = auth.get_mut("password").and_then(|p| p.as_str().map(str::to_string))
+        else {
+            continue;
+        };
+        if password.is_empty() || is_ciphertext(&password) {
+            continue;
+        }
+        let enc = match encrypt(&password) {
+            Ok(v) => v,
+            // 单条失败（如含非法 UTF-8）跳过，不阻塞整体迁移
+            Err(_) => continue,
+        };
+        auth["password"] = serde_json::Value::String(enc);
+        if let Ok(updated) = serde_json::to_string(&auth) {
+            updates.push((updated, id));
+        }
+    }
+
+    let count = updates.len();
+    if count > 0 {
+        let conn = lock_conn();
+        for (updated, id) in &updates {
+            conn.execute("UPDATE sessions SET auth_type = ?1 WHERE id = ?2", params![updated, id])?;
+        }
+    }
+    Ok(count)
+}
+
 // ---------------------------------------------------------------------------
 // 单元测试（服务级：不依赖真实 MySQL/前端，直接验证 DEK 信封全流程）
 // ---------------------------------------------------------------------------
@@ -409,5 +537,86 @@ mod tests {
         // 首次设置即解锁，原样验证 is_unlocked 幂等
         rekey("pw").expect("首次设置应成功");
         assert!(is_unlocked());
+    }
+
+    #[test]
+    fn migrate_plaintext_covers_saved_conns_and_auth_types() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+        fake_set_master_password();
+
+        // 迁移扫描依赖 settings/sessions 表（应用侧由 config_store 建，测试内补建）
+        {
+            let conn = lock_conn();
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+                 CREATE TABLE IF NOT EXISTS sessions (
+                     id TEXT PRIMARY KEY, name TEXT, auth_type TEXT);",
+            )
+            .expect("建测试表失败");
+        }
+
+        // 模拟明文存量：settings 表整 JSON + sessions 表 auth_type
+        {
+            let conn = lock_conn();
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('mysql_saved_connections', ?1)",
+                params![r#"[{"id":"a","name":"root@h","host":"h","port":3306,"username":"root","password":"明文pw","schema":null}]"#],
+            )
+            .expect("写入 mysql 明文存量失败");
+            conn.execute(
+                "INSERT OR REPLACE INTO sessions (id, name, auth_type) VALUES ('s1', '192.168.1.1', ?1)",
+                params![r#"{"type":"password","password":"ssh明文pw"}"#],
+            )
+            .expect("写入会话明文存量失败");
+        }
+
+        // 未解锁时迁移被拒
+        assert!(migrate_plaintext().is_err(), "未解锁时迁移应被拒");
+
+        // 解锁后迁移：明文 → 密文
+        rekey("master-pw").expect("设主密码应成功");
+        let n = migrate_plaintext().expect("迁移应成功");
+        assert!(n >= 2, "至少迁移 mysql_saved_connections 与 auth_type 两条");
+
+        // settings 表已密文：前端读取路径 decrypt 后还原明文
+        let wrapped = {
+            let conn = lock_conn();
+            conn.query_row(
+                "SELECT value FROM settings WHERE key = 'mysql_saved_connections'",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .expect("读取迁移后密文失败")
+        };
+        assert!(is_ciphertext(&wrapped), "settings 存量应已加密");
+        assert!(
+            decrypt(&wrapped).unwrap().contains("明文pw"),
+            "解密后应还原明文内容"
+        );
+
+        // sessions 表 auth_type 已密文：decrypt_auth_json 还原明文字段
+        let auth_json = {
+            let conn = lock_conn();
+            conn.query_row("SELECT auth_type FROM sessions WHERE id = 's1'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .expect("读取迁移后 auth_type 失败")
+        };
+        assert!(is_ciphertext(&auth_json), "auth_type 应已加密");
+        let restored = decrypt_auth_json(&auth_json);
+        assert!(restored.contains("ssh明文pw"), "解密后应还原明文密码");
+
+        // round-trip：再次迁移幂等（已密文条目跳过）
+        let n2 = migrate_plaintext().expect("二次迁移应成功");
+        assert_eq!(n2, 0, "已密文条目不应重复迁移");
+
+        // 未解锁时 decrypt_auth_json 原样透传（密文 round-trip 无损）
+        lock();
+        assert_eq!(
+            decrypt_auth_json(&auth_json),
+            auth_json,
+            "未解锁时 auth_type 密文应原样透传"
+        );
     }
 }
