@@ -58,7 +58,8 @@ const MENUS: MenuDef[] = [
       { title: 'SFTP 文件传输', action: 'sftp' },
       { title: '快捷命令', action: 'quick-command' },
       { title: 'SSH 隧道', action: 'tunnel' },
-      { title: '会话设置', action: 'session-settings' },
+      // 会话工具与全局配置两组语义，分隔线隔开（二轮审查 P2）
+      { title: '会话设置', action: 'session-settings', dividerBefore: true },
       { title: 'MySQL', action: 'mysql' },
       { title: 'Redis', action: 'redis' },
       { title: '会话日志', action: 'session-log', dividerBefore: true },
@@ -83,6 +84,7 @@ const MENUS: MenuDef[] = [
     title: '帮助',
     accel: 'H',
     items: [
+      { title: '快捷键列表…', action: 'shortcut-list', dividerBefore: true },
       { title: '检测更新', action: 'check-update' },
       { title: '关于 FyShell', action: 'about', dividerBefore: true },
     ],

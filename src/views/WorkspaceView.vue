@@ -16,6 +16,7 @@ import StatusBar from '@/components/common/StatusBar.vue'
 import GlobalDialog from '@/components/common/GlobalDialog.vue'
 import MenuBar from '@/components/common/MenuBar.vue'
 import MasterPasswordDialog from '@/components/common/MasterPasswordDialog.vue'
+import ShortcutListDialog from '@/components/common/ShortcutListDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
 import SshOptionsDialog from '@/components/ssh/options/SshOptionsDialog.vue'
 import ToolBar from '@/components/common/ToolBar.vue'
@@ -1723,6 +1724,8 @@ function disconnectActive(): void {
 const showLogViewer = ref(false)
 /** 主密码设置对话框开关（首次设置 + 修改/校验二合一） */
 const showMasterPassword = ref(false)
+/** 快捷键速查对话框（帮助菜单"快捷键列表…"入口） */
+const showShortcutList = ref(false)
 /** 高功能设置对话框开关 + 默认分区（选项菜单"设置"/帮助菜单"关于"入口） */
 const showSettings = ref(false)
 const settingsSection = ref<'appearance' | 'terminal' | 'sftp' | 'data' | 'security' | 'about'>(
@@ -1858,6 +1861,9 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'master-password':
       showMasterPassword.value = true
+      break
+    case 'shortcut-list':
+      showShortcutList.value = true
       break
     case 'next-tab':
       cycleTab()
@@ -2393,6 +2399,7 @@ onUnmounted(() => {
 
     <!-- 主密码设置对话框（首次设置 + 修改/校验） -->
     <MasterPasswordDialog v-model="showMasterPassword" />
+    <ShortcutListDialog v-model="showShortcutList" />
 
     <!-- 高功能设置对话框（外观/终端/SFTP/数据/安全/关于），主密码为快捷入口 -->
     <SettingsDialog

@@ -298,7 +298,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 /* 副标题 */
 .ssh-options__subtitle {
-  font-size: 14px;
+  font-size: 13px;
   color: rgb(var(--v-theme-on-surface) / 0.5);
 }
 
