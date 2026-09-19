@@ -135,8 +135,8 @@
               </div>
             </v-col>
 
-            <v-col v-if="sessionKind === 'ssh'" cols="12">
-              <!-- 认证配置文件（P1）：选择后认证方式由配置文件接管，一处改全局生效 -->
+            <v-col v-if="sessionKind === 'ssh' && authType === 'publicKey'" cols="12">
+              <!-- 认证配置文件（P1）：仅私钥认证时显示；选择后认证方式由配置文件接管，一处改全局生效 -->
               <div class="d-flex align-start">
                 <div class="fy-field-row mr-2 session-form__profile-row">
                   <span class="fy-field-row__label">认证配置文件</span>
@@ -426,8 +426,9 @@ const profiles = ref<AuthProfile[]>([])
 const profileId = ref<string | null>(null)
 /** 配置文件管理对话框 */
 const showProfileForm = ref(false)
-/** 选择配置文件后认证字段从配置解析，禁用手动编辑 */
-const profileLocked = computed(() => !!findProfile())
+/** 选择配置文件（且处于私钥认证）时认证字段从配置解析，禁用手动编辑；
+    认证方式切走后字段隐藏且不接管，用户可自由改回 */
+const profileLocked = computed(() => !!findProfile() && authType.value === 'publicKey')
 
 function findProfile(): AuthProfile | undefined {
   return profiles.value.find((p) => p.id === profileId.value)
@@ -569,8 +570,10 @@ const jumpCandidates = computed(() =>
 /** 按当前表单状态组装契约的 SessionConfig（auth_type 为可辨识联合；选中配置文件时 profile_id 一并写入） */
 function buildConfig(): SessionConfigWithProfile {
   const prof = findProfile()
+  /** 配置文件仅在私钥认证下生效（与字段显示时机一致，切走后手动认证生效） */
+  const profileActive = prof !== undefined && sessionKind.value === 'ssh' && authType.value === 'publicKey'
   let auth: AuthType
-  if (prof && sessionKind.value === 'ssh') {
+  if (profileActive) {
     // 认证方式从配置文件解析（深拷贝，避免与会话配置共享引用）
     auth = JSON.parse(JSON.stringify(prof.auth_type)) as AuthType
   } else if (sessionKind.value === 'mysql' || sessionKind.value === 'redis') {
@@ -610,7 +613,7 @@ function buildConfig(): SessionConfigWithProfile {
     encoding: encoding.value,
     color: color.value,
     keepalive_interval: keepalive.value,
-    profile_id: prof && sessionKind.value === 'ssh' ? prof.id : null,
+    profile_id: profileActive ? prof.id : null,
     session_type: sessionKind.value,
     serial_port: isSerial ? serialPortName.value : null,
     baud_rate: isSerial ? serialBaud.value : null,
