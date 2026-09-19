@@ -1357,16 +1357,49 @@ function gotoSession(id: string): void {
   })
 }
 
-/** 地址栏回车连接：输入命中已有会话（地址/主机/名称精确匹配）直接连，否则打开会话表单预填主机 */
+/** 解析地址栏输入，支持 Xshell 地址栏的四种格式：user@host:port / host:port / user@host / host */
+function parseAddress(addr: string): { user?: string; host: string; port?: number } {
+  let rest = addr
+  let user: string | undefined
+  const at = rest.indexOf('@')
+  if (at >= 0) {
+    user = rest.slice(0, at)
+    rest = rest.slice(at + 1)
+  }
+  let host = rest
+  let port: number | undefined
+  const colon = rest.lastIndexOf(':')
+  if (colon >= 0) {
+    const p = Number(rest.slice(colon + 1))
+    if (Number.isInteger(p) && p > 0 && p < 65536) {
+      port = p
+      host = rest.slice(0, colon)
+    }
+  }
+  return { user, host, port }
+}
+
+/** 地址栏回车连接：解析 user@host:port 格式后宽松匹配已有会话（host 必须相同，
+    user/port 若输入则须匹配）直接连；未命中（全新地址）打开会话表单预填主机——
+    SSH 凭据必须由用户填写，会话表单是凭据入口（认证在连接阶段自动完成，无终端输密码路径） */
 function connectAddress(addr: string): void {
   const key = addr.toLowerCase()
-  const hit =
-    addressBarSessions.value.find((s) => s.label.toLowerCase() === key) ??
-    nodes.value.find(
-      (n) =>
-        !n.is_folder &&
-        ((n.config?.host ?? '').toLowerCase() === key || n.name.toLowerCase() === key),
+  // 完整串精确匹配（会话树副行地址/名称）
+  const byLabel = addressBarSessions.value.find((s) => s.label.toLowerCase() === key)
+  // 解析后宽松匹配：host 相同即命中，user/port 若输入则须匹配
+  const parsed = parseAddress(addr)
+  const byParsed = nodes.value.find((n) => {
+    if (n.is_folder) return false
+    if ((n.config?.host ?? '').toLowerCase() !== parsed.host.toLowerCase()) return false
+    if (parsed.port != null && n.config?.port !== parsed.port) return false
+    if (
+      parsed.user != null &&
+      (n.config?.username ?? '').toLowerCase() !== parsed.user.toLowerCase()
     )
+      return false
+    return true
+  })
+  const hit = byLabel ?? byParsed
   if (hit) {
     gotoSession(hit.id)
     return
