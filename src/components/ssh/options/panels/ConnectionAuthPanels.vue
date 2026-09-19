@@ -13,7 +13,8 @@
         @update:model-value="(v: unknown) => opts.setDefaultAuthType(String(v))"
       />
     </div>
-    <div class="fy-field-row">
+    <!-- 认证配置文件：仅私钥认证时显示（与 SessionForm 惯例一致），按默认认证方式联动出现 -->
+    <div v-if="opts.defaultAuthType === 'publicKey'" class="fy-field-row">
       <span class="fy-field-row__label">默认认证配置文件</span>
       <v-select
         :model-value="opts.defaultProfileId || null"

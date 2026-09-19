@@ -2552,11 +2552,11 @@ onUnmounted(() => {
 
     <!-- SSH 选项对话框（标签右键/菜单栏"会话设置"入口；会话模式编辑写会话级键；
          byte-stream 会话编辑会话字段，保存后刷新会话树） -->
+    <!-- SSH 选项对话框（标签右键/菜单栏"会话设置"入口；会话模式编辑写会话级键） -->
     <SshOptionsDialog
       v-model="showSshOptionsDialog"
       :session-id="sshOptionsSessionId ?? undefined"
       :session-name="sshOptionsSessionName"
-      @changed="loadTree"
     />
 
     <!-- 全局弹层（确认 / toast / 主题同步） -->

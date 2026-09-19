@@ -29,7 +29,7 @@
             :class="{ 'settings-dialog__nav-item--active': section === s.key }"
             @click="section = s.key"
           >
-            <v-icon :icon="s.icon" size="14" class="mr-2" />
+            <v-icon :icon="s.icon" size="13" class="mr-2" />
             {{ s.title }}
           </button>
         </nav>
@@ -580,7 +580,7 @@ onMounted(async () => {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;

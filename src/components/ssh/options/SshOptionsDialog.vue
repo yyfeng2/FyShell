@@ -18,25 +18,10 @@
       />
       </v-card-title>
       <v-divider />
-      <!-- 生效范围提示（全局/会话模式共用一行，替代原标题行内联副标题） -->
-      <div class="ssh-options__session-hint">
-        <v-icon icon="mdi-information-outline" size="13" class="mr-1" />
-        <template v-if="byteType">
-          {{ byteType === 'serial' ? '串口' : byteType === 'rlogin' ? 'RLOGIN' : 'Telnet' }} 会话「{{ sessionName }}」：
-          连接面板编辑会话字段（保存后刷新会话树）；终端 / 外观 / 高级按会话覆盖全局值。
-        </template>
-        <template v-else-if="isSessionMode">
-          当前编辑会话「{{ sessionName }}」：响铃 / 关键词高亮 / 登录提示符自动响应按会话覆盖全局值；
-          连接级选项（认证 / 压缩 / 代理等）当前仅全局生效。
-        </template>
-        <template v-else>
-          设置对所有 SSH 连接全局生效。
-        </template>
-      </div>
       <div class="ssh-options settings-dialog__body">
         <!-- 左侧树形导航（参考 SecureCRT「会话选项」布局） -->
         <nav class="ssh-options__nav" aria-label="SSH 选项分类">
-          <template v-for="group in navGroups" :key="group.key">
+          <template v-for="group in SSH_OPTIONS_NAV" :key="group.key">
             <div class="ssh-options__nav-group">{{ group.title }}</div>
             <button
               v-for="leaf in group.children"
@@ -46,7 +31,7 @@
               :class="{ 'ssh-options__leaf--active': current === leaf.key }"
               @click="current = leaf.key"
             >
-              <v-icon :icon="leaf.icon" size="14" class="mr-2" />
+              <v-icon :icon="leaf.icon" size="13" class="mr-2" />
               {{ leaf.title }}
             </button>
           </template>
@@ -62,20 +47,6 @@
           <TerminalPanels v-else-if="isTerminalPanel(current)" :page="current" />
           <AppearancePanels v-else-if="isAppearancePanel(current)" :page="current" />
           <AdvancedPanels v-else-if="isAdvancedPanel(current)" :page="current" />
-          <!-- byte-stream 连接设置：会话模式且为本类会话时渲染真实编辑面板；否则显示新建引导 -->
-          <template v-else-if="isByteStreamLeaf(current)">
-            <ByteStreamPanel
-              v-if="byteType === current"
-              :type="current"
-              :session-id="props.sessionId ?? ''"
-              @saved="onByteStreamSaved"
-            />
-            <div v-else class="ssh-options__placeholder">
-              <v-icon icon="mdi-lan-disconnect" size="36" class="mb-2" />
-              <div class="ssh-options__placeholder-title">{{ byteStreamGuide(current).title }}</div>
-              <div class="settings-dialog__hint">{{ byteStreamGuide(current).hint }}</div>
-            </div>
-          </template>
         </div>
       </div>
       <v-divider />
@@ -102,7 +73,6 @@ import { computed, ref, watch } from 'vue'
 import {
   SSH_OPTIONS_NAV,
   type SshOptionsLeaf,
-  type SshOptionsNavItem,
 } from './types'
 import ConnectionAuthPanels from './panels/ConnectionAuthPanels.vue'
 import LoginScriptPanel from './panels/LoginScriptPanel.vue'
@@ -112,9 +82,7 @@ import KeepAlivePanel from './panels/KeepAlivePanel.vue'
 import TerminalPanels from './panels/TerminalPanels.vue'
 import AppearancePanels from './panels/AppearancePanels.vue'
 import AdvancedPanels from './panels/AdvancedPanels.vue'
-import ByteStreamPanel from './panels/ByteStreamPanel.vue'
 import { useSshOptionsStore } from '@/stores/sshOptions'
-import { useSessionStore } from '@/stores/session'
 
 const props = defineProps<{
   modelValue: boolean
@@ -128,12 +96,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
-  /** 会话字段变更保存成功（父级刷新会话树） */
-  (e: 'changed'): void
 }>()
 
 const opts = useSshOptionsStore()
-const sessionStore = useSessionStore()
 
 // 启动时从后端加载 SSH 选项（幂等）
 void opts.ensureLoaded()
@@ -144,39 +109,15 @@ const isSessionMode = computed(() => !!props.sessionId)
 /** 当前展示的叶子页 */
 const current = ref<SshOptionsLeaf>('auth')
 
-/** 会话模式：当前会话的 SessionConfig（查找不到为 null） */
-const sessionCfg = computed(() =>
-  props.sessionId ? sessionStore.getSessionById(props.sessionId) ?? null : null,
-)
-
-/** 会话为 byte-stream 类型（telnet/rlogin/serial）时的连接类型；否则 null（SSH/MySQL 会话或全局模式） */
-const byteType = computed<'telnet' | 'rlogin' | 'serial' | null>(() => {
-  const t = sessionCfg.value?.session_type
-  return t === 'telnet' || t === 'rlogin' || t === 'serial' ? t : null
-})
-
-/** 左侧导航：会话模式且为 byte-stream 会话时，仅保留该连接叶子 + 共享终端/外观/高级组 */
-const navGroups = computed<SshOptionsNavItem[]>(() => {
-  const type = byteType.value
-  if (!type) return SSH_OPTIONS_NAV
-  return SSH_OPTIONS_NAV.map((g) => {
-    if (g.key !== 'connection') return g
-    const leaf = g.children.find((l) => l.key === type)
-    return leaf ? { ...g, children: [leaf] } : null
-  }).filter((g): g is SshOptionsNavItem => g !== null)
-})
-
 /** 打开/关闭对话框：会话模式设置 store 会话上下文并加载会话覆盖项，关闭时恢复全局 */
 watch(
   () => props.modelValue,
   (visible) => {
     if (visible) {
-      current.value = props.initialLeaf ?? byteType.value ?? 'auth'
+      current.value = props.initialLeaf ?? 'auth'
       if (props.sessionId) {
         opts.dialogSessionId = props.sessionId
         void opts.loadSessionOverrides(props.sessionId)
-        // 载入会话树（幂等；保证 byteType/会话字段来自后端最新值）
-        void sessionStore.load()
       } else {
         opts.dialogSessionId = null
       }
@@ -185,41 +126,6 @@ watch(
     }
   },
 )
-
-// 会话树载入为异步：字节流会话的类型确认后，若仍停留在默认页则跳到对应连接叶子
-watch(byteType, (t) => {
-  if (t && props.modelValue && current.value === 'auth') {
-    current.value = t
-  }
-})
-
-/** byte-stream 叶子页（telnet/rlogin/serial） */
-function isByteStreamLeaf(leaf: SshOptionsLeaf): boolean {
-  return leaf === 'telnet' || leaf === 'rlogin' || leaf === 'serial'
-}
-
-/** byte-stream 引导面板（全局模式 / 非本类会话）说明文案 */
-function byteStreamGuide(leaf: SshOptionsLeaf): { title: string; hint: string } {
-  const map: Record<string, { title: string; hint: string }> = {
-    telnet: {
-      title: 'Telnet 连接参数为会话级',
-      hint: '请在「新建会话」中选择 Telnet 类型创建，再从会话树右键的「设置」中编辑连接参数。',
-    },
-    rlogin: {
-      title: 'RLOGIN 连接参数为会话级',
-      hint: 'RLOGIN 与 Telnet 协议兼容（复用 Telnet 实现）；请新建 RLOGIN 会话后从会话树右键「设置」编辑。',
-    },
-    serial: {
-      title: '串口连接参数为会话级',
-      hint: '请在「新建会话」中选择串口类型创建，再从会话树右键的「设置」中编辑端口与波特率。',
-    },
-  }
-  return map[leaf] ?? map.telnet!
-}
-
-function onByteStreamSaved(): void {
-  emit('changed')
-}
 
 // 面板分组归属判断（面板组件按组拆分，page prop 切换叶子）
 function isSshPanel(leaf: SshOptionsLeaf): boolean {
@@ -241,7 +147,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 .ssh-options__nav {
   display: flex;
   flex-direction: column;
-  flex: 0 0 170px;
+  flex: 0 0 160px;
   gap: 2px;
   padding: 8px 6px;
   background: var(--fy-chrome-bg);
@@ -250,7 +156,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options__nav-group {
   padding: 6px 10px 3px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   color: rgb(var(--v-theme-on-surface) / 0.85);
   user-select: none;
@@ -264,7 +170,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;
@@ -282,28 +188,6 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options__leaf--active .mr-2 {
   color: rgb(var(--v-theme-primary));
-}
-
-/* 占位页（TELNET/RLOGIN/串口） */
-.ssh-options__placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 60px 20px;
-  color: rgb(var(--v-theme-on-surface) / 0.4);
-  text-align: center;
-}
-
-/* 生效范围提示条 */
-.ssh-options__session-hint {
-  display: flex;
-  align-items: center;
-  padding: 4px 16px;
-  font-size: 12px;
-  color: rgb(var(--v-theme-on-surface) / 0.6);
-  background: rgb(var(--v-theme-primary) / 0.06);
 }
 </style>
 
