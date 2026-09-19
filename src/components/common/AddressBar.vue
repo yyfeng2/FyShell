@@ -86,14 +86,15 @@ function submit(): void {
 </template>
 
 <style scoped>
-/* Xshell 地址栏：工具栏下独立一整行，横跨全宽，26px 与全局单行控件基线一致 */
+/* Xshell 地址栏：工具栏下独立一整行，横跨全宽，26px 与全局单行控件基线一致；
+   背景透明（不占用独立色带，随窗口内容背景） */
 .addressbar {
   display: flex;
   align-items: center;
   height: 26px;
   padding: 0 4px 0 8px;
   border-bottom: 1px solid var(--fy-chrome-border);
-  background: var(--fy-chrome-bg);
+  background: transparent;
   user-select: none;
 }
 
