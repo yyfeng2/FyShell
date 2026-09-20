@@ -137,6 +137,13 @@ export const commands = {
 	 *  错误提示并二次确认，确认后带 `confirmed: true` 重新调用。
 	 */
 	mysqlExecute: (connId: string, sql: string, confirmed: boolean | null) => __TAURI_INVOKE<number>("mysql_execute", { connId, sql, confirmed }),
+	/**
+	 *  `mysql_cli_exec` (conn_id: String, sql: String) -> MySqlQueryResult
+	 * 
+	 *  命令列界面专用：任意语句直接执行（不做 COUNT 包装与分页），
+	 *  行语句返回全部列与行（最多 1000 行），非行语句 total 为受影响行数。
+	 */
+	mysqlCliExec: (connId: string, sql: string) => __TAURI_INVOKE<MySqlQueryResult>("mysql_cli_exec", { connId, sql }),
 	/**  `mysql_begin` (conn_id: String) -> 开启事务 */
 	mysqlBegin: (connId: string) => __TAURI_INVOKE<null>("mysql_begin", { connId }),
 	/**  `mysql_commit` (conn_id: String) -> 提交事务 */

@@ -79,6 +79,8 @@ const emit = defineEmits<{
   (e: 'execute'): void
   /** 右键菜单"仅运行选中的"：携带选中区文本（无选中时菜单项禁用） */
   (e: 'executeSelection', text: string): void
+  /** 选区变化：携带选中区文本（空串 = 无选中，父级运行入口禁用态使用） */
+  (e: 'selectionChange', text: string): void
 }>()
 
 // ---------- CodeMirror 实例与动态扩展分区 ----------
@@ -244,6 +246,14 @@ onMounted(() => {
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             emit('update:modelValue', update.state.doc.toString())
+          }
+          // 选区变化同步（父级"仅运行选中的"入口禁用态与文本使用）
+          if (update.selectionSet) {
+            const sel = update.state.selection.main
+            const text = update.state.sliceDoc(sel.from, sel.to).trim()
+            hasSelection.value = !!text
+            selectedText.value = text
+            emit('selectionChange', text)
           }
         }),
       ],

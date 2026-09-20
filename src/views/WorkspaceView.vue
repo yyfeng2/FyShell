@@ -39,6 +39,8 @@ import EditDatabaseDialog from '@/components/mysql/EditDatabaseDialog.vue'
 import NewDatabaseDialog from '@/components/mysql/NewDatabaseDialog.vue'
 import ErModelDialog from '@/components/mysql/ErModelDialog.vue'
 import FindInDbDialog from '@/components/mysql/FindInDbDialog.vue'
+import MysqlCliConsole from '@/components/mysql/MysqlCliConsole.vue'
+import MysqlQueryTab from '@/components/mysql/MysqlQueryTab.vue'
 import RedisDbWorkspace from '@/components/redis/RedisDbWorkspace.vue'
 import SessionListDialog from '@/components/ssh/session/SessionListDialog.vue'
 import { useMysqlStore } from '@/stores/mysql'
@@ -87,10 +89,10 @@ interface SessionNode {
   } & Record<string, unknown>
 }
 
-/** 工作区 Tab（终端 / 传输 / SFTP 双栏 / 隧道 / 快捷命令 / MySQL / Redis 七类） */
+/** 工作区 Tab（终端 / 传输 / SFTP 双栏 / 隧道 / 快捷命令 / MySQL / Redis / 命令列界面 / 查询九类） */
 interface WorkTab {
   id: string
-  type: 'terminal' | 'transfer' | 'tunnel' | 'sftp' | 'compose' | 'mysql' | 'redis'
+  type: 'terminal' | 'transfer' | 'tunnel' | 'sftp' | 'compose' | 'mysql' | 'redis' | 'mysqlcli' | 'query'
   title: string
   /** 终端 Tab 对应的会话配置 ID（状态栏主机/编码、SFTP 配置查询） */
   sessionId?: string
@@ -1221,14 +1223,31 @@ async function menuCloneConnection(): Promise<void> {
   }
 }
 
-/** 右键菜单"新建查询/命令列界面"：打开对应数据库工作台 Tab（共用单例 Tab） */
-function menuNewQuery(): void {
+/** 查询 Tab 序号（title 查询-N，Navicat 每次右键新开一个查询窗口） */
+let queryTabSeq = 0
+
+/** 新建查询 Tab（独立编辑器 Tab，关闭不影响连接） */
+function openQueryTab(): void {
+  queryTabSeq += 1
+  const tab: WorkTab = { id: genTabId(), type: 'query', title: `查询-${queryTabSeq}` }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+}
+
+/** 右键菜单"新建查询"：打开查询 Tab；库叶子额外切到目标库（Navicat 查询跟随库） */
+async function menuNewQuery(): Promise<void> {
   treeMenu.visible = false
   const node = treeMenu.node
   if (!node) return
-  // 库叶子 / MySQL 会话与已存连接 → MySQL 工作台；Redis → Redis 工作台
+  // 库叶子 / MySQL 会话与已存连接 → 查询 Tab；Redis → Redis 工作台
   if (node.isDbLeaf || (node.isSavedConn && node.isMysql)) {
-    openMysqlTab()
+    if (node.isDbLeaf && !useMysqlStore().connId) {
+      ui.toast('请先连接 MySQL 数据库后再新建查询', 'warning')
+      return
+    }
+    openQueryTab()
+    // 库叶子：切到右键的库（连接默认库全局生效，工作台 connId watch 自动同步）
+    if (node.isDbLeaf && node.dbName) await switchMysqlDb(node.dbName)
     return
   }
   if (node.isSavedConn) {
@@ -1240,7 +1259,36 @@ function menuNewQuery(): void {
     openRedisTab()
     return
   }
-  openMysqlTab()
+  openQueryTab()
+}
+
+/** 切换 MySQL 连接默认库（复用 mysql_db_switch 重建连接池；与工作台 switchDb 同型） */
+async function switchMysqlDb(name: string): Promise<void> {
+  const st = useMysqlStore()
+  if (!st.connId || !name) return
+  try {
+    const newId = await mysqlDbSwitch(st.connId, name)
+    st.connId = newId
+    st.tables = []
+    await st.loadTables()
+    st.queryError = ''
+    ui.toast(`已切换到数据库「${name}」`, 'success')
+  } catch (e) {
+    ui.toast(String(e), 'error')
+  }
+}
+
+/** 右键菜单"命令列界面"：新建命令列 Tab（Navicat 每次点击新开一个 mysql> 控制台） */
+function menuNewCli(): void {
+  treeMenu.visible = false
+  const st = useMysqlStore()
+  if (!st.connId) {
+    ui.toast('请先连接 MySQL 数据库后再打开命令列界面', 'warning')
+    return
+  }
+  const tab: WorkTab = { id: genTabId(), type: 'mysqlcli', title: '命令列界面' }
+  tabs.value.push(tab)
+  activeId.value = tab.id
 }
 
 /** 右键菜单"运行 SQL 文件"：挂载导入导出对话框（作用于当前活动 MySQL 连接） */
@@ -2634,11 +2682,11 @@ onUnmounted(() => {
               <v-list-item-title class="text-error">删除数据库</v-list-item-title>
             </v-list-item>
             <v-divider />
-            <v-list-item @click="menuNewQuery">
+            <v-list-item :disabled="!treeMenuCtx.connId" @click="menuNewQuery">
               <v-list-item-title>新建查询</v-list-item-title>
             </v-list-item>
             <v-divider />
-            <v-list-item @click="menuNewQuery">
+            <v-list-item :disabled="!treeMenuCtx.connId" @click="menuNewCli">
               <v-list-item-title>命令列界面...</v-list-item-title>
             </v-list-item>
             <v-list-item :disabled="!treeMenuCtx.open" @click="menuRunSqlFile">
@@ -2812,6 +2860,8 @@ onUnmounted(() => {
             <TunnelView v-else-if="tab.type === 'tunnel'" />
             <ComposePane v-else-if="tab.type === 'compose'" @sent="onComposeSent" />
             <MysqlDbWorkspace v-else-if="tab.type === 'mysql'" />
+            <MysqlCliConsole v-else-if="tab.type === 'mysqlcli'" @exit="closeTab(tab.id)" />
+            <MysqlQueryTab v-else-if="tab.type === 'query'" />
             <RedisDbWorkspace v-else-if="tab.type === 'redis'" />
           </div>
           <div v-if="tabs.length === 0" class="workspace__empty">

@@ -384,6 +384,63 @@ async fn do_execute(conn: &mut Conn, sql: &str) -> Result<u64, AppError> {
     Ok(affected)
 }
 
+/// 命令列界面专用：任意语句直接执行，不做 COUNT(*) 包装、不分页。
+/// 行语句（SELECT/SHOW/DESC/EXPLAIN 等）返回全部列与行（最多 1000 行截断），
+/// 非行语句（INSERT/UPDATE/DDL）total 为受影响行数；前端按 columns 是否为空区分展示。
+pub async fn cli_exec(conn_id: &str, sql: &str) -> Result<MySqlQueryResult, AppError> {
+    if sql.trim().is_empty() {
+        return Err(AppError::general("SQL 语句为空"));
+    }
+    let started = std::time::Instant::now();
+    let (mut conn, from_tx) = take_conn(conn_id).await?;
+    let outcome = do_cli_exec(&mut conn, sql).await;
+    if from_tx {
+        restore_tx_conn(conn_id, conn);
+    }
+    // 命令列执行同样记录查询历史；记录失败不影响执行结果
+    if outcome.is_ok() {
+        let _ = crate::services::mysql_console::history_add(
+            sql,
+            conn_id,
+            started.elapsed().as_millis() as u64,
+        );
+    }
+    outcome
+}
+
+/// 命令列执行主体（拆出以便错误后仍归还事务连接，与 do_execute 同型）
+async fn do_cli_exec(conn: &mut Conn, sql: &str) -> Result<MySqlQueryResult, AppError> {
+    const MAX_ROWS: usize = 1000;
+    let mut result = conn.query_iter(sql).await.map_err(mysql_err)?;
+    let col_names: Vec<String> = result
+        .columns()
+        .map(|cols| cols.iter().map(|c| c.name_str().into_owned()).collect())
+        .unwrap_or_default();
+    let mut rows: Vec<Vec<Option<String>>> = Vec::new();
+    while let Some(mut row) = result.next().await.map_err(mysql_err)? {
+        let mut out = Vec::with_capacity(col_names.len());
+        for i in 0..col_names.len() {
+            // take::<Option<Value>> 承接 NULL（None），再统一转字符串
+            let value = row.take::<Option<Value>, _>(i).flatten();
+            out.push(value.and_then(value_to_string));
+        }
+        rows.push(out);
+        if rows.len() >= MAX_ROWS {
+            break;
+        }
+    }
+    let affected = result.affected_rows();
+    // 提前 break 时残余结果集由 drop_result 统一消费（与 do_query 同理）
+    result.drop_result().await.map_err(mysql_err)?;
+    Ok(MySqlQueryResult {
+        columns: col_names,
+        rows,
+        total: affected,
+        page: 1,
+        page_size: MAX_ROWS as u32,
+    })
+}
+
 /// mysql_begin：在连接池的会话内开启事务（独占连接，存事务注册表）
 pub async fn begin(conn_id: &str) -> Result<(), AppError> {
     {

@@ -51,6 +51,11 @@ export function mysqlExecute(
   return invoke<number>('mysql_execute', { connId, sql, confirmed: confirmed ?? null });
 }
 
+/** 命令列界面：任意语句直接执行（不做 COUNT 包装与分页），行语句返回全部列与行（最多 1000 行） */
+export function mysqlCliExec(connId: string, sql: string): Promise<MySqlQueryResult> {
+  return invoke<MySqlQueryResult>('mysql_cli_exec', { connId, sql });
+}
+
 /** 开启事务 */
 export function mysqlBegin(connId: string): Promise<void> {
   return invoke<void>('mysql_begin', { connId });

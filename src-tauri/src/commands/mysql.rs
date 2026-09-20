@@ -60,6 +60,19 @@ pub async fn mysql_execute(
     services::mysql::execute(&conn_id, &sql).await
 }
 
+/// `mysql_cli_exec` (conn_id: String, sql: String) -> MySqlQueryResult
+///
+/// 命令列界面专用：任意语句直接执行（不做 COUNT 包装与分页），
+/// 行语句返回全部列与行（最多 1000 行），非行语句 total 为受影响行数。
+#[tauri::command]
+#[specta::specta]
+pub async fn mysql_cli_exec(
+    conn_id: String,
+    sql: String,
+) -> Result<MySqlQueryResult, AppError> {
+    services::mysql::cli_exec(&conn_id, &sql).await
+}
+
 /// `mysql_begin` (conn_id: String) -> 开启事务
 #[tauri::command]
 #[specta::specta]
