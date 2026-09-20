@@ -8,21 +8,21 @@
     <v-card>
       <v-card-title class="text-h6">ZMODEM 传输</v-card-title>
 
-      <!-- 方向选择：对端执行了 rz/sz，用户最清楚敲的是哪个命令 -->
+      <!-- 方向未知兜底：哨兵帧无法区分 rz/sz 时手选 -->
       <template v-if="mode === 'choose'">
         <v-card-text>
           <p class="text-body-2 mb-0">
-            检测到对端发起的 ZMODEM 传输请求。请选择操作：
+            无法自动识别传输方向。请选择操作：
           </p>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
           <v-btn color="error" variant="text" @click="cancel">取消</v-btn>
           <v-btn color="primary" variant="text" @click="pickRecvFile">
-            接收文件…
+            接收文件（对端 sz）…
           </v-btn>
           <v-btn color="primary" variant="flat" @click="pickSendFile">
-            发送文件…
+            发送文件（对端 rz）…
           </v-btn>
         </v-card-actions>
       </template>
@@ -77,6 +77,8 @@ import {
 /** zmodem-start 事件 payload（与后端契约同名同构） */
 interface ZmodemStartPayload {
   key: string
+  /** 识别的传输方向：recv=对端 sz（选保存目录）/ send=对端 rz（选上传文件）/ null=无法识别 */
+  direction: 'recv' | 'send' | null
 }
 
 /** zmodem-progress 事件 payload */
@@ -94,8 +96,8 @@ interface ZmodemEndPayload {
   message: string
 }
 
-/** 对话框模式：idle 隐藏 / choose 方向选择 / progress 传输中 / failed 失败 */
-type DialogMode = 'idle' | 'choose' | 'progress' | 'failed'
+/** 对话框模式：idle 隐藏 / picking 系统选择器打开中（对话框隐藏）/ choose 方向手选 / progress 传输中 / failed 失败 */
+type DialogMode = 'idle' | 'picking' | 'choose' | 'progress' | 'failed'
 
 /** 待选择的请求队列（连续多次 rz/sz 时排队） */
 const pending = ref<ZmodemStartPayload[]>([])
@@ -105,7 +107,7 @@ const active = ref<ZmodemProgressPayload | null>(null)
 const ended = ref<ZmodemEndPayload | null>(null)
 const mode = ref<DialogMode>('idle')
 
-const show = computed(() => mode.value !== 'idle')
+const show = computed(() => mode.value !== 'idle' && mode.value !== 'picking')
 const current = computed(() => pending.value[0] ?? null)
 
 const percent = computed(() => {
@@ -125,11 +127,36 @@ const sizeLabel = computed(() => {
   return a.total > 0 ? `${fmt(a.transferred)} / ${fmt(a.total)}` : fmt(a.transferred)
 })
 
+/** 呈现队首请求：方向已知时直接弹对应系统选择器，未知时弹三选手选 */
+function presentNext(): void {
+  const next = pending.value[0]
+  if (!next) {
+    mode.value = 'idle'
+    return
+  }
+  if (next.direction === 'recv') {
+    void pickRecvFile()
+  } else if (next.direction === 'send') {
+    void pickSendFile()
+  } else {
+    mode.value = 'choose'
+  }
+}
+
 /** 接收文件：目录选择器，选中后回传 recv；取消选择视作放弃传输 */
 async function pickRecvFile(): Promise<void> {
   const key = current.value?.key
   if (!key) return
-  const dir = await open({ directory: true, multiple: false, title: '选择保存目录' })
+  mode.value = 'picking'
+  let dir: string | string[] | null
+  try {
+    dir = await open({ directory: true, multiple: false, title: '选择保存目录' })
+  } catch (e) {
+    // 选择器异常：回退三选手选
+    console.warn('[zmodem] 目录选择器打开失败:', e)
+    mode.value = 'choose'
+    return
+  }
   if (typeof dir === 'string') {
     await respond(key, 'recv', dir)
   } else {
@@ -141,7 +168,16 @@ async function pickRecvFile(): Promise<void> {
 async function pickSendFile(): Promise<void> {
   const key = current.value?.key
   if (!key) return
-  const file = await open({ multiple: false, title: '选择要上传的文件' })
+  mode.value = 'picking'
+  let file: string | string[] | null
+  try {
+    file = await open({ multiple: false, title: '选择要上传的文件' })
+  } catch (e) {
+    // 选择器异常：回退三选手选
+    console.warn('[zmodem] 文件选择器打开失败:', e)
+    mode.value = 'choose'
+    return
+  }
   if (typeof file === 'string') {
     await respond(key, 'send', file)
   } else {
@@ -166,10 +202,13 @@ async function respond(
   try {
     await zmodemRespond(key, action, localPath)
   } catch (e) {
+    // 任务已结束/清理（key 不在会话表，如超时自动取消）：不进入进度态
     console.warn('[zmodem] zmodem_respond 失败:', e)
+    presentNext()
+    return
   }
   if (action === 'cancel') {
-    mode.value = pending.value.length > 0 ? 'choose' : 'idle'
+    presentNext()
   } else {
     // 先占位（后端 FileStarted/开始发送后立即推首条进度）
     active.value = { key, file_name: '', transferred: 0, total: 0 }
@@ -184,7 +223,7 @@ function onDialogChange(value: boolean): void {
       const key = current.value.key
       void zmodemRespond(key, 'cancel', '')
       pending.value = pending.value.filter((p) => p.key !== key)
-      mode.value = pending.value.length > 0 ? 'choose' : 'idle'
+      presentNext()
     } else if (mode.value === 'failed') {
       dismiss()
     }
@@ -194,7 +233,7 @@ function onDialogChange(value: boolean): void {
 /** 关闭失败提示 */
 function dismiss(): void {
   ended.value = null
-  mode.value = pending.value.length > 0 ? 'choose' : 'idle'
+  presentNext()
 }
 
 onMounted(() => {
@@ -203,8 +242,9 @@ onMounted(() => {
     if (!pending.value.some((p) => p.key === payload.key)) {
       pending.value.push(payload)
     }
-    if (mode.value === 'idle' || mode.value === 'choose') {
-      mode.value = 'choose'
+    // 空闲时呈现队首（选择器打开中/传输中/已弹三选一时排队，稍后呈现）
+    if (mode.value === 'idle') {
+      presentNext()
     }
   }).then((unlistenStart) => {
     unlistenFns.push(unlistenStart)
@@ -222,8 +262,8 @@ onMounted(() => {
     if (active.value?.key === payload.key) {
       active.value = null
       if (payload.ok) {
-        // 成功自动关闭；有待选请求时继续弹下一条
-        mode.value = pending.value.length > 0 ? 'choose' : 'idle'
+        // 成功自动关闭；有待选请求时呈现下一条
+        presentNext()
       } else {
         ended.value = payload
         mode.value = 'failed'

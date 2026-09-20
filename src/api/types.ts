@@ -86,10 +86,12 @@ export interface TransferStatusEvent {
   task: TransferTask;
 }
 
-/** `zmodem-start` 事件：检测到 ZRQINIT 哨兵；用户选择后调 zmodemRespond(key, action, localPath) */
+/** `zmodem-start` 事件：检测到 ZMODEM hex 帧头哨兵；用户选择后调 zmodemRespond(key, action, localPath) */
 export interface ZmodemStartEvent {
   /** 连接路由键（多标签同会话独立连接时每标签唯一） */
   key: string;
+  /** 识别的传输方向："recv"=对端 sz（选保存目录）/ "send"=对端 rz（选上传文件）/ null=无法识别（弹层手选） */
+  direction: 'recv' | 'send' | null;
 }
 
 /** `zmodem-progress` 事件：ZMODEM 传输进度 */

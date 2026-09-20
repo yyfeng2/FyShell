@@ -437,11 +437,11 @@ async fn read_loop(
     }
 }
 
-/// ZMODEM ZRQINIT 哨兵：ZPAD ZPAD ZDLE 'B'（sz/rz 输出帧的公共起始）
-const ZMODEM_SENTINEL: [u8; 4] = [b'*', b'*', 0x18, b'B'];
+/// ZMODEM hex 帧头哨兵：ZPAD ZPAD ZDLE 'B'（sz/rz 输出帧的公共起始）
+pub(crate) const ZMODEM_SENTINEL: [u8; 4] = [b'*', b'*', 0x18, b'B'];
 
 /// 在缓冲区中查找 ZMODEM 哨兵的起始位置
-fn find_zmodem_sentinel(buf: &[u8]) -> Option<usize> {
+pub(crate) fn find_zmodem_sentinel(buf: &[u8]) -> Option<usize> {
     buf.windows(ZMODEM_SENTINEL.len())
         .position(|w| w == ZMODEM_SENTINEL)
 }

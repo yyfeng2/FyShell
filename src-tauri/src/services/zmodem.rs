@@ -1,11 +1,13 @@
 //! 终端 ZMODEM 传输服务：SSH 终端内 rz/sz 命令的协议拦截与本地文件收发。
 //!
 //! 架构：
-//! - 读循环（services/ssh.rs read_loop）在输出流中检测 ZRQINIT 哨兵
-//!   （`**\x18B`）后调用 [`start`]：注册会话条目、spawn_blocking 跑任务、
-//!   emit `zmodem-start` 事件；
-//! - 前端弹对话框（接收文件 / 发送文件 / 取消），用户选择后命令层调用
-//!   `zmodem_respond`，选择经响应通道回传任务；
+//! - 读循环（services/ssh.rs read_loop）在输出流中检测 ZMODEM hex 帧头哨兵
+//!   （`**\x18B`）后调用 [`start`]：注册会话条目、spawn_blocking 跑任务；
+//! - 任务从哨兵后的帧类型识别方向（ZRQINIT=对端执行了 sz→本地接收；
+//!   ZRINIT=对端执行了 rz→本地发送）后 emit `zmodem-start`（含 direction）；
+//! - 前端按方向直接弹对应系统选择器（接收=选保存目录 / 发送=选上传文件 /
+//!   未知=弹层三选手选），用户选择后命令层调用 `zmodem_respond`，选择经响应
+//!   通道回传任务；
 //! - 任务以 zmodem2 crate 的调用方驱动状态机完成协议握手：
 //!   `Action::WriteWire` 经既有写转发路径回传，读循环输出经管道喂入
 //!   `submit_wire`，文件读写直接 std::fs；
@@ -43,7 +45,7 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 /// 中止序列：连续 8 个 CAN（0x18），lrzsz 视为放弃传输
 const CAN_ABORT: [u8; 8] = [0x18; 8];
 
-/// 前端选择（对话框三选一）
+/// 前端选择（方向识别失败时的三选手选）
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub enum ZmodemChoice {
     /// 接收文件（对端 sz）：dir 为本地保存目录
@@ -66,6 +68,9 @@ pub struct ZmodemEntry {
 #[derive(Clone, Serialize, specta::Type)]
 pub struct ZmodemStartEvent {
     pub key: String,
+    /// 识别的传输方向："recv"=对端执行了 sz（前端选保存目录）；
+    /// "send"=对端执行了 rz（前端选上传文件）；None=无法识别（前端弹层手选）
+    pub direction: Option<String>,
 }
 
 /// zmodem-progress 事件 payload
@@ -85,9 +90,10 @@ pub struct ZmodemEndEvent {
     pub message: String,
 }
 
-/// 启动 ZMODEM 传输任务（read_loop 检测到 ZRQINIT 哨兵时调用）。
-/// `initial`：哨兵起的字节（含 ZRQINIT 帧），经管道作为任务的首批输入。
-/// 同 key 已有任务在跑时覆盖旧条目（正常不会发生：改道后读循环不再检测哨兵）。
+/// 启动 ZMODEM 传输任务（read_loop 检测到 ZMODEM hex 帧头哨兵时调用）。
+/// `initial`：哨兵起的字节（含首帧头），经管道作为任务的首批输入，任务据此
+/// 识别传输方向。同 key 已有任务在跑时覆盖旧条目（正常不会发生：改道后读循环
+/// 不再检测哨兵）。
 pub fn start(
     app: &AppHandle,
     state: &AppState,
@@ -119,11 +125,50 @@ pub fn start(
     tauri::async_runtime::spawn_blocking(move || {
         run(task_app, task_key, pipe_rx, respond_rx, write_tx);
     });
-
-    let _ = app.emit("zmodem-start", ZmodemStartEvent { key: key.to_string() });
+    // zmodem-start 由任务在方向识别后 emit（start 立即 emit 时方向尚不可知）
 }
 
-/// 任务主流程：等前端选择 → 状态机收发文件 → 结束清理
+/// 传输方向（对端角色）：由哨兵后的首帧类型识别
+enum Direction {
+    /// 对端执行了 sz（发送方）→ 本地接收
+    Recv,
+    /// 对端执行了 rz（接收方）→ 本地发送
+    Send,
+}
+
+/// 方向识别：哨兵（ZPAD ZPAD ZDLE 'B'）后紧跟首帧类型 hex 两位——
+/// "00"=ZRQINIT（对端 sz）、"01"=ZRINIT（对端 rz，lrz 启动即发 ZRINIT）。
+/// prelude 以哨兵起始；帧类型字节未随首批到达时等待后续批次（对端会重发
+/// 首帧），兜底 5s 仍无法识别返回 None。识别期间截留的字节保留在 prelude
+/// 中，稍后须喂入状态机。
+fn detect_direction(
+    pipe_rx: &std::sync::mpsc::Receiver<Vec<u8>>,
+    prelude: &mut Vec<u8>,
+) -> Option<Direction> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Some(pos) = crate::services::ssh::find_zmodem_sentinel(prelude) {
+            let after = &prelude[pos + crate::services::ssh::ZMODEM_SENTINEL.len()..];
+            if after.len() >= 2 {
+                return match &after[..2] {
+                    b"00" => Some(Direction::Recv),
+                    b"01" => Some(Direction::Send),
+                    _ => None,
+                };
+            }
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        match pipe_rx.recv_timeout(PIPE_POLL_TIMEOUT) {
+            Ok(data) => prelude.extend_from_slice(&data),
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return None,
+        }
+    }
+}
+
+/// 任务主流程：识别方向 → 等前端选择 → 状态机收发文件 → 结束清理
 fn run(
     app: AppHandle,
     key: String,
@@ -131,7 +176,24 @@ fn run(
     respond_rx: std::sync::mpsc::Receiver<ZmodemChoice>,
     write_tx: tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
 ) {
-    eprintln!("[zmodem] {key} started, waiting for user choice");
+    // 方向识别：哨兵后首帧类型区分对端 rz/sz；识别期间截留的字节稍后喂状态机
+    let mut prelude = Vec::new();
+    let direction = detect_direction(&pipe_rx, &mut prelude);
+    let direction_str = match &direction {
+        Some(Direction::Recv) => Some("recv".to_string()),
+        Some(Direction::Send) => Some("send".to_string()),
+        None => None,
+    };
+    eprintln!("[zmodem] {key} started, direction: {direction_str:?}");
+    let _ = app.emit(
+        "zmodem-start",
+        ZmodemStartEvent {
+            key: key.clone(),
+            direction: direction_str,
+        },
+    );
+
+    eprintln!("[zmodem] {key} waiting for user choice");
     let choice = match respond_rx.recv_timeout(CHOICE_TIMEOUT) {
         Ok(choice) => choice,
         // 超时/通道关闭（会话断开清理）→ 视作取消
@@ -140,8 +202,8 @@ fn run(
     eprintln!("[zmodem] {key} choice: {choice:?}");
 
     let result = match choice {
-        ZmodemChoice::Recv { dir } => run_recv(&app, &key, &pipe_rx, &write_tx, &dir),
-        ZmodemChoice::Send { path } => run_send(&app, &key, &pipe_rx, &write_tx, &path),
+        ZmodemChoice::Recv { dir } => run_recv(&app, &key, &pipe_rx, &write_tx, &dir, prelude),
+        ZmodemChoice::Send { path } => run_send(&app, &key, &pipe_rx, &write_tx, &path, prelude),
         ZmodemChoice::Cancel => {
             // 用户取消：发中止序列，避免远端 sz/rz 继续重试刷出乱码
             write_to_wire(&write_tx, &CAN_ABORT);
@@ -174,12 +236,19 @@ fn run_recv(
     pipe_rx: &std::sync::mpsc::Receiver<Vec<u8>>,
     write_tx: &tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
     dir: &str,
+    prelude: Vec<u8>,
 ) -> Result<(), String> {
     // buffer_len=0 + CANOVIO：向远端声明非停等 I/O，SSH 可靠流上连续流式传输
     let mut receiver = Receiver::with_flow_control(0, true)
         .map_err(|e| format!("初始化 ZMODEM 接收器失败: {e}"))?;
     // 自动接受模式（默认）：ZFILE 元数据解析后立即从偏移 0 接收，
     // 目录已由前端对话框选定；sz 多文件时逐个接收
+    // 方向识别期间截留的首帧字节（含哨兵帧）喂入状态机
+    if !prelude.is_empty() {
+        receiver
+            .submit_wire(&prelude)
+            .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+    }
 
     let dir_path = PathBuf::from(dir);
     let mut file: Option<std::fs::File> = None;
@@ -281,6 +350,7 @@ fn run_send(
     pipe_rx: &std::sync::mpsc::Receiver<Vec<u8>>,
     write_tx: &tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
     path: &str,
+    prelude: Vec<u8>,
 ) -> Result<(), String> {
     let mut sender = Sender::new().map_err(|e| format!("初始化 ZMODEM 发送器失败: {e}"))?;
     // SSH 可靠流：非停等流式传输，免每包 ACK 往返
@@ -306,6 +376,12 @@ fn run_send(
     sender
         .finish()
         .map_err(|e| format!("注册 ZMODEM 结束请求失败: {e}"))?;
+    // 方向识别期间截留的首帧字节（对端 rz 启动即发的 ZRINIT）喂入状态机
+    if !prelude.is_empty() {
+        sender
+            .submit_wire(&prelude)
+            .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+    }
 
     let mut transferred: u64 = 0;
     let mut last_emit = Instant::now();
