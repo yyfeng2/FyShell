@@ -9,6 +9,7 @@
  * 开关类项（查看菜单）与窗口菜单标签列表的状态由父级经 props 注入。
  */
 import { ref } from 'vue'
+import { formatShortcutCombo, SETTING_KEYS, useSettingsStore } from '@/stores/settings'
 
 interface MenuItem {
   title: string
@@ -126,6 +127,28 @@ function isChecked(action: string): boolean {
   }
 }
 
+const settings = useSettingsStore()
+
+/** 可修改快捷键项（action → settings 键）：标注按设置值实时显示，与快捷键设置联动 */
+const ACTION_SETTING_KEYS: Record<string, string> = {
+  'new-session': SETTING_KEYS.shortcutNewSession,
+  cut: SETTING_KEYS.shortcutCut,
+  copy: SETTING_KEYS.shortcutCopy,
+  paste: SETTING_KEYS.shortcutPaste,
+  'select-all': SETTING_KEYS.shortcutSelectAll,
+  'next-tab': SETTING_KEYS.shortcutNextTab,
+}
+
+/** 快捷键标注动态解析：可修改项取设置值（空回落静态标注），其余用静态标注 */
+function shortcutLabel(item: MenuItem): string {
+  const key = ACTION_SETTING_KEYS[item.action]
+  if (key) {
+    const v = settings.shortcutValue(key)
+    if (v) return formatShortcutCombo(v)
+  }
+  return item.shortcut ?? ''
+}
+
 /** 该菜单是否渲染勾选列（含开关项或动态标签勾选时，全菜单统一保留列宽——Windows 菜单惯例） */
 function hasCheckColumn(menu: MenuDef): boolean {
   return (
@@ -171,7 +194,7 @@ defineExpose({ openMenu })
             <v-list-item-title>{{ item.title }}</v-list-item-title>
             <!-- 快捷键提示放 append 槽：同行右对齐（v-list-item-action 嵌默认槽会渲染为标题下方块级元素） -->
             <template #append>
-              <span v-if="item.shortcut" class="menubar__shortcut">{{ item.shortcut }}</span>
+              <span v-if="shortcutLabel(item)" class="menubar__shortcut">{{ shortcutLabel(item) }}</span>
             </template>
           </v-list-item>
         </template>

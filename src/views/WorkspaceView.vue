@@ -7,7 +7,7 @@
  * - Tab 按连接着色（会话 color 字段）
  * - 工作区按 Tab 类型渲染：终端 Tab 渲染终端区、传输 Tab 渲染传输队列视图
  *
- * 全局快捷键（技术红线）：Ctrl+T 新标签、Ctrl+W 关闭、Ctrl+Tab 切换、Alt+1~9 直达
+ * 全局快捷键（可修改，settings 快捷键组）：新标签/关闭/切换默认 Ctrl+T/W/Tab、Alt+1~9 直达
  */
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -2151,17 +2151,22 @@ let unlisteners: UnlistenFn[] = []
 /** registerShortcut 注销函数集合（组件卸载时统一调用） */
 const offs: Array<() => void> = []
 
-onMounted(async () => {
-  // 挂载时刷新树中库节点（HMR/状态重置后 connId watch 不触发，库节点需恢复挂载）
-  void refreshMysqlTreeDbs()
-  // 全局快捷键（Xshell 惯例）
-  window.addEventListener('keydown', ui.handleKeydown)
+/** 注册全局快捷键：新会话/关标签/切换标签按设置值（设置对话框可修改），Alt+菜单导航/Alt+数字直达不开放修改 */
+function registerGlobalShortcuts(): void {
+  offs.forEach((off) => {
+    try {
+      off()
+    } catch {
+      /* 重复注销忽略 */
+    }
+  })
+  offs.length = 0
   offs.push(
-    ui.registerShortcut('ctrl+t', onCreate),
-    ui.registerShortcut('ctrl+w', () => {
+    ui.registerShortcut(settings.shortcutNewSession, onCreate),
+    ui.registerShortcut(settings.shortcutCloseTab, () => {
       if (activeId.value) closeTab(activeId.value)
     }),
-    ui.registerShortcut('ctrl+tab', cycleTab),
+    ui.registerShortcut(settings.shortcutNextTab, cycleTab),
   )
   // Alt+字母菜单导航（Windows 桌面惯例）：打开加速下划线对应的菜单
   const menuAccels: Array<[string, number]> = [
@@ -2185,7 +2190,19 @@ onMounted(async () => {
       }),
     )
   }
+}
 
+onMounted(async () => {
+  // 挂载时刷新树中库节点（HMR/状态重置后 connId watch 不触发，库节点需恢复挂载）
+  void refreshMysqlTreeDbs()
+  // 全局快捷键（Xshell 惯例）
+  window.addEventListener('keydown', ui.handleKeydown)
+  registerGlobalShortcuts()
+  // 快捷键设置变更（设置对话框修改/首次后端加载）时重新注册
+  watch(
+    () => [settings.shortcutNewSession, settings.shortcutCloseTab, settings.shortcutNextTab],
+    () => registerGlobalShortcuts(),
+  )
   // 低频状态事件（组件卸载时 unlisten，架构红线）
   try {
     unlisteners.push(

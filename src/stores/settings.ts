@@ -9,7 +9,7 @@
  * - 终端设置项供 useXterm 读取：新终端按当前设置创建，已打开终端运行时实时生效
  */
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { settingsGetAll, settingsSet } from '@/api/settings'
 import { useUiStore } from '@/stores/ui'
 
@@ -41,10 +41,42 @@ export const SETTING_KEYS = {
   selectionCopyIncludeNewline: 'selection_copy_include_newline',
   selectionCopyTrimWhitespace: 'selection_copy_trim_whitespace',
   selectionCopyNonblankOnly: 'selection_copy_nonblank_only',
+  shortcutNewSession: 'shortcut_new_session',
+  shortcutCloseTab: 'shortcut_close_tab',
+  shortcutNextTab: 'shortcut_next_tab',
+  shortcutCopy: 'shortcut_copy',
+  shortcutCut: 'shortcut_cut',
+  shortcutPaste: 'shortcut_paste',
+  shortcutSelectAll: 'shortcut_select_all',
 } as const
 
 /** 鼠标中/右键行为：没做什么 / 粘贴剪贴板内容 */
 export type MouseButtonAction = 'nothing' | 'paste'
+
+/** 可修改快捷键默认值（settings 键 → 键位组合，ui.shortcutOf 归一化格式） */
+export const SHORTCUT_DEFAULTS = {
+  shortcut_new_session: 'ctrl+t',
+  shortcut_close_tab: 'ctrl+w',
+  shortcut_next_tab: 'ctrl+tab',
+  shortcut_copy: 'ctrl+c',
+  shortcut_cut: 'ctrl+x',
+  shortcut_paste: 'ctrl+v',
+  shortcut_select_all: 'ctrl+a',
+} as const
+
+/** 键位组合显示格式化：ctrl+t → Ctrl+T（MenuBar 标注与设置对话框共用） */
+export function formatShortcutCombo(combo: string): string {
+  return combo
+    .split('+')
+    .map((p) => {
+      if (p === 'ctrl') return 'Ctrl'
+      if (p === 'alt') return 'Alt'
+      if (p === 'shift') return 'Shift'
+      if (p === 'tab') return 'Tab'
+      return p.charAt(0).toUpperCase() + p.slice(1)
+    })
+    .join('+')
+}
 
 /** 设置项默认值（与 useXterm 原始默认保持一致，加载失败时同样生效） */
 const DEFAULTS = {
@@ -70,6 +102,7 @@ const DEFAULTS = {
   selection_copy_include_newline: true,
   selection_copy_trim_whitespace: false,
   selection_copy_nonblank_only: false,
+  ...SHORTCUT_DEFAULTS,
 }
 
 export const useSettingsStore = defineStore('settings', () => {
@@ -117,6 +150,24 @@ export const useSettingsStore = defineStore('settings', () => {
   const selectionCopyTrimWhitespace = ref(DEFAULTS.selection_copy_trim_whitespace)
   /** 复制时排除仅含空白的行 */
   const selectionCopyNonblankOnly = ref(DEFAULTS.selection_copy_nonblank_only)
+  /** 快捷键设置（ui.shortcutOf 归一化格式，如 ctrl+t；设置对话框可修改） */
+  const shortcutNewSession = ref(DEFAULTS.shortcut_new_session)
+  const shortcutCloseTab = ref(DEFAULTS.shortcut_close_tab)
+  const shortcutNextTab = ref(DEFAULTS.shortcut_next_tab)
+  const shortcutCopy = ref(DEFAULTS.shortcut_copy)
+  const shortcutCut = ref(DEFAULTS.shortcut_cut)
+  const shortcutPaste = ref(DEFAULTS.shortcut_paste)
+  const shortcutSelectAll = ref(DEFAULTS.shortcut_select_all)
+  /** 快捷键设置索引：snake_case key → ref（后端加载与写回共用遍历） */
+  const shortcutRefs: Record<string, Ref<string>> = {
+    [SETTING_KEYS.shortcutNewSession]: shortcutNewSession,
+    [SETTING_KEYS.shortcutCloseTab]: shortcutCloseTab,
+    [SETTING_KEYS.shortcutNextTab]: shortcutNextTab,
+    [SETTING_KEYS.shortcutCopy]: shortcutCopy,
+    [SETTING_KEYS.shortcutCut]: shortcutCut,
+    [SETTING_KEYS.shortcutPaste]: shortcutPaste,
+    [SETTING_KEYS.shortcutSelectAll]: shortcutSelectAll,
+  }
   /** 是否已完成首次后端加载 */
   const loaded = ref(false)
 
@@ -182,6 +233,11 @@ export const useSettingsStore = defineStore('settings', () => {
         if (trimWs !== undefined) selectionCopyTrimWhitespace.value = trimWs === 'true'
         const nonblankOnly = map[SETTING_KEYS.selectionCopyNonblankOnly]
         if (nonblankOnly !== undefined) selectionCopyNonblankOnly.value = nonblankOnly === 'true'
+        // 快捷键设置：非空即采用（ui.shortcutOf 归一化格式，设置对话框负责校验）
+        for (const [key, refItem] of Object.entries(shortcutRefs)) {
+          const v = map[key]
+          if (v !== undefined && v !== '') refItem.value = v
+        }
         loaded.value = true
         // 加载完成后应用主题模式（SQLite 优先于 localStorage 的启动缓存）
         applyThemeMode()
@@ -360,6 +416,19 @@ export const useSettingsStore = defineStore('settings', () => {
     persist(SETTING_KEYS.selectionCopyNonblankOnly, enabled ? 'true' : 'false')
   }
 
+  /** 读取快捷键设置（snake_case key → 归一化键位组合，未配置时返回默认值） */
+  function shortcutValue(key: string): string {
+    return shortcutRefs[key]?.value ?? ''
+  }
+
+  /** 修改快捷键设置（value 为 ui.shortcutOf 归一化格式，设置对话框负责校验），立即持久化 */
+  function setShortcut(key: string, value: string): void {
+    const refItem = shortcutRefs[key]
+    if (!refItem) return
+    refItem.value = value
+    persist(key, value)
+  }
+
   return {
     // 状态
     themeMode,
@@ -382,9 +451,18 @@ export const useSettingsStore = defineStore('settings', () => {
     selectionCopyIncludeNewline,
     selectionCopyTrimWhitespace,
     selectionCopyNonblankOnly,
+    shortcutNewSession,
+    shortcutCloseTab,
+    shortcutNextTab,
+    shortcutCopy,
+    shortcutCut,
+    shortcutPaste,
+    shortcutSelectAll,
     loaded,
     // 动作
     ensureLoaded,
+    shortcutValue,
+    setShortcut,
     setThemeMode,
     setTerminalFontSize,
     setTerminalFontFamily,

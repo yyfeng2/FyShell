@@ -777,10 +777,10 @@ export function useXterm(options: UseXtermOptions = {}) {
         if (!interceptor(ev)) return false
       }
       if (ev.type !== 'keydown') return true
-      // OS 标准剪贴板快捷键（Windows Terminal 惯例，与操作系统一致）：
-      // Ctrl+C / Ctrl+X 有选中即复制，无选中放行（Ctrl+C 放行 = SIGINT 中断信号，
-      // Ctrl+X 放行 = bash emacs 前缀键）；Ctrl+V 直接粘贴。
-      if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'c' || ev.key === 'C' || ev.key === 'x' || ev.key === 'X')) {
+      // 剪贴板/全选快捷键（设置驱动，设置对话框可修改；默认 OS 标准键）：
+      // 复制/剪切有选中即生效，无选中放行（放行 = SIGINT 中断 / bash emacs 前缀键）；粘贴直接生效。
+      const combo = ui.shortcutOf(ev)
+      if (combo === settings.shortcutCopy || combo === settings.shortcutCut) {
         const sel = term?.getSelection()
         if (sel) {
           void navigator.clipboard.writeText(sel).catch(() => {})
@@ -788,12 +788,11 @@ export function useXterm(options: UseXtermOptions = {}) {
         }
         return true
       }
-      if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
+      if (combo === settings.shortcutPaste) {
         void pasteFromClipboard()
         return false
       }
-      // Ctrl+A 全选（OS 标准，用户指定；注意与 bash readline 行首键冲突，Home 键仍可用）
-      if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'a' || ev.key === 'A')) {
+      if (combo === settings.shortcutSelectAll) {
         term?.selectAll()
         return false
       }

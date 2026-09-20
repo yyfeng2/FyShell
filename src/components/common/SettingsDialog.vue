@@ -259,6 +259,31 @@
             </div>
           </template>
 
+          <!-- 快捷键 -->
+          <template v-else-if="section === 'shortcuts'">
+            <div class="settings-dialog__section-title">快捷键</div>
+            <div class="key-mouse__fields">
+              <div v-for="item in SHORTCUT_ITEMS" :key="item.key" class="fy-field-row">
+                <span class="fy-field-row__label">{{ item.title }}</span>
+                <button
+                  type="button"
+                  class="shortcuts__combo"
+                  :class="{ 'shortcuts__combo--capturing': capturingKey === item.key }"
+                  @click="startCapture(item.key)"
+                >
+                  {{ capturingKey === item.key ? '请按下键位组合…' : formatShortcutCombo(settings.shortcutValue(item.key)) }}
+                </button>
+              </div>
+            </div>
+            <div v-if="captureError" class="shortcuts__error">{{ captureError }}</div>
+            <div class="settings-dialog__row shortcuts__footer">
+              <div class="settings-dialog__row-desc">
+                点击键位框后按下新组合（需含 Ctrl 或 Alt），Esc 取消；全局快捷键即时生效。
+              </div>
+              <v-btn size="small" variant="tonal" @click="resetShortcuts">恢复默认</v-btn>
+            </div>
+          </template>
+
           <!-- SFTP -->
           <template v-else-if="section === 'sftp'">
             <div class="settings-dialog__section-title">SFTP</div>
@@ -370,6 +395,8 @@
  * 左侧分类导航 + 右侧内容区（参考 Navicat/HexHub 设置布局），分区：
  * - 外观：主题模式（浅色/深色/跟随系统，跟随系统经 matchMedia 实时切换 Vuetify theme）
  * - 终端：字号/字体家族/滚动缓冲/光标闪烁，变更实时生效到已打开终端（useXterm 联动）
+ * - 快捷键：7 个可修改快捷键捕获式修改（需含 Ctrl/Alt 修饰、查重、恢复默认），
+ *   WorkspaceView 全局注册与 useXterm 终端剪贴板键均按设置值联动
  * - SFTP：默认下载目录（文本输入 + 目录选择按钮）
  * - 数据：清除查询历史（mysql_history_clear，带确认）、清除无效数据（清空传输临时缓存）
  * - 安全：主密码设置快捷入口（复用 MasterPasswordDialog 的打开机制）
@@ -377,23 +404,24 @@
  *
  * 所有设置项变更即写回后端 SQLite（settings 表），重启后仍保留。
  */
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { getVersion } from '@tauri-apps/api/app'
 import { open } from '@tauri-apps/plugin-dialog'
 import { mysqlHistoryClear } from '@/api/mysqlConsole'
 import { transferClear } from '@/api/sftp'
 import KeyMappingDialog from '@/components/common/KeyMappingDialog.vue'
-import { useSettingsStore, type ThemeMode, type MouseButtonAction } from '@/stores/settings'
+import { formatShortcutCombo, SETTING_KEYS, SHORTCUT_DEFAULTS, useSettingsStore, type ThemeMode, type MouseButtonAction } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 
 /** 设置分区 key（左侧导航） */
-type SettingsSection = 'appearance' | 'terminal' | 'keyboard-mouse' | 'sftp' | 'data' | 'security' | 'about'
+type SettingsSection = 'appearance' | 'terminal' | 'keyboard-mouse' | 'shortcuts' | 'sftp' | 'data' | 'security' | 'about'
 
 /** 左侧导航定义 */
 const SECTIONS: { key: SettingsSection; title: string; icon: string }[] = [
   { key: 'appearance', title: '外观', icon: 'mdi-palette-outline' },
   { key: 'terminal', title: '终端', icon: 'mdi-console' },
   { key: 'keyboard-mouse', title: '键盘和鼠标', icon: 'mdi-keyboard-outline' },
+  { key: 'shortcuts', title: '快捷键', icon: 'mdi-keyboard-settings-outline' },
   { key: 'sftp', title: 'SFTP', icon: 'mdi-swap-horizontal' },
   { key: 'data', title: '数据', icon: 'mdi-database-outline' },
   { key: 'security', title: '安全', icon: 'mdi-lock-outline' },
@@ -492,6 +520,69 @@ function resetWordSeparators(): void {
   settings.setSelectionWordSeparators('\\:\\~\\-!@#$%^&*()-=+[]{}')
 }
 
+// ---------------- 快捷键设置（捕获式修改，与 KeyMappingDialog 同模式） ----------------
+
+/** 可修改快捷键项（settings 键 → 动作名） */
+const SHORTCUT_ITEMS: { key: keyof typeof SHORTCUT_DEFAULTS; title: string }[] = [
+  { key: SETTING_KEYS.shortcutNewSession, title: '新建会话' },
+  { key: SETTING_KEYS.shortcutCloseTab, title: '关闭当前标签' },
+  { key: SETTING_KEYS.shortcutNextTab, title: '切换到下一个标签' },
+  { key: SETTING_KEYS.shortcutCopy, title: '复制' },
+  { key: SETTING_KEYS.shortcutCut, title: '剪切' },
+  { key: SETTING_KEYS.shortcutPaste, title: '粘贴' },
+  { key: SETTING_KEYS.shortcutSelectAll, title: '全选' },
+]
+
+/** 正在捕获的设置键（null = 未在捕获） */
+const capturingKey = ref<string | null>(null)
+
+/** 捕获校验失败提示（空 = 无错误） */
+const captureError = ref('')
+
+/** 开始捕获某设置键的新键位组合（window 捕获阶段监听，Escape 取消） */
+function startCapture(key: string): void {
+  capturingKey.value = key
+  captureError.value = ''
+  window.addEventListener('keydown', onCaptureKeydown, true)
+}
+
+function stopCapture(): void {
+  capturingKey.value = null
+  window.removeEventListener('keydown', onCaptureKeydown, true)
+}
+
+function onCaptureKeydown(e: KeyboardEvent): void {
+  // 捕获阶段立即终止（含同元素后续监听）：捕获期间全局快捷键不触发
+  e.preventDefault()
+  e.stopImmediatePropagation()
+  const key = capturingKey.value
+  stopCapture()
+  if (!key) return
+  // Escape 取消捕获，不修改
+  if (e.key === 'Escape') return
+  const combo = ui.shortcutOf(e)
+  // 校验：必须带 Ctrl 或 Alt 修饰（纯字母/数字键会与终端输入冲突）
+  if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+    captureError.value = `「${formatShortcutCombo(combo)}」无效：需包含 Ctrl 或 Alt 修饰键`
+    return
+  }
+  // 校验：不能与其他可修改快捷键重复
+  const dup = SHORTCUT_ITEMS.find((it) => it.key !== key && settings.shortcutValue(it.key) === combo)
+  if (dup) {
+    captureError.value = `「${formatShortcutCombo(combo)}」已用于「${dup.title}」`
+    return
+  }
+  settings.setShortcut(key, combo)
+}
+
+/** 全部快捷键恢复默认值 */
+function resetShortcuts(): void {
+  for (const item of SHORTCUT_ITEMS) {
+    settings.setShortcut(item.key, SHORTCUT_DEFAULTS[item.key])
+  }
+  captureError.value = ''
+}
+
 /** 目录选择按钮：@tauri-apps/plugin-dialog 目录选择，选中后立即生效 */
 async function pickDownloadDir(): Promise<void> {
   try {
@@ -547,6 +638,11 @@ onMounted(async () => {
   } catch {
     // 读取失败时保持占位（显示为 v 未知）
   }
+})
+
+onUnmounted(() => {
+  // 组件卸载时捕获监听兜底清理（正常路径 stopCapture 已移除）
+  stopCapture()
 })
 </script>
 
@@ -697,5 +793,38 @@ onMounted(async () => {
   gap: 8px;
   width: 100%;
   max-width: 420px;
+}
+
+/* 快捷键分区：键位框 + 错误提示 + 底部说明/恢复默认行 */
+.shortcuts__combo {
+  min-width: 180px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-family: var(--fy-mono);
+  border: 1px solid var(--fy-chrome-border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.shortcuts__combo:hover {
+  border-color: rgb(var(--v-theme-on-surface) / 0.35);
+}
+
+.shortcuts__combo--capturing {
+  border-color: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-primary));
+}
+
+.shortcuts__error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: rgb(var(--v-theme-error));
+}
+
+.shortcuts__footer {
+  margin-top: 12px;
 }
 </style>
