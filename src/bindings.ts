@@ -350,6 +350,8 @@ export const commands = {
 	settingsGet: (key: string) => __TAURI_INVOKE<string | null>("settings_get", { key }),
 	/**  写入单个设置项（幂等覆盖；value 统一序列化为字符串） */
 	settingsSet: (key: string, value: string) => __TAURI_INVOKE<null>("settings_set", { key, value }),
+	/**  设置关闭到托盘行为（运行时状态 + 托盘菜单勾选态同步） */
+	traySetCloseToTray: (enabled: boolean) => __TAURI_INVOKE<null>("tray_set_close_to_tray", { enabled }),
 	/**  读取配色方案文件（JSON 文本） */
 	schemeReadFile: (path: string) => __TAURI_INVOKE<string>("scheme_read_file", { path }),
 	/**  写入配色方案文件（JSON 文本，已存在时覆盖） */

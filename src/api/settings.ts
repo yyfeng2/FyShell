@@ -23,3 +23,8 @@ export function settingsGet(key: string): Promise<string | null> {
 export function settingsSet(key: string, value: string): Promise<void> {
   return invoke<void>('settings_set', { key, value });
 }
+
+/** 设置关闭到托盘行为（运行时状态 + 托盘菜单勾选态同步） */
+export function traySetCloseToTray(enabled: boolean): Promise<void> {
+  return invoke<void>('tray_set_close_to_tray', { enabled });
+}

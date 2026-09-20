@@ -10,7 +10,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref, type Ref } from 'vue'
-import { settingsGetAll, settingsSet } from '@/api/settings'
+import { settingsGetAll, settingsSet, traySetCloseToTray } from '@/api/settings'
 import { useUiStore } from '@/stores/ui'
 
 /** 主题模式：浅色 / 深色 / 跟随系统 */
@@ -19,9 +19,15 @@ export type ThemeMode = 'light' | 'dark' | 'auto'
 /** 终端字体样式：常规 / 粗体 / 斜体（xterm fontWeight，斜体经容器类触发） */
 export type FontFamilyStyle = 'normal' | 'bold' | 'italic'
 
+/** 工具栏显示模式：图标（图标+标题）/ 小图标（仅图标）；显示/隐藏由 toolbar_visible 独立控制 */
+export type ToolbarMode = 'icon-title' | 'small-icon'
+
 /** 设置项 key（SQLite settings 表，snake_case） */
 export const SETTING_KEYS = {
   themeMode: 'theme_mode',
+  toolbarMode: 'toolbar_mode',
+  toolbarVisible: 'toolbar_visible',
+  trayCloseToTray: 'tray_close_to_tray',
   terminalFontSize: 'terminal_font_size',
   terminalFontFamily: 'terminal_font_family',
   terminalFontStyle: 'terminal_font_style',
@@ -82,6 +88,12 @@ export function formatShortcutCombo(combo: string): string {
 const DEFAULTS = {
   /** 跟随系统：经 matchMedia 实时同步系统深浅色偏好（唯一监听，见 ensureSystemThemeWatch） */
   theme_mode: 'auto' as ThemeMode,
+  /** 默认图标+标题全显示（用户指定：工具栏默认全显示） */
+  toolbar_mode: 'icon-title' as ToolbarMode,
+  /** 默认显示工具栏（用户指定：勾选展示不勾选隐藏） */
+  toolbar_visible: true,
+  /** 默认关闭窗口即退出（用户指定：默认退出不到任务栏） */
+  tray_close_to_tray: false,
   terminal_font_size: 14,
   /** 系统默认：xterm.js 官方默认等宽字体栈（Windows 命中 Consolas，跨平台降级 Menlo/monospace） */
   terminal_font_family: 'Consolas, "Liberation Mono", Menlo, Courier, monospace',
@@ -112,6 +124,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
   /** 主题模式（浅色/深色/跟随系统） */
   const themeMode = ref<ThemeMode>(DEFAULTS.theme_mode)
+  /** 工具栏显示模式（图标/小图标，二选一） */
+  const toolbarMode = ref<ToolbarMode>(DEFAULTS.toolbar_mode)
+  /** 工具栏显示/隐藏（勾选展示不勾选隐藏） */
+  const toolbarVisible = ref(DEFAULTS.toolbar_visible)
+  /** 托盘关闭行为（勾选=关闭窗口隐藏到托盘，默认关闭即退出） */
+  const trayCloseToTray = ref(DEFAULTS.tray_close_to_tray)
   /** 终端默认字体大小（px） */
   const terminalFontSize = ref(DEFAULTS.terminal_font_size)
   /** 终端字体家族（xterm fontFamily CSS 列表） */
@@ -185,6 +203,18 @@ export const useSettingsStore = defineStore('settings', () => {
         if (savedMode === 'light' || savedMode === 'dark' || savedMode === 'auto') {
           themeMode.value = savedMode
         }
+        const toolbarModeSaved = map[SETTING_KEYS.toolbarMode]
+        if (toolbarModeSaved === 'icon-title' || toolbarModeSaved === 'small-icon') {
+          toolbarMode.value = toolbarModeSaved
+        }
+        const toolbarVisibleSaved = map[SETTING_KEYS.toolbarVisible]
+        if (toolbarVisibleSaved !== undefined) {
+          toolbarVisible.value = toolbarVisibleSaved === 'true'
+        }
+        const trayCloseSaved = map[SETTING_KEYS.trayCloseToTray]
+        if (trayCloseSaved !== undefined) {
+          trayCloseToTray.value = trayCloseSaved === 'true'
+        }
         const fontSize = Number(map[SETTING_KEYS.terminalFontSize])
         if (Number.isFinite(fontSize) && fontSize > 0) {
           terminalFontSize.value = Math.round(fontSize)
@@ -241,6 +271,10 @@ export const useSettingsStore = defineStore('settings', () => {
         loaded.value = true
         // 加载完成后应用主题模式（SQLite 优先于 localStorage 的启动缓存）
         applyThemeMode()
+        // 托盘关闭行为运行时状态同步（重启后恢复保存的设置）
+        void traySetCloseToTray(trayCloseToTray.value).catch(() => {
+          /* 运行时同步失败保持默认 */
+        })
       } catch {
         // 加载失败不阻塞 UI：保持默认值，后续变更时按 key 逐条落库
       }
@@ -287,6 +321,27 @@ export const useSettingsStore = defineStore('settings', () => {
     themeMode.value = mode
     applyThemeMode()
     persist(SETTING_KEYS.themeMode, mode)
+  }
+
+  /** 工具栏显示模式（图标/小图标），立即生效并持久化 */
+  function setToolbarMode(mode: ToolbarMode): void {
+    toolbarMode.value = mode
+    persist(SETTING_KEYS.toolbarMode, mode)
+  }
+
+  /** 工具栏显示/隐藏（勾选展示不勾选隐藏），立即生效并持久化 */
+  function setToolbarVisible(visible: boolean): void {
+    toolbarVisible.value = visible
+    persist(SETTING_KEYS.toolbarVisible, visible ? 'true' : 'false')
+  }
+
+  /** 托盘关闭行为（勾选=关闭窗口隐藏到托盘），立即生效并持久化（运行时状态经命令同步） */
+  function setTrayCloseToTray(enabled: boolean): void {
+    trayCloseToTray.value = enabled
+    persist(SETTING_KEYS.trayCloseToTray, enabled ? 'true' : 'false')
+    void traySetCloseToTray(enabled).catch(() => {
+      /* 运行时同步失败不影响 UI */
+    })
   }
 
   // ---------------- 通用写回 ----------------
@@ -432,6 +487,9 @@ export const useSettingsStore = defineStore('settings', () => {
   return {
     // 状态
     themeMode,
+    toolbarMode,
+    toolbarVisible,
+    trayCloseToTray,
     terminalFontSize,
     terminalFontFamily,
     terminalFontStyle,
@@ -464,6 +522,9 @@ export const useSettingsStore = defineStore('settings', () => {
     shortcutValue,
     setShortcut,
     setThemeMode,
+    setToolbarMode,
+    setToolbarVisible,
+    setTrayCloseToTray,
     setTerminalFontSize,
     setTerminalFontFamily,
     setTerminalFontStyle,

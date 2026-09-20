@@ -24,3 +24,4 @@ pub mod key_mapping;
 pub mod local_shell;
 pub mod telnet;
 pub mod serial;
+pub mod tray;

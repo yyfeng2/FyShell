@@ -13,9 +13,8 @@
 :root {
   /* 紧凑行高基线：信息密度优先 */
   --fy-line-height: 1.4;
-  /* 全局字体：免费开源宋体（思源宋体 Noto Serif SC / Source Han Serif SC，SIL OFL 许可；
-     SimSun 为 Windows 内置兜底，保证未安装开源字体时仍渲染宋体风格） */
-  --fy-font: 'Noto Serif SC', 'Source Han Serif SC', 'SimSun', serif;
+  /* 全局字体：微软雅黑（Windows 中文界面标准字体，Vista 起全系统内置） */
+  --fy-font: 'Microsoft YaHei', '微软雅黑', sans-serif;
 
   /* 经典浅灰 chrome 区（Xshell 传统桌面风格）：浅灰分层 + 1px 分隔线 */
   --fy-chrome-bg: #f0f2f5;
@@ -26,7 +25,7 @@
   --fy-hover-bg: rgba(var(--v-theme-on-surface), 0.08);
   --fy-focus-color: rgb(var(--v-theme-primary));
 
-  /* 等宽字体：仅数据区使用（key/值/命令/IP/路径/行号），中文文案区保持 --fy-font 宋体 */
+  /* 等宽字体：仅数据区使用（key/值/命令/IP/路径/行号），中文文案区保持 --fy-font */
   --fy-mono: 'Cascadia Mono', 'Consolas', 'Courier New', monospace;
 
   /* 终端区背景（浅灰 chrome + 深色终端组合）：不随应用 light/dark 切换（始终深色）；
@@ -43,7 +42,7 @@ body {
   /* 经典浅灰为默认：页面背景直接用浅灰，避免 Vuetify 挂载前的闪烁 */
   background-color: #f5f6f7;
   color-scheme: light;
-  /* 全局宋体：免费开源思源宋体优先（--fy-font 定义见 :root） */
+  /* 全局字体：微软雅黑（--fy-font 定义见 :root） */
   font-family: var(--fy-font);
   line-height: var(--fy-line-height);
   overflow: hidden; /* 桌面应用主体不滚动，滚动交给内部区域 */
@@ -322,7 +321,7 @@ body {
   font-size: 14px;
 }
 
-/* 全局不加粗：标题/按钮/标签字重统一 400（宋体加粗发虚，全部禁用） */
+/* 全局不加粗：标题/按钮/标签字重统一 400 */
 .v-application .v-card-title,
 .v-application .v-btn,
 .v-application .v-tab,
@@ -425,7 +424,7 @@ body {
   padding: 2px 0;
 }
 
-/* 次级菜单文字 13px（中文宋体 12px 接近可读性下限，13px 档平衡密度与可读）；图标随字号缩放 */
+/* 次级菜单文字 13px（中文 12px 接近可读性下限，13px 档平衡密度与可读）；图标随字号缩放 */
 .v-overlay-container .v-menu .v-list-item-title {
   font-size: 13px;
 }

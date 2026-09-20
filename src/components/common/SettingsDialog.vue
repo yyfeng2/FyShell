@@ -54,6 +54,50 @@
             <div class="settings-dialog__hint">
               「跟随系统」监听系统深浅色偏好并实时切换；手动选择浅色/深色后固定主题。
             </div>
+            <!-- 工具栏：勾选展示不勾选隐藏；勾选时才出现 图标/小图标 选择（默认图标） -->
+            <div class="key-mouse__group-title">工具栏</div>
+            <v-checkbox
+              :model-value="settings.toolbarVisible"
+              label="显示工具栏"
+              color="primary"
+              density="compact"
+              hide-details
+              @update:model-value="(v: unknown) => settings.setToolbarVisible(!!v)"
+            />
+            <template v-if="settings.toolbarVisible">
+              <v-checkbox
+                :model-value="settings.toolbarMode === 'icon-title'"
+                label="图标（图标 + 标题）"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => v && settings.setToolbarMode('icon-title')"
+              />
+              <v-checkbox
+                :model-value="settings.toolbarMode === 'small-icon'"
+                label="小图标（仅图标）"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => v && settings.setToolbarMode('small-icon')"
+              />
+            </template>
+            <div class="settings-dialog__hint">
+              勾选「显示工具栏」后才可选择 图标（图标 + 标题）或 小图标（仅图标），默认以「图标」全显示。
+            </div>
+            <!-- 托盘：勾选=关闭窗口隐藏到托盘，默认不勾选（关闭窗口即退出） -->
+            <div class="key-mouse__group-title">托盘</div>
+            <v-checkbox
+              :model-value="settings.trayCloseToTray"
+              label="关闭窗口时最小化到托盘"
+              color="primary"
+              density="compact"
+              hide-details
+              @update:model-value="(v: unknown) => settings.setTrayCloseToTray(!!v)"
+            />
+            <div class="settings-dialog__hint">
+              勾选后点击窗口关闭按钮将隐藏到系统托盘（托盘右键「退出」才退出）；默认不勾选，关闭窗口即退出程序。
+            </div>
           </template>
 
           <!-- 终端 -->

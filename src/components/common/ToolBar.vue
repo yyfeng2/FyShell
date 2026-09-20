@@ -9,8 +9,9 @@
  * 配色按钮打开配色方案对话框。地址栏在工具栏下方独立一行（AddressBar.vue）。
  * 所有按钮带 title 工具提示（Xshell 风格提示体系）。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { ENCODINGS } from '@/stores/session'
+import { useSettingsStore } from '@/stores/settings'
 
 /** 左导航展开态 / 终端字号 / 字体家族 / 字体样式 / 活动会话编码（父级注入，决定按下态与勾选态） */
 const props = defineProps<{
@@ -63,10 +64,26 @@ function firstFamily(css?: string): string {
   if (!css) return ''
   return css.split(',')[0]?.trim().replace(/^"|"$/g, '') ?? ''
 }
+
+/** 工具栏设置 store（显示/隐藏 + 图标/小图标模式，全局设置与右键菜单共用） */
+const settings = useSettingsStore()
+
+/** 工具栏右键菜单：显示模式三态（Windows 惯例勾选标记），target 定位在光标处 */
+const ctxOpen = ref(false)
+const ctxTarget = ref<[number, number]>([0, 0])
+function onContextMenu(e: MouseEvent): void {
+  ctxTarget.value = [e.clientX, e.clientY]
+  ctxOpen.value = true
+}
 </script>
 
 <template>
-  <div class="toolbar">
+  <div
+    v-if="settings.toolbarVisible"
+    class="toolbar"
+    :class="{ 'toolbar--small': settings.toolbarMode === 'small-icon' }"
+    @contextmenu.prevent="onContextMenu"
+  >
     <!-- 导航开关（最左）：按下态高亮 -->
     <v-btn variant="text" :active="props.navOpen" title="左导航 开/收" class="toolbar__titled" @click="emit('nav')">
       <span class="toolbar__titled__body">
@@ -204,6 +221,36 @@ function firstFamily(css?: string): string {
         <span>配色</span>
       </span>
     </v-btn>
+
+    <!-- 右键菜单：查看子菜单（图标/小图标，与全局设置共用同一 store 状态） -->
+    <v-menu v-model="ctxOpen" :target="ctxTarget" location="bottom left">
+      <v-list density="compact">
+        <!-- 查看子菜单：显示模式二选一 -->
+        <v-menu location="right" :close-on-content-click="true">
+          <template #activator="{ props: act }">
+            <v-list-item v-bind="act" append-icon="mdi-chevron-right" title="查看" />
+          </template>
+          <v-list density="compact">
+            <v-list-item value="icon-title" @click="settings.setToolbarMode('icon-title')">
+              <template #prepend>
+                <span class="toolbar__checkmark">
+                  <v-icon v-if="settings.toolbarMode === 'icon-title'" icon="mdi-check" size="13" />
+                </span>
+              </template>
+              <v-list-item-title>图标</v-list-item-title>
+            </v-list-item>
+            <v-list-item value="small-icon" @click="settings.setToolbarMode('small-icon')">
+              <template #prepend>
+                <span class="toolbar__checkmark">
+                  <v-icon v-if="settings.toolbarMode === 'small-icon'" icon="mdi-check" size="13" />
+                </span>
+              </template>
+              <v-list-item-title>小图标</v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </v-menu>
+      </v-list>
+    </v-menu>
   </div>
 </template>
 
@@ -212,7 +259,7 @@ function firstFamily(css?: string): string {
   display: flex;
   align-items: center;
   min-height: 26px; /* 与 MenuBar/StatusBar 26px 节奏一致（原 20px 比相邻条带矮 6px） */
-  padding: 0 4px;
+  padding: 0.5em 4px; /* 上下各 0.5 字符（em 随字号缩放） */
   gap: 6px; /* 图标间隔增加 1 字符（原相邻贴靠） */
   background: var(--fy-chrome-bg);
   user-select: none;
@@ -256,6 +303,15 @@ function firstFamily(css?: string): string {
 .toolbar__titled__body > span:last-child {
   font-size: 11px;
   line-height: 1.2;
+}
+
+/* 小图标模式：仅显示图标（标题隐藏），按钮 padding 收窄（title 工具提示保留） */
+.toolbar--small .toolbar__titled__body > span:last-child {
+  display: none;
+}
+
+.toolbar--small :deep(.toolbar__titled) {
+  padding: 2px 4px;
 }
 
 /* 下拉菜单勾选列：固定宽度占位保持标题对齐（与 MenuBar 勾选列惯例一致） */

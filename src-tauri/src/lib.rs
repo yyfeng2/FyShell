@@ -146,6 +146,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // 托盘（commands/tray.rs）：关闭到托盘行为（托盘菜单/设置对话框双入口）
+            commands::tray::tray_set_close_to_tray,
             // 配色方案文件导入导出（commands/color_scheme.rs）
             commands::color_scheme::scheme_read_file,
             commands::color_scheme::scheme_write_file,
@@ -348,6 +350,8 @@ pub fn run() {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // 托盘（commands/tray.rs）：关闭到托盘行为（托盘菜单/设置对话框双入口）
+            commands::tray::tray_set_close_to_tray,
             // 配色方案文件导入导出（commands/color_scheme.rs）
             commands::color_scheme::scheme_read_file,
             commands::color_scheme::scheme_write_file,

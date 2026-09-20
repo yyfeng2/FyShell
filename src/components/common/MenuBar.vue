@@ -52,7 +52,7 @@ const MENUS: MenuDef[] = [
       { title: '新建会话', action: 'new-session', shortcut: 'Ctrl+T' },
       { title: '新建文件夹', action: 'new-folder' },
       { title: '打开…', action: 'open-session-list' },
-      { title: '终端', action: 'local-terminal' },
+      { title: '会话日志', action: 'session-log', dividerBefore: true },
       { title: '退出', action: 'quit', dividerBefore: true },
     ],
   },
@@ -85,7 +85,7 @@ const MENUS: MenuDef[] = [
       { title: 'SSH 隧道', action: 'tunnel' },
       { title: 'MySQL', action: 'mysql' },
       { title: 'Redis', action: 'redis' },
-      { title: '会话日志', action: 'session-log', dividerBefore: true },
+      { title: '终端', action: 'local-terminal', dividerBefore: true },
     ],
   },
   {

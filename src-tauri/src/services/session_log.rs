@@ -102,7 +102,13 @@ pub fn list_dates(session_id: &str) -> Result<Vec<String>, AppError> {
     };
     let dir = state.logs_root.join(session_id);
     let mut dates = Vec::new();
-    for entry in std::fs::read_dir(&dir)? {
+    // 日志目录不存在 = 该会话尚无日志，返回空列表而非报错（与 read_date 的 NotFound→空串同型）
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(dates),
+        Err(e) => return Err(e.into()),
+    };
+    for entry in entries {
         let entry = entry?;
         let name = entry.file_name();
         let name = name.to_string_lossy();
