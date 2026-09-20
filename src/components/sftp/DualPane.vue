@@ -4,6 +4,7 @@
     <div class="dual-pane__col">
       <div class="dual-pane__title">本地</div>
       <FilePane
+        ref="localPane"
         side="local"
         :session-id="sessionId"
         :path="localPath"
@@ -21,6 +22,7 @@
         远程<span v-if="sessionName">（{{ sessionName }}）</span>
       </div>
       <FilePane
+        ref="remotePane"
         side="remote"
         :session-id="sessionId"
         :path="remotePath"
@@ -36,11 +38,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { homeDir } from '@tauri-apps/api/path'
 import FilePane from './FilePane.vue'
 import { joinPath, type FileEntry, type PaneSide } from './file-utils'
-import { useTransferStore } from '@/stores/transfer'
+import { onSessionTransfersDone, useTransferStore } from '@/stores/transfer'
 
 const props = withDefaults(
   defineProps<{
@@ -169,6 +171,36 @@ async function handleTransfer(entries: FileEntry[], from: PaneSide): Promise<voi
     notify(e instanceof Error ? e.message : String(e))
   }
 }
+
+// ---------- 传输完成后对侧列表自动刷新 ----------
+
+const localPane = ref<InstanceType<typeof FilePane> | null>(null)
+const remotePane = ref<InstanceType<typeof FilePane> | null>(null)
+
+/** 待刷新方向集合：同一批多个任务完成合并为一次刷新 */
+const pendingKinds = new Set<string>()
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
+let unlistenDone: (() => void) | null = null
+
+onMounted(() => {
+  unlistenDone = onSessionTransfersDone((task) => {
+    if (!props.sessionId || task.session_id !== props.sessionId) return
+    pendingKinds.add(task.kind)
+    // 防抖：批量任务陆续完成时合并为一次刷新
+    if (refreshTimer) clearTimeout(refreshTimer)
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null
+      if (pendingKinds.has('Upload')) remotePane.value?.refresh()
+      if (pendingKinds.has('Download')) localPane.value?.refresh()
+      pendingKinds.clear()
+    }, 500)
+  })
+})
+
+onUnmounted(() => {
+  if (refreshTimer) clearTimeout(refreshTimer)
+  unlistenDone?.()
+})
 </script>
 
 <style scoped>

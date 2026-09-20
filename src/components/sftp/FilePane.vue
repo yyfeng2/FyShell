@@ -841,6 +841,9 @@ onUnmounted(() => {
   resizeObserver?.disconnect()
   resizeObserver = null
 })
+
+/** 供父级（DualPane）在传输完成后触发对侧列表刷新 */
+defineExpose({ refresh })
 </script>
 
 <style scoped>

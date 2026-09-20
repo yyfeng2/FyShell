@@ -71,6 +71,17 @@ function isActive(status: TransferStatus): boolean {
   return status === 'Queued' || status === 'Running'
 }
 
+/** 任务完成通知方（批量合并后刷新对侧文件列表等），返回注销函数 */
+const doneListeners: ((task: TransferTask) => void)[] = []
+
+export function onSessionTransfersDone(fn: (task: TransferTask) => void): () => void {
+  doneListeners.push(fn)
+  return () => {
+    const i = doneListeners.indexOf(fn)
+    if (i >= 0) doneListeners.splice(i, 1)
+  }
+}
+
 /** 速度采样记录：上次进度字节数 + 时间戳 + 平滑后的速度 */
 interface SpeedSample {
   bytes: number
@@ -108,6 +119,20 @@ export const useTransferStore = defineStore('transfer', {
         this.tasks.push(task)
       }
       this.sampleSpeed(task)
+
+      // 任务完成且该会话无剩余活跃任务 → 通知（批量合并，供视图刷新对侧列表）
+      if (isDone(task.status)) {
+        const remaining = this.tasks.some((t) => t.session_id === task.session_id && isActive(t.status))
+        if (!remaining) {
+          for (const fn of doneListeners) {
+            try {
+              fn(task)
+            } catch {
+              /* 通知方异常不影响队列 */
+            }
+          }
+        }
+      }
     },
 
     /** 增量速度估算（EWMA 平滑，避免速度跳变） */
