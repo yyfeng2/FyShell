@@ -2,8 +2,9 @@
 /**
  * ToolBar —— 经典工具栏（参考 Xshell）
  *
- * 单行分组式：最左"导航"开关（按下态高亮），图标按钮按"新建 | 连接 | 传输"分组，
- * 组间竖分隔线；右侧紧接"字体/编码/配色"快捷切换（图标+底部两字）。
+ * 单行分组式：最左"导航"开关（按下态高亮），按钮按"新建 | 连接 | 传输"分组，
+ * 组间竖分隔线；右侧紧接"字体/编码/配色"快捷切换。
+ * 全部按钮为"图标+底部汉字"结构（toolbar__titled，2-3 字简单命名）。
  * 字体按钮弹 Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效；
  * 配色按钮打开配色方案对话框。地址栏在工具栏下方独立一行（AddressBar.vue）。
  * 所有按钮带 title 工具提示（Xshell 风格提示体系）。
@@ -39,8 +40,9 @@ const emit = defineEmits<{
 /** 字体快捷切换候选（px），完整范围仍在设置对话框"外观"分区 */
 const FONT_SIZES = [12, 14, 16, 18, 20, 24]
 
-/** 字体家族候选（label 显示名 + value 完整 CSS 列表），与设置对话框同一 CSS 值来源 */
+/** 字体家族候选（label 显示名 + value 完整 CSS 列表），首项「系统默认」与设置 store 默认值同一来源 */
 const FONT_FAMILIES = [
+  { label: '系统默认', value: 'Consolas, "Liberation Mono", Menlo, Courier, monospace' },
   { label: 'Cascadia Mono', value: '"Cascadia Mono", Consolas, "Microsoft YaHei", monospace' },
   { label: 'Consolas', value: 'Consolas, "Microsoft YaHei", monospace' },
   { label: 'Courier New', value: '"Courier New", monospace' },
@@ -66,27 +68,60 @@ function firstFamily(css?: string): string {
 <template>
   <div class="toolbar">
     <!-- 导航开关（最左）：按下态高亮 -->
-    <v-btn
-      icon="mdi-view-sidebar"
-      size="20"
-      variant="text"
-      :active="props.navOpen"
-      title="左导航 开/收"
-      @click="emit('nav')"
-    />
+    <v-btn variant="text" :active="props.navOpen" title="左导航 开/收" class="toolbar__titled" @click="emit('nav')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-view-sidebar" />
+        <span>导航</span>
+      </span>
+    </v-btn>
     <v-divider vertical inset class="toolbar__divider" />
     <!-- 新建组 -->
-    <v-btn icon="mdi-plus" size="20" variant="text" title="新建会话 (Ctrl+T)" @click="emit('new-session')" />
-    <v-btn icon="mdi-folder-plus-outline" size="20" variant="text" title="新建文件夹" @click="emit('new-folder')" />
+    <v-btn variant="text" title="新建会话 (Ctrl+T)" class="toolbar__titled" @click="emit('new-session')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-plus" />
+        <span>新建</span>
+      </span>
+    </v-btn>
+    <v-btn variant="text" title="新建文件夹" class="toolbar__titled" @click="emit('new-folder')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-folder-plus-outline" />
+        <span>文件夹</span>
+      </span>
+    </v-btn>
     <v-divider vertical inset class="toolbar__divider" />
     <!-- 连接组：连接/断开保留语义色（全工具栏唯一的彩色点缀） -->
-    <v-btn icon="mdi-lan-connect" size="20" variant="text" color="success" title="连接选中的会话" @click="emit('connect')" />
-    <v-btn icon="mdi-lan-disconnect" size="20" variant="text" color="error" title="断开当前会话" @click="emit('disconnect')" />
+    <v-btn variant="text" color="success" title="连接选中的会话" class="toolbar__titled" @click="emit('connect')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-lan-connect" />
+        <span>连接</span>
+      </span>
+    </v-btn>
+    <v-btn variant="text" color="error" title="断开当前会话" class="toolbar__titled" @click="emit('disconnect')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-lan-disconnect" />
+        <span>断开</span>
+      </span>
+    </v-btn>
     <v-divider vertical inset class="toolbar__divider" />
     <!-- 传输 / 视图组 -->
-    <v-btn icon="mdi-magnify" size="20" variant="text" title="搜索会话" @click="emit('search')" />
-    <v-btn icon="mdi-swap-vertical" size="20" variant="text" title="传输队列" @click="emit('transfer')" />
-    <v-btn icon="mdi-folder-swap-outline" size="20" variant="text" title="SFTP 文件传输" @click="emit('sftp')" />
+    <v-btn variant="text" title="搜索会话" class="toolbar__titled" @click="emit('search')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-magnify" />
+        <span>搜索</span>
+      </span>
+    </v-btn>
+    <v-btn variant="text" title="传输队列" class="toolbar__titled" @click="emit('transfer')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-swap-vertical" />
+        <span>传输</span>
+      </span>
+    </v-btn>
+    <v-btn variant="text" title="SFTP 文件传输" class="toolbar__titled" @click="emit('sftp')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-folder-swap-outline" />
+        <span>传文件</span>
+      </span>
+    </v-btn>
     <v-divider vertical inset class="toolbar__divider" />
 
     <!-- 字体：Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效 -->

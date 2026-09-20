@@ -51,7 +51,8 @@ const DEFAULTS = {
   /** 跟随系统：经 matchMedia 实时同步系统深浅色偏好（唯一监听，见 ensureSystemThemeWatch） */
   theme_mode: 'auto' as ThemeMode,
   terminal_font_size: 14,
-  terminal_font_family: '"Cascadia Mono", Consolas, "Microsoft YaHei", monospace',
+  /** 系统默认：xterm.js 官方默认等宽字体栈（Windows 命中 Consolas，跨平台降级 Menlo/monospace） */
+  terminal_font_family: 'Consolas, "Liberation Mono", Menlo, Courier, monospace',
   terminal_font_style: 'normal' as FontFamilyStyle,
   terminal_scrollback: 10000,
   terminal_cursor_blink: true,

@@ -77,7 +77,7 @@
                 :model-value="settings.terminalFontFamily"
                 density="compact"
                 class="settings-dialog__field"
-                placeholder="&quot;Cascadia Mono&quot;, Consolas, monospace"
+                placeholder="Consolas, &quot;Liberation Mono&quot;, monospace"
                 @change="onFontFamilyChange"
               />
             </div>
