@@ -569,36 +569,12 @@
       </v-card>
     </v-dialog>
 
-    <!-- 新建数据库对话框：输入库名后 CREATE DATABASE -->
-    <v-dialog v-model="showDbCreate" width="420" persistent>
-      <v-card>
-        <v-card-title class="d-flex align-center">
-          <v-icon size="small" class="mr-2">mdi-database-plus</v-icon>
-          新建数据库
-        </v-card-title>
-        <v-divider />
-        <v-card-text>
-          <div class="fy-field-row">
-            <span class="fy-field-row__label">数据库名</span>
-            <v-text-field
-              v-model="dbCreateName"
-              density="compact"
-              variant="outlined"
-              autofocus
-              @keyup.enter="createDb"
-            />
-          </div>
-        </v-card-text>
-        <v-divider />
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="showDbCreate = false">取消</v-btn>
-          <v-btn color="primary" prepend-icon="mdi-check" :loading="creatingDb" @click="createDb">
-            创建
-          </v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <!-- 新建数据库对话框（与导航树右键同款：常规分区 数据库名称/字符集/排序规则） -->
+    <NewDatabaseDialog
+      v-model="showDbCreate"
+      :conn-id="store.connId ?? ''"
+      @saved="loadDatabases"
+    />
 
     <!-- 表快捷操作对话框：选表 + 复制 DDL / 清空 / 优化 / 重命名 -->
     <v-dialog v-model="showTableOpDialog" width="480" persistent>
@@ -729,7 +705,6 @@ import {
 import type { MySqlUserInfo, MySqlUserGrant } from '@/api/mysqlUsers'
 import { mysqlTableDesignGet } from '@/api/mysqlDesign'
 import {
-  mysqlDbCreate,
   mysqlDbDrop,
   mysqlDbList,
   mysqlDbSwitch,
@@ -739,6 +714,7 @@ import {
 } from '@/api/mysqlDb'
 import MysqlDataGrid from './MysqlDataGrid.vue'
 import MysqlConnectionForm from './MysqlConnectionForm.vue'
+import NewDatabaseDialog from './NewDatabaseDialog.vue'
 import BackupPanel from './BackupPanel.vue'
 import AutoRunPanel from './AutoRunPanel.vue'
 import VaultUnlockDialog from '@/components/common/VaultUnlockDialog.vue'
@@ -1299,33 +1275,9 @@ async function switchDb(name: string | null): Promise<void> {
 }
 
 const showDbCreate = ref(false)
-const dbCreateName = ref('')
-const creatingDb = ref(false)
 
 function openDbCreate(): void {
-  dbCreateName.value = ''
   showDbCreate.value = true
-}
-
-/** 新建数据库：CREATE DATABASE 后刷新库列表（不自动切换当前库） */
-async function createDb(): Promise<void> {
-  const connId = store.connId
-  const name = dbCreateName.value.trim()
-  if (!connId || !name) {
-    ui.toast('请填写数据库名', 'warning')
-    return
-  }
-  creatingDb.value = true
-  try {
-    await mysqlDbCreate(connId, name)
-    ui.toast(`数据库「${name}」已创建`, 'success')
-    showDbCreate.value = false
-    await loadDatabases()
-  } catch (err) {
-    ui.toast(errText(err), 'error')
-  } finally {
-    creatingDb.value = false
-  }
 }
 
 /** 删除数据库：uiStore 强确认（danger）后 DROP DATABASE */

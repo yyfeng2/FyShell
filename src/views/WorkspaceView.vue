@@ -35,17 +35,22 @@ import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
 import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
 import ImportExportDialog from '@/components/mysql/ImportExportDialog.vue'
+import EditDatabaseDialog from '@/components/mysql/EditDatabaseDialog.vue'
+import NewDatabaseDialog from '@/components/mysql/NewDatabaseDialog.vue'
+import ErModelDialog from '@/components/mysql/ErModelDialog.vue'
+import FindInDbDialog from '@/components/mysql/FindInDbDialog.vue'
 import RedisDbWorkspace from '@/components/redis/RedisDbWorkspace.vue'
 import SessionListDialog from '@/components/ssh/session/SessionListDialog.vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { useRedisStore } from '@/stores/redis'
-import { mysqlDbList, mysqlDbSwitch, mysqlDbCreate, mysqlDbDrop } from '@/api/mysqlDb'
+import { mysqlDbList, mysqlDbSwitch, mysqlDbDrop } from '@/api/mysqlDb'
+import { mysqlListTables, mysqlQuery } from '@/api/mysql'
 import { sessionList, sessionClone } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore, type FontFamilyStyle } from '@/stores/settings'
 import { useSessionStore, type SessionConfig } from '@/stores/session'
-import type { RedisConnection } from '@/api/types'
+import type { RedisConnection, MySqlTableInfo, MySqlQueryResult } from '@/api/types'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useTerminalStore } from '@/stores/terminal'
 import { debugLog } from '@/api/channels'
@@ -1278,11 +1283,78 @@ function menuDumpSql(includeCreate: boolean): void {
   ioDialogVisible.value = true
 }
 
-/** 右键菜单"新建数据库"：输入库名对话框（确认后走 mysql_db_create） */
+/** 右键菜单"编辑数据库..."：打开编辑对话框（修改库默认字符集/排序规则） */
+function menuEditDb(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node?.dbName) return
+  if (!useMysqlStore().connId) {
+    ui.toast('请先连接 MySQL 数据库后再编辑库', 'warning')
+    return
+  }
+  editDbName.value = node.dbName
+  showEditDbDialog.value = true
+}
+
+/** 右键菜单"打印数据库"：生成全库结构报告并调起 WebView 打印 */
+function menuPrintDb(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  const connId = useMysqlStore().connId
+  if (!node?.dbName) return
+  if (!connId) {
+    ui.toast('请先连接 MySQL 数据库后再打印', 'warning')
+    return
+  }
+  const dbName = node.dbName
+  void (async () => {
+    try {
+      const [tables, colResult] = await Promise.all([
+        mysqlListTables(connId),
+        mysqlQuery(
+          connId,
+          `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_COMMENT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ${sqlStr(dbName)} ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+          1,
+          1000000,
+        ),
+      ])
+      printHtml(buildStructureReport(dbName, tables, colResult))
+    } catch (e) {
+      ui.toast(`打印数据库失败：${String(e)}`, 'error')
+    }
+  })()
+}
+
+/** 右键菜单"逆向数据库到模型..."：打开 ER 图对话框 */
+function menuErModel(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node?.dbName) return
+  if (!useMysqlStore().connId) {
+    ui.toast('请先连接 MySQL 数据库后再生成模型', 'warning')
+    return
+  }
+  erDbName.value = node.dbName
+  showErModelDialog.value = true
+}
+
+/** 右键菜单"在数据库中查找"：打开全库查找对话框 */
+function menuFindInDb(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node?.dbName) return
+  if (!useMysqlStore().connId) {
+    ui.toast('请先连接 MySQL 数据库后再查找', 'warning')
+    return
+  }
+  findDbName.value = node.dbName
+  showFindDialog.value = true
+}
+
+/** 右键菜单"新建数据库"：打开新建对话框（常规分区：数据库名称/字符集/排序规则） */
 function menuCreateDb(): void {
   treeMenu.visible = false
   if (!useMysqlStore().connId) return
-  newDbName.value = ''
   showNewDbDialog.value = true
 }
 
@@ -1323,26 +1395,91 @@ async function menuRefresh(): Promise<void> {
 // ---------------- 树右键"新建数据库"对话框 ----------------
 
 const showNewDbDialog = ref(false)
-const newDbName = ref('')
-const newDbCreating = ref(false)
 
-/** 新建数据库确认：作用于当前活动 MySQL 连接，成功后刷新树中库节点 */
-async function createDb(): Promise<void> {
-  const name = newDbName.value.trim()
-  const connId = useMysqlStore().connId
-  if (!name || !connId) return
-  newDbCreating.value = true
-  try {
-    await mysqlDbCreate(connId, name)
-    newDbName.value = ''
-    showNewDbDialog.value = false
-    ui.toast(`数据库「${name}」已创建`, 'success')
-    await refreshMysqlTreeDbs()
-  } catch (e) {
-    ui.toast(`新建数据库失败：${String(e)}`, 'error')
-  } finally {
-    newDbCreating.value = false
+// ---------------- 树右键"编辑数据库/逆向到模型/在库中查找"对话框 ----------------
+
+/** 当前活动 MySQL 连接 ID（对话框 connId 挂当前连接，随 store 响应式更新；未连接为空串） */
+const mysqlConnId = computed(() => useMysqlStore().connId ?? '')
+
+const showEditDbDialog = ref(false)
+const editDbName = ref('')
+const showErModelDialog = ref(false)
+const erDbName = ref('')
+const showFindDialog = ref(false)
+const findDbName = ref('')
+
+/** SQL 字符串字面量（单引号翻倍转义） */
+function sqlStr(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+/** 拼 HTML 结构报告（打印数据库）：标题=库+生成时间，每表小节=表名/行数/引擎/注释 + 列表格 */
+function buildStructureReport(
+  dbName: string,
+  tables: MySqlTableInfo[],
+  colResult: MySqlQueryResult,
+): string {
+  const colsByTable = new Map<string, string[]>()
+  colResult.rows.forEach((row) => {
+    const table = row[0] ?? ''
+    if (!table) return
+    const nullable = row[3] === 'YES' ? 'NULL' : 'NOT NULL'
+    const key = row[4] === 'PRI' ? ' PRI' : row[4] === 'UNI' ? ' UK' : row[4] === 'MUL' ? ' MUL' : ''
+    const line = `${row[1] ?? ''}  ${row[2] ?? ''}  ${nullable}${key}${row[5] ? `  ${row[5]}` : ''}`
+    const list = colsByTable.get(table)
+    if (list) list.push(line)
+    else colsByTable.set(table, [line])
+  })
+  const esc = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const sections = tables
+    .map((t) => {
+      const cols = colsByTable.get(t.name) ?? []
+      const colRows = cols.map((c) => `<tr><td>${esc(c)}</td></tr>`).join('')
+      return `<section class="tbl"><h2>${esc(t.name)}</h2>
+<p class="meta">行数（预估）：${t.rows}　引擎：${esc(t.engine)}${t.comment ? `　注释：${esc(t.comment)}` : ''}</p>
+${colRows ? `<table><thead><tr><th>列定义</th></tr></thead><tbody>${colRows}</tbody></table>` : '<p class="meta">（无列信息）</p>'}
+</section>`
+    })
+    .join('\n')
+  return `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>数据库结构 - ${esc(dbName)}</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; font-size: 12px; color: #222; margin: 24px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .gen { color: #666; margin: 0 0 16px; }
+  section.tbl { margin-bottom: 18px; page-break-inside: avoid; }
+  h2 { font-size: 14px; margin: 0 0 4px; }
+  p.meta { color: #555; margin: 0 0 6px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #bbb; padding: 3px 8px; text-align: left; }
+  th { background: #f0f0f0; }
+</style></head><body>
+<h1>数据库结构：${esc(dbName)}</h1>
+<p class="gen">生成时间：${new Date().toLocaleString('zh-CN')}　共 ${tables.length} 张表</p>
+${sections}
+</body></html>`
+}
+
+/** 隐藏 iframe 写入 HTML 并调起打印（WebView2 内打印，不弹新窗口） */
+function printHtml(html: string): void {
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = 'none'
+  document.body.appendChild(iframe)
+  const doc = iframe.contentDocument
+  if (!doc) {
+    document.body.removeChild(iframe)
+    return
   }
+  doc.open()
+  doc.write(html)
+  doc.close()
+  iframe.contentWindow?.focus()
+  iframe.contentWindow?.print()
+  window.setTimeout(() => document.body.removeChild(iframe), 60_000)
 }
 
 /** 导入导出对话框（树右键"运行 SQL 文件"入口；connId 挂当前活动 MySQL 连接） */
@@ -2487,8 +2624,8 @@ onUnmounted(() => {
             <v-list-item v-else @click="menuOpenDb">
               <v-list-item-title>打开数据库</v-list-item-title>
             </v-list-item>
-            <v-list-item disabled>
-              <v-list-item-title title="开发中">编辑数据库...</v-list-item-title>
+            <v-list-item @click="menuEditDb">
+              <v-list-item-title>编辑数据库...</v-list-item-title>
             </v-list-item>
             <v-list-item :disabled="!treeMenuCtx.connId" @click="menuCreateDb">
               <v-list-item-title>新建数据库...</v-list-item-title>
@@ -2522,14 +2659,14 @@ onUnmounted(() => {
                 </v-list-item>
               </v-list>
             </v-menu>
-            <v-list-item disabled>
-              <v-list-item-title title="开发中">打印数据库</v-list-item-title>
+            <v-list-item @click="menuPrintDb">
+              <v-list-item-title>打印数据库</v-list-item-title>
             </v-list-item>
-            <v-list-item disabled>
-              <v-list-item-title title="开发中">逆向数据库到模型...</v-list-item-title>
+            <v-list-item @click="menuErModel">
+              <v-list-item-title>逆向数据库到模型...</v-list-item-title>
             </v-list-item>
-            <v-list-item disabled>
-              <v-list-item-title title="开发中">在数据库中查找</v-list-item-title>
+            <v-list-item @click="menuFindInDb">
+              <v-list-item-title>在数据库中查找</v-list-item-title>
             </v-list-item>
             <v-divider />
             <v-list-item @click="menuRefresh">
@@ -2757,44 +2894,35 @@ onUnmounted(() => {
       </v-card>
     </v-dialog>
 
-    <!-- 新建数据库对话框（树右键"新建数据库..."入口；作用于当前活动 MySQL 连接） -->
-    <v-dialog v-model="showNewDbDialog" width="360">
-      <v-card>
-        <v-card-title class="d-flex align-center text-subtitle-1">新建数据库
-          <v-spacer />
-          <v-btn
-          icon="mdi-close"
-          size="x-small"
-          variant="text"
-          title="关闭"
-          @click="showNewDbDialog = false"
-          />
-        </v-card-title>
-        <v-divider />
-        <v-card-text>
-          <div class="fy-field-row">
-            <span class="fy-field-row__label">数据库名称</span>
-            <v-text-field
-              v-model="newDbName"
-              density="compact"
-              autofocus
-              @keydown.enter="createDb"
-            />
-          </div>
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="showNewDbDialog = false">取消</v-btn>
-          <v-btn color="primary" :loading="newDbCreating" @click="createDb">确定</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <!-- 新建数据库对话框（树右键"新建数据库..."入口；connId 挂当前活动 MySQL 连接） -->
+    <NewDatabaseDialog
+      v-model="showNewDbDialog"
+      :conn-id="mysqlConnId"
+      @saved="refreshMysqlTreeDbs"
+    />
 
     <!-- 导入导出对话框（树右键"运行 SQL 文件..."入口；connId 挂当前活动 MySQL 连接） -->
     <ImportExportDialog
       v-model="ioDialogVisible"
       :conn-id="ioDialogConnId"
       :initial-include-create-table="ioIncludeCreateTable"
+    />
+
+    <!-- 编辑数据库/逆向到模型/在库中查找对话框（树右键入口；connId 挂当前活动 MySQL 连接） -->
+    <EditDatabaseDialog
+      v-model="showEditDbDialog"
+      :conn-id="mysqlConnId"
+      :db-name="editDbName"
+    />
+    <ErModelDialog
+      v-model="showErModelDialog"
+      :conn-id="mysqlConnId"
+      :db-name="erDbName"
+    />
+    <FindInDbDialog
+      v-model="showFindDialog"
+      :conn-id="mysqlConnId"
+      :db-name="findDbName"
     />
 
     <!-- 文件菜单"打开"：会话列表对话框（Xshell 会话管理器风格，选择/双击/右键即打开） -->

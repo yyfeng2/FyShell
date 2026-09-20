@@ -30,6 +30,7 @@ export type {
   MySqlConnection,
   MySqlTableInfo,
   MySqlQueryResult,
+  MySqlDbFindHit,
   RedisConnection,
   RedisExecResult,
 } from '../bindings';

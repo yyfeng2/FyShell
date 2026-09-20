@@ -23,3 +23,14 @@ pub struct MySqlTableDdl {
     pub table: String,
     pub sql: String,
 }
+
+/// 全库搜索命中（mysql_db_find 返回，按表分组）
+///
+/// columns 为该表全部列名（SELECT * 的列顺序），rows 为命中行数据；
+/// 仅包含有命中的表，rows 行数受 max_per_table 限制。
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct MySqlDbFindHit {
+    pub table: String,
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Option<String>>>,
+}

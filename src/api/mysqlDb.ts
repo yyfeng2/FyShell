@@ -19,8 +19,18 @@ export function mysqlDbList(connId: string): Promise<MySqlDatabaseList> {
 }
 
 /** 新建数据库（CREATE DATABASE） */
-export function mysqlDbCreate(connId: string, name: string): Promise<void> {
-  return invoke<void>('mysql_db_create', { connId, name });
+export function mysqlDbCreate(
+  connId: string,
+  name: string,
+  charset?: string,
+  collation?: string,
+): Promise<void> {
+  return invoke<void>('mysql_db_create', {
+    connId,
+    name,
+    charset: charset ?? null,
+    collation: collation ?? null,
+  });
 }
 
 /**

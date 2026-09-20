@@ -5,7 +5,7 @@
 //! 表级 TRUNCATE 不在此处：复用 mysql_execute 的危险 SQL 确认流程。
 
 use crate::error::AppError;
-use crate::models::mysql_db::{MySqlDatabaseList, MySqlTableDdl};
+use crate::models::mysql_db::{MySqlDatabaseList, MySqlDbFindHit, MySqlTableDdl};
 use crate::services;
 
 /// `mysql_db_list` (conn_id: String) -> MySqlDatabaseList（host + current_db + databases）
@@ -15,11 +15,20 @@ pub async fn mysql_db_list(conn_id: String) -> Result<MySqlDatabaseList, AppErro
     services::mysql_db::list_databases(&conn_id).await
 }
 
-/// `mysql_db_create` (conn_id: String, name: String) -> ()
+/// `mysql_db_create` (conn_id: String, name: String [, charset: String [, collation: String]]) -> ()
+///
+/// 新建数据库（CREATE DATABASE），charset/collation 可选（库默认字符集/排序规则，
+/// 右键菜单「新建数据库...」对话框选择，未传时使用服务器默认值）。
 #[tauri::command]
 #[specta::specta]
-pub async fn mysql_db_create(conn_id: String, name: String) -> Result<(), AppError> {
-    services::mysql_db::create_database(&conn_id, &name).await
+pub async fn mysql_db_create(
+    conn_id: String,
+    name: String,
+    charset: Option<String>,
+    collation: Option<String>,
+) -> Result<(), AppError> {
+    services::mysql_db::create_database(&conn_id, &name, charset.as_deref(), collation.as_deref())
+        .await
 }
 
 /// `mysql_db_drop` (conn_id: String, name: String [, confirmed: bool]) -> ()
@@ -77,4 +86,36 @@ pub async fn mysql_table_rename(
     new_name: String,
 ) -> Result<(), AppError> {
     services::mysql_db::rename_table(&conn_id, &old_name, &new_name).await
+}
+
+/// `mysql_db_edit` (conn_id: String, name: String, charset: String [, collation: String]) -> ()
+///
+/// 编辑数据库默认字符集/排序规则（ALTER DATABASE），右键菜单「编辑数据库...」入口。
+#[tauri::command]
+#[specta::specta]
+pub async fn mysql_db_edit(
+    conn_id: String,
+    name: String,
+    charset: String,
+    collation: Option<String>,
+) -> Result<(), AppError> {
+    services::mysql_db::edit_database(&conn_id, &name, &charset, collation.as_deref()).await
+}
+
+/// `mysql_db_find` (conn_id: String, name: String, keyword: String [, max_per_table: u32]) -> Vec<MySqlDbFindHit>
+///
+/// 全库表数据按关键字 LIKE 搜索（右键菜单「在数据库中查找」），
+/// 仅搜字符串列，按表分组返回命中行。
+#[tauri::command]
+#[specta::specta]
+pub async fn mysql_db_find(
+    conn_id: String,
+    name: String,
+    keyword: String,
+    max_per_table: Option<u32>,
+) -> Result<Vec<MySqlDbFindHit>, AppError> {
+    if keyword.trim().is_empty() {
+        return Err(AppError::general("搜索关键字不能为空"));
+    }
+    services::mysql_db::find_in_database(&conn_id, &name, &keyword, max_per_table).await
 }

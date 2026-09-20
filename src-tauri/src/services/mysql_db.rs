@@ -20,7 +20,7 @@ use mysql_async::prelude::*;
 use mysql_async::Conn;
 
 use crate::error::AppError;
-use crate::models::mysql_db::{MySqlDatabaseList, MySqlTableDdl};
+use crate::models::mysql_db::{MySqlDatabaseList, MySqlDbFindHit, MySqlTableDdl};
 use crate::services::mysql::config_of;
 
 /// mysql_async::Error -> AppError 归入 General 变体（与 services/mysql 同款归一化）
@@ -94,11 +94,30 @@ async fn do_list_databases(conn: &mut Conn) -> Result<MySqlDatabaseList, AppErro
 }
 
 /// db_create：`CREATE DATABASE \`name\``（数据库名反引号包裹防注入）
-pub async fn create_database(conn_id: &str, name: &str) -> Result<(), AppError> {
+pub async fn create_database(
+    conn_id: &str,
+    name: &str,
+    charset: Option<&str>,
+    collation: Option<&str>,
+) -> Result<(), AppError> {
     if !is_valid_identifier(name) {
         return Err(AppError::general(format!("数据库名非法: {name}")));
     }
-    let sql = format!("CREATE DATABASE {}", quote_db(name));
+    let mut sql = format!("CREATE DATABASE {}", quote_db(name));
+    if let Some(cs) = charset {
+        if !is_valid_charset_name(cs) {
+            return Err(AppError::general(format!("字符集非法: {cs}")));
+        }
+        sql.push_str(&format!(" DEFAULT CHARACTER SET = {}", quote_db(cs)));
+        if let Some(coll) = collation {
+            if !coll.is_empty() {
+                if !is_valid_charset_name(coll) {
+                    return Err(AppError::general(format!("排序规则非法: {coll}")));
+                }
+                sql.push_str(&format!(" COLLATE = {}", quote_db(coll)));
+            }
+        }
+    }
     let (mut conn, from_tx) = take_tx_or_pool(conn_id).await?;
     let outcome = conn.query_drop(&sql).await.map_err(mysql_err);
     if from_tx {
@@ -219,6 +238,181 @@ pub async fn rename_table(conn_id: &str, old_name: &str, new_name: &str) -> Resu
         crate::services::mysql::give_tx_conn(conn_id, conn);
     }
     outcome
+}
+
+/// db_edit：ALTER DATABASE 指定库默认字符集/排序规则
+///
+/// 字符集/排序规则名限字母数字与下划线（MySQL 内置命名如 utf8mb4_general_ci 均满足，
+/// 防注入）；collation 为 None 时只设字符集。右键的库可与连接默认库不同，
+/// ALTER 直接限定库名，不依赖连接当前库上下文。
+pub async fn edit_database(
+    conn_id: &str,
+    name: &str,
+    charset: &str,
+    collation: Option<&str>,
+) -> Result<(), AppError> {
+    if !is_valid_identifier(name) {
+        return Err(AppError::general(format!("数据库名非法: {name}")));
+    }
+    if !is_valid_charset_name(charset) {
+        return Err(AppError::general(format!("字符集名非法: {charset}")));
+    }
+    if let Some(coll) = collation {
+        if !is_valid_charset_name(coll) {
+            return Err(AppError::general(format!("排序规则名非法: {coll}")));
+        }
+    }
+    let mut sql = format!(
+        "ALTER DATABASE {} DEFAULT CHARACTER SET = {charset}",
+        quote_db(name)
+    );
+    if let Some(coll) = collation {
+        sql.push_str(&format!(" COLLATE = {coll}"));
+    }
+    let (mut conn, from_tx) = take_tx_or_pool(conn_id).await?;
+    let outcome = conn.query_drop(&sql).await.map_err(mysql_err);
+    if from_tx {
+        crate::services::mysql::give_tx_conn(conn_id, conn);
+    }
+    outcome
+}
+
+/// db_find：全库表数据按关键字 LIKE 搜索（右键菜单「在数据库中查找」）
+///
+/// 右键的库可与连接默认库不同，全部 SQL 以 `db`.`table` 限定、
+/// TABLE_SCHEMA = 'name' 过滤，不依赖连接当前库上下文。
+/// 仅搜字符串列（char/varchar/text 系/enum/set）；每表命中行数受 max_per_table
+/// 限制（默认 20）；只返回有命中的表，columns 为该表全部列名（SELECT * 顺序）。
+pub async fn find_in_database(
+    conn_id: &str,
+    name: &str,
+    keyword: &str,
+    max_per_table: Option<u32>,
+) -> Result<Vec<MySqlDbFindHit>, AppError> {
+    if !is_valid_identifier(name) {
+        return Err(AppError::general(format!("数据库名非法: {name}")));
+    }
+    if keyword.trim().is_empty() {
+        return Err(AppError::general("搜索关键字不能为空"));
+    }
+    let limit = max_per_table.unwrap_or(20).max(1);
+
+    let (mut conn, from_tx) = take_tx_or_pool(conn_id).await?;
+    let outcome = do_find_in_database(&mut conn, name, keyword, limit).await;
+    if from_tx {
+        crate::services::mysql::give_tx_conn(conn_id, conn);
+    }
+    outcome
+}
+
+/// 全库搜索主体（拆出以便错误早退时仍归还事务连接）
+async fn do_find_in_database(
+    conn: &mut Conn,
+    name: &str,
+    keyword: &str,
+    limit: u32,
+) -> Result<Vec<MySqlDbFindHit>, AppError> {
+    // LIKE 模式转义：反斜杠/百分号/下划线三字符（包 %kw% 后 %/_ 才不当作通配符）
+    let mut like = String::from("%");
+    for c in keyword.chars() {
+        if c == '\\' || c == '%' || c == '_' {
+            like.push('\\');
+        }
+        like.push(c);
+    }
+    like.push('%');
+    // SQL 字符串字面量单引号翻倍转义
+    let like_lit = like.replace('\'', "''");
+    let schema_lit = name.replace('\'', "''");
+
+    // 1. 全部列元数据（含是否可搜索的字符串列标记），按表/列序分组
+    let meta_sql = format!(
+        "SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS \
+         WHERE TABLE_SCHEMA = '{schema_lit}' ORDER BY TABLE_NAME, ORDINAL_POSITION"
+    );
+    let mut result = conn.query_iter(meta_sql).await.map_err(mysql_err)?;
+    // 表名 -> 全列名列表 / 可搜索列名列表；order 保持表出现顺序
+    let mut order: Vec<String> = Vec::new();
+    let mut all_cols: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    let mut search_cols: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    while let Some(mut row) = result.next().await.map_err(mysql_err)? {
+        let table = row.take::<Option<String>, _>(0).flatten().unwrap_or_default();
+        let col = row.take::<Option<String>, _>(1).flatten().unwrap_or_default();
+        let dtype = row
+            .take::<Option<String>, _>(2)
+            .flatten()
+            .unwrap_or_default();
+        if table.is_empty() || col.is_empty() {
+            continue;
+        }
+        if !all_cols.contains_key(&table) {
+            order.push(table.clone());
+        }
+        all_cols.entry(table.clone()).or_default().push(col.clone());
+        if is_searchable_type(&dtype) {
+            search_cols.entry(table).or_default().push(col);
+        }
+    }
+    result.drop_result().await.map_err(mysql_err)?;
+
+    // 2. 每表 LIKE 搜索（`db`.`table` 限定，不依赖连接当前库）
+    let mut hits = Vec::new();
+    for table in order {
+        let cols = match all_cols.get(&table) {
+            Some(cols) => cols.clone(),
+            None => continue,
+        };
+        let searchable = match search_cols.get(&table) {
+            Some(cols) if !cols.is_empty() => cols,
+            _ => continue,
+        };
+        let where_clause: Vec<String> = searchable
+            .iter()
+            .map(|c| format!("`{c}` LIKE '{like_lit}'"))
+            .collect();
+        let sql = format!(
+            "SELECT * FROM {}.{} WHERE {} LIMIT {limit}",
+            quote_db(name),
+            quote_table(&table)?,
+            where_clause.join(" OR ")
+        );
+        let rows = collect_rows(conn, &sql).await?;
+        if !rows.is_empty() {
+            hits.push(MySqlDbFindHit { table, columns: cols, rows });
+        }
+    }
+    Ok(hits)
+}
+
+/// 字符串系列类型判定（这些列参与 LIKE 搜索）
+fn is_searchable_type(dtype: &str) -> bool {
+    matches!(
+        dtype,
+        "char" | "varchar" | "text" | "tinytext" | "mediumtext" | "longtext" | "enum" | "set"
+    )
+}
+
+/// 字符集/排序规则名校验：仅字母数字与下划线（MySQL 内置命名均满足，防注入）
+fn is_valid_charset_name(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// 执行 SELECT 并收集全部行（列按位置，None = NULL）
+async fn collect_rows(conn: &mut Conn, sql: &str) -> Result<Vec<Vec<Option<String>>>, AppError> {
+    let mut result = conn.query_iter(sql).await.map_err(mysql_err)?;
+    let mut rows = Vec::new();
+    while let Some(mut row) = result.next().await.map_err(mysql_err)? {
+        let len = row.columns().len();
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            out.push(row.take::<Option<String>, _>(i).flatten());
+        }
+        rows.push(out);
+    }
+    result.drop_result().await.map_err(mysql_err)?;
+    Ok(rows)
 }
 
 /// 取连接：优先复用事务内独占连接，否则从池中取

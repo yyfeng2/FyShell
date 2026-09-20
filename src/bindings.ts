@@ -245,8 +245,13 @@ export const commands = {
 	mysqlObjectDrop: (connId: string, kind: string, name: string) => __TAURI_INVOKE<null>("mysql_object_drop", { connId, kind, name }),
 	/**  `mysql_db_list` (conn_id: String) -> MySqlDatabaseList（host + current_db + databases） */
 	mysqlDbList: (connId: string) => __TAURI_INVOKE<MySqlDatabaseList>("mysql_db_list", { connId }),
-	/**  `mysql_db_create` (conn_id: String, name: String) -> () */
-	mysqlDbCreate: (connId: string, name: string) => __TAURI_INVOKE<null>("mysql_db_create", { connId, name }),
+	/**
+	 *  `mysql_db_create` (conn_id: String, name: String [, charset: String [, collation: String]]) -> ()
+	 * 
+	 *  新建数据库（CREATE DATABASE），charset/collation 可选（库默认字符集/排序规则，
+	 *  右键菜单「新建数据库...」对话框选择，未传时使用服务器默认值）。
+	 */
+	mysqlDbCreate: (connId: string, name: string, charset: string | null, collation: string | null) => __TAURI_INVOKE<null>("mysql_db_create", { connId, name, charset, collation }),
 	/**
 	 *  `mysql_db_drop` (conn_id: String, name: String [, confirmed: bool]) -> ()
 	 * 
@@ -267,6 +272,19 @@ export const commands = {
 	mysqlTableOptimize: (connId: string, table: string) => __TAURI_INVOKE<null>("mysql_table_optimize", { connId, table }),
 	/**  `mysql_table_rename` (conn_id: String, old_name: String, new_name: String) -> () */
 	mysqlTableRename: (connId: string, oldName: string, newName: string) => __TAURI_INVOKE<null>("mysql_table_rename", { connId, oldName, newName }),
+	/**
+	 *  `mysql_db_edit` (conn_id: String, name: String, charset: String [, collation: String]) -> ()
+	 * 
+	 *  编辑数据库默认字符集/排序规则（ALTER DATABASE），右键菜单「编辑数据库...」入口。
+	 */
+	mysqlDbEdit: (connId: string, name: string, charset: string, collation: string | null) => __TAURI_INVOKE<null>("mysql_db_edit", { connId, name, charset, collation }),
+	/**
+	 *  `mysql_db_find` (conn_id: String, name: String, keyword: String [, max_per_table: u32]) -> Vec<MySqlDbFindHit>
+	 * 
+	 *  全库表数据按关键字 LIKE 搜索（右键菜单「在数据库中查找」），
+	 *  仅搜字符串列，按表分组返回命中行。
+	 */
+	mysqlDbFind: (connId: string, name: string, keyword: string, maxPerTable: number | null) => __TAURI_INVOKE<MySqlDbFindHit[]>("mysql_db_find", { connId, name, keyword, maxPerTable }),
 	/**  `mysql_user_list` (conn_id: String) -> Vec<MySqlUserInfo> */
 	mysqlUserList: (connId: string) => __TAURI_INVOKE<MySqlUserInfo[]>("mysql_user_list", { connId }),
 	/**  `mysql_user_create` (conn_id: String, user: String, host: String, password: String) -> () */
@@ -558,6 +576,18 @@ export type MySqlDatabaseList = {
 	current_db: string | null,
 	/**  该连接可见的全部数据库名（SHOW DATABASES 结果，已排序） */
 	databases: string[],
+};
+
+/**
+ *  全库搜索命中（mysql_db_find 返回，按表分组）
+ * 
+ *  columns 为该表全部列名（SELECT * 的列顺序），rows 为命中行数据；
+ *  仅包含有命中的表，rows 行数受 max_per_table 限制。
+ */
+export type MySqlDbFindHit = {
+	table: string,
+	columns: string[],
+	rows: ((string | null)[])[],
 };
 
 /**  表设计变更（apply_change 入参） */

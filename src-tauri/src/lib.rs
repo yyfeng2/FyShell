@@ -120,6 +120,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::mysql_db::mysql_table_show_create,
             commands::mysql_db::mysql_table_optimize,
             commands::mysql_db::mysql_table_rename,
+            commands::mysql_db::mysql_db_edit,
+            commands::mysql_db::mysql_db_find,
             // 用户管理（commands/mysql_user.rs）
             commands::mysql_user::mysql_user_list,
             commands::mysql_user::mysql_user_create,
@@ -324,6 +326,8 @@ pub fn run() {
             commands::mysql_db::mysql_table_show_create,
             commands::mysql_db::mysql_table_optimize,
             commands::mysql_db::mysql_table_rename,
+            commands::mysql_db::mysql_db_edit,
+            commands::mysql_db::mysql_db_find,
             // 用户管理（commands/mysql_user.rs）
             commands::mysql_user::mysql_user_list,
             commands::mysql_user::mysql_user_create,

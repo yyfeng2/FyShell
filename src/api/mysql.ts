@@ -9,6 +9,7 @@ import type {
   MySqlConnection,
   MySqlQueryResult,
   MySqlTableInfo,
+  MySqlDbFindHit,
 } from './types';
 
 /** 建立 MySQL 连接，返回 Rust 侧生成的 connection_id */
@@ -63,4 +64,34 @@ export function mysqlCommit(connId: string): Promise<void> {
 /** 回滚事务 */
 export function mysqlRollback(connId: string): Promise<void> {
   return invoke<void>('mysql_rollback', { connId });
+}
+
+/** 编辑数据库：修改默认字符集/排序规则（ALTER DATABASE），collation 可省略 */
+export function mysqlDbEdit(
+  connId: string,
+  name: string,
+  charset: string,
+  collation?: string,
+): Promise<void> {
+  return invoke<void>('mysql_db_edit', {
+    connId,
+    name,
+    charset,
+    collation: collation ?? null,
+  });
+}
+
+/** 全库表数据按关键字 LIKE 搜索（仅字符串列），按表分组返回命中行 */
+export function mysqlDbFind(
+  connId: string,
+  name: string,
+  keyword: string,
+  maxPerTable?: number,
+): Promise<MySqlDbFindHit[]> {
+  return invoke<MySqlDbFindHit[]>('mysql_db_find', {
+    connId,
+    name,
+    keyword,
+    maxPerTable: maxPerTable ?? null,
+  });
 }
