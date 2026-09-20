@@ -134,10 +134,14 @@ enum Direction {
     Recv,
     /// 对端执行了 rz（接收方）→ 本地发送
     Send,
+    /// 非传输开始帧（ZFIN/ZFILE 等）——如上一轮取消后对端 lrz 退出时发的
+    /// ZFIN 序列会再次触发哨兵，这类任务应静默忽略
+    Ignore,
 }
 
 /// 方向识别：哨兵（ZPAD ZPAD ZDLE 'B'）后紧跟首帧类型 hex 两位——
 /// "00"=ZRQINIT（对端 sz）、"01"=ZRINIT（对端 rz，lrz 启动即发 ZRINIT）。
+/// 其他帧类型（ZFIN="08" 等）不是传输开始，返回 Ignore 静默忽略。
 /// prelude 以哨兵起始；帧类型字节未随首批到达时等待后续批次（对端会重发
 /// 首帧），兜底 5s 仍无法识别返回 None。识别期间截留的字节保留在 prelude
 /// 中，稍后须喂入状态机。
@@ -153,7 +157,7 @@ fn detect_direction(
                 return match &after[..2] {
                     b"00" => Some(Direction::Recv),
                     b"01" => Some(Direction::Send),
-                    _ => None,
+                    _ => Some(Direction::Ignore),
                 };
             }
         }
@@ -179,12 +183,23 @@ fn run(
     // 方向识别：哨兵后首帧类型区分对端 rz/sz；识别期间截留的字节稍后喂状态机
     let mut prelude = Vec::new();
     let direction = detect_direction(&pipe_rx, &mut prelude);
+
+    // 非传输开始帧（ZFIN/ZFILE 等，如上一轮取消后对端 lrz 的退出序列）：
+    // 静默清理条目（读循环恢复常规转发），不弹选择器不 emit 事件
+    if matches!(direction, Some(Direction::Ignore)) {
+        app.state::<AppState>()
+            .zmodem_sessions
+            .lock()
+            .expect("zmodem_sessions 锁被污染")
+            .remove(&key);
+        return;
+    }
+
     let direction_str = match &direction {
         Some(Direction::Recv) => Some("recv".to_string()),
         Some(Direction::Send) => Some("send".to_string()),
-        None => None,
+        Some(Direction::Ignore) | None => None,
     };
-    eprintln!("[zmodem] {key} started, direction: {direction_str:?}");
     let _ = app.emit(
         "zmodem-start",
         ZmodemStartEvent {
@@ -193,13 +208,11 @@ fn run(
         },
     );
 
-    eprintln!("[zmodem] {key} waiting for user choice");
     let choice = match respond_rx.recv_timeout(CHOICE_TIMEOUT) {
         Ok(choice) => choice,
         // 超时/通道关闭（会话断开清理）→ 视作取消
         Err(_) => ZmodemChoice::Cancel,
     };
-    eprintln!("[zmodem] {key} choice: {choice:?}");
 
     let result = match choice {
         ZmodemChoice::Recv { dir } => run_recv(&app, &key, &pipe_rx, &write_tx, &dir, prelude),
@@ -225,7 +238,6 @@ fn run(
         Ok(()) => (true, String::new()),
         Err(e) => (false, e.to_string()),
     };
-    eprintln!("[zmodem] {key} ended: ok={ok} {message}");
     let _ = app.emit("zmodem-end", ZmodemEndEvent { key, ok, message });
 }
 
@@ -277,7 +289,6 @@ fn run_recv(
                         std::fs::File::create(&path)
                             .map_err(|e| format!("创建本地文件失败: {e}"))?,
                     );
-                    eprintln!("[zmodem] {key} recv file: {file_name} ({total} bytes)");
                     let _ = app.emit(
                         "zmodem-progress",
                         ZmodemProgressEvent {
@@ -386,7 +397,6 @@ fn run_send(
     let mut transferred: u64 = 0;
     let mut last_emit = Instant::now();
     let mut idle_polls: u32 = 0;
-    eprintln!("[zmodem] {key} send file: {file_name} ({total} bytes)");
     let _ = app.emit(
         "zmodem-progress",
         ZmodemProgressEvent {
