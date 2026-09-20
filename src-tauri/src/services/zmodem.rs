@@ -387,16 +387,34 @@ fn run_send(
     sender
         .finish()
         .map_err(|e| format!("注册 ZMODEM 结束请求失败: {e}"))?;
-    // 方向识别期间截留的首帧字节（对端 rz 启动即发的 ZRINIT）喂入状态机
-    if !prelude.is_empty() {
-        sender
-            .submit_wire(&prelude)
-            .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+
+    // 先冲出构造函数排队的 ZRQINIT：submit_wire 在 outgoing 非空时于循环开头
+    // 直接 break、消耗 0 字节——构造即排队的 ZRQINIT 会让 prelude 的 ZRINIT
+    // 被静默丢弃（数据丢失），握手也多一轮往返
+    loop {
+        match sender.poll() {
+            Action::WriteWire(bytes) => {
+                let n = bytes.len();
+                write_to_wire(write_tx, bytes);
+                sender.wire_written(n);
+            }
+            _ => break,
+        }
     }
+    // 方向识别期间截留的首帧字节（对端 rz 启动即发的 ZRINIT）喂入状态机；
+    // 未消费的残余保留待后续管道数据合并（submit_wire 提前 break 会丢弃
+    // 同批输入中完整帧之后的字节）
+    let mut prelude = prelude;
+    let consumed = sender
+        .submit_wire(&prelude)
+        .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+    let mut leftover = prelude.split_off(consumed);
 
     let mut transferred: u64 = 0;
     let mut last_emit = Instant::now();
     let mut idle_polls: u32 = 0;
+    // 对端 ZSKIP 跳过文件标记（文件非空但 transferred==0 时置位）
+    let mut skipped = false;
     let _ = app.emit(
         "zmodem-progress",
         ZmodemProgressEvent {
@@ -436,8 +454,25 @@ fn run_send(
                 Action::Event(event) => match event {
                     Event::FileCompleted => {
                         emit_progress(app, key, &file_name, transferred, total, &mut last_emit);
+                        // 文件非空但 transferred==0：对端 ZSKIP 跳过了该文件
+                        //（远端同名文件已存在且 rz 默认不覆盖）。finish() 在
+                        // ReadyForFile 状态立即排队 ZFIN 干净结束会话，否则
+                        // 状态机停在 ReadyForFile、后续 ZRINIT 全部被忽略 →
+                        // 0 B 卡死直至取消
+                        if transferred == 0 && total > 0 {
+                            skipped = true;
+                            let _ = sender.finish();
+                        }
                     }
-                    Event::SessionCompleted => return Ok(()),
+                    Event::SessionCompleted => {
+                        if skipped {
+                            return Err(
+                                "对端跳过了该文件：同名文件已存在（远端 rz 默认不覆盖），可删除远端文件或让对端以 rz -y 运行后重试"
+                                    .into(),
+                            );
+                        }
+                        return Ok(());
+                    }
                     Event::Aborted => return Err("ZMODEM 传输已中止".into()),
                     // 其余协议事件无需处理
                     _ => {}
@@ -453,10 +488,13 @@ fn run_send(
         match wait_pipe(pipe_rx) {
             PipeWait::Data(data) => {
                 idle_polls = 0;
-                if !data.is_empty() {
-                    sender
-                        .submit_wire(&data)
-                        .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+                let mut buf = std::mem::take(&mut leftover);
+                buf.extend_from_slice(&data);
+                let consumed = sender
+                    .submit_wire(&buf)
+                    .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+                if consumed < buf.len() {
+                    leftover = buf.split_off(consumed);
                 }
             }
             PipeWait::Timeout => {
