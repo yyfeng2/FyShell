@@ -130,7 +130,7 @@
       <div class="mysql-grid__main">
         <!-- SQL 编辑区 -->
         <div class="mysql-grid__editor">
-          <div class="d-flex align-center mb-1">
+          <div class="mysql-grid__editor-bar d-flex align-center mb-1">
             <span class="text-body-2 mr-2">SQL</span>
             <v-btn
               size="small"
@@ -183,29 +183,27 @@
               :disabled="!store.isConnected || store.inTransaction"
               @click="doBegin"
             >
-              BEGIN
+              开始事务
             </v-btn>
             <v-btn
               size="small"
-              class="ml-1"
               variant="outlined"
               color="success"
               prepend-icon="mdi-check"
               :disabled="!store.isConnected || !store.inTransaction"
               @click="doCommit"
             >
-              COMMIT
+              提交事务
             </v-btn>
             <v-btn
               size="small"
-              class="ml-1"
               variant="outlined"
               color="error"
               prepend-icon="mdi-undo"
               :disabled="!store.isConnected || !store.inTransaction"
               @click="doRollback"
             >
-              ROLLBACK
+              回滚事务
             </v-btn>
           </div>
           <SqlEditor
@@ -229,7 +227,7 @@
         </v-alert>
 
         <!-- 编辑管道工具条：待提交集管理 + 选中行删除（均走预览 -> 确认 -> 执行） -->
-        <div v-if="store.lastResult" class="d-flex align-center mb-1">
+        <div v-if="store.lastResult" class="mysql-grid__result-bar d-flex align-center mb-1">
           <v-chip v-if="pendingEdits.size" size="x-small" color="warning" variant="tonal" class="mr-2">
             {{ pendingEdits.size }} 处待提交修改
           </v-chip>
@@ -244,7 +242,7 @@
           >
             提交修改
           </v-btn>
-          <v-btn size="small" variant="text" class="ml-1" :disabled="!pendingEdits.size" @click="discardEdits">
+          <v-btn size="small" variant="text" :disabled="!pendingEdits.size" @click="discardEdits">
             放弃修改
           </v-btn>
           <v-spacer />
@@ -2060,7 +2058,51 @@ function onConnected(connLabel: string): void {
   flex-wrap: wrap;
   align-items: center;
   padding: 4px 8px;
-  gap: 2px;
+  gap: 0.3em;
+}
+
+/* 功能按钮：字号 12px（全局按钮 14px 基准减两档）+ 文字到边框 0.2em + 按钮间距 0.3em */
+.mysql-grid__toolbar .v-btn {
+  --v-btn-size: 12px;
+  padding-left: 0.2em;
+  padding-right: 0.2em;
+}
+
+/* SQL 编辑区按钮行：与顶部工具条同规格（执行/执行计划/历史/保存查询/BEGIN/COMMIT/ROLLBACK） */
+.mysql-grid__editor-bar {
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+
+.mysql-grid__editor-bar .v-btn {
+  --v-btn-size: 12px;
+  padding-left: 0.2em;
+  padding-right: 0.2em;
+}
+
+/* 结果网格编辑管道工具条：与顶部工具条同规格（提交修改/放弃修改/删除选中行） */
+.mysql-grid__result-bar {
+  flex-wrap: wrap;
+  gap: 0.3em;
+}
+
+.mysql-grid__result-bar .v-btn {
+  --v-btn-size: 12px;
+  padding-left: 0.2em;
+  padding-right: 0.2em;
+}
+
+/* 侧栏刷新按钮（筛选表行）：同规格 12px */
+.mysql-grid__sidebar .v-btn {
+  --v-btn-size: 12px;
+  padding-left: 0.2em;
+  padding-right: 0.2em;
+}
+
+/* 结果区提示 alert 文字：12px（全局 14px 基准减两档；只缩文字不动图标；
+   __content 是 VAlert 内部元素无 data-v 属性，须用 :deep 穿透） */
+.mysql-grid__main :deep(.v-alert__content) {
+  font-size: 12px;
 }
 
 .mysql-grid {

@@ -7,6 +7,8 @@
  * - 当前路径（等宽字体）
  * - 传输状态（进行中任务数）
  *
+ * 运行状态全项目统一定义：已连接/连接成功=绿色、断开（含异常断开）=红色、未连接=灰色。
+ *
  * 布局约定：单行紧凑（26px），深色主题友好。
  */
 import { computed } from 'vue'
@@ -39,7 +41,7 @@ const props = withDefaults(
   },
 )
 
-/** 连接状态文案 */
+/** 连接状态文案（已连接绿 / 断开红 / 未连接灰） */
 const statusText = computed(() => {
   switch (props.connectionStatus) {
     case 'connected':
@@ -49,9 +51,9 @@ const statusText = computed(() => {
     case 'hostkey-verify':
       return '主机验证'
     case 'disconnected':
-      return '未连接'
+      return '断开'
     default:
-      return '就绪'
+      return '未连接'
   }
 })
 
@@ -66,7 +68,7 @@ const statusColor = computed(() => {
     case 'disconnected':
       return 'error'
     default:
-      return undefined
+      return 'grey'
   }
 })
 

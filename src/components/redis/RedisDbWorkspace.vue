@@ -268,7 +268,14 @@ watch(
   flex-wrap: wrap;
   align-items: center;
   padding: 4px 8px;
-  gap: 2px;
+  gap: 0.3em;
+}
+
+/* 功能按钮：字号 12px（全局按钮 14px 基准减两档）+ 文字到边框 0.2em + 按钮间距 0.3em */
+.redis-ws__toolbar .v-btn {
+  --v-btn-size: 12px;
+  padding-left: 0.2em;
+  padding-right: 0.2em;
 }
 
 .redis-ws__db-select {

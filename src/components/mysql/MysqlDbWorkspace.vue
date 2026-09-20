@@ -28,22 +28,7 @@
         断开
       </v-btn>
       <v-divider vertical inset class="mx-1" />
-      <!-- 数据库级管理（仿 Navicat）：切换下拉 + 新建/删除库 + 复制 Host -->
-      <div class="fy-field-row">
-        <span class="fy-field-row__label">数据库</span>
-        <v-select
-          :model-value="currentDb"
-          :items="databases"
-          density="compact"
-          variant="outlined"
-          single-line
-          hide-details
-          :loading="databasesLoading"
-          :disabled="!store.isConnected"
-          class="mysql-ws__db-select"
-          @update:model-value="switchDb"
-        />
-      </div>
+      <!-- 数据库级管理（仿 Navicat）：新建/删除库 + 复制 Host（切库走导航树库子节点） -->
       <v-btn
         size="small"
         variant="text"
@@ -1246,13 +1231,12 @@ watch(activeTab, (tab) => {
 
 // ---------- 数据库级管理（仿 Navicat）：切换 / 新建 / 删除 / 复制 Host ----------
 
-/** 库切换下拉选项（SHOW DATABASES 结果，已排序） */
+/** 全部库名（SHOW DATABASES 结果，已排序；无默认库时自动选中用户库用） */
 const databases = ref<string[]>([])
 /** 当前选中的库（连接加载后初始化，切换后更新） */
 const currentDb = ref<string | null>(null)
 /** 连接 host（mysql_db_list 回传，「复制 Host」用） */
 const connHost = ref('')
-const databasesLoading = ref(false)
 
 /** 系统库清单（自动选中第一个用户库时跳过） */
 const SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
@@ -1261,14 +1245,13 @@ const SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema',
 async function loadDatabases(): Promise<void> {
   const connId = store.connId
   if (!connId) return
-  databasesLoading.value = true
   try {
     const result = await mysqlDbList(connId)
     databases.value = result.databases
     currentDb.value = result.current_db
     connHost.value = result.host
-    // 无默认库（schema 为空）时自动选中第一个用户库：让数据库出现在下拉框，
-    // 并联动加载该库的表清单（switchDb 重建连接池后 watch 二次刷新，不会循环）
+    // 无默认库（schema 为空）时自动选中第一个用户库：联动加载该库的表清单
+    //（switchDb 重建连接池后 watch 二次刷新，不会循环）
     if (!currentDb.value) {
       const firstUserDb = databases.value.find((d) => !SYSTEM_DBS.has(d.toLowerCase()))
       if (firstUserDb) {
@@ -1279,8 +1262,6 @@ async function loadDatabases(): Promise<void> {
   } catch (err) {
     // 权限不足等错误以 toast 提示，不影响工作台其它区域
     ui.toast(errText(err), 'error')
-  } finally {
-    databasesLoading.value = false
   }
 }
 
@@ -1297,7 +1278,6 @@ async function switchDb(name: string | null): Promise<void> {
   const connId = store.connId
   if (!connId || !name || name === currentDb.value || switchingDb) return
   switchingDb = true
-  databasesLoading.value = true
   try {
     const newId = await mysqlDbSwitch(connId, name)
     // 以新 conn_id 替换（watch 自动清空 loadedKinds 等会话级状态）
@@ -1315,7 +1295,6 @@ async function switchDb(name: string | null): Promise<void> {
     await loadDatabases()
   } finally {
     switchingDb = false
-    databasesLoading.value = false
   }
 }
 
@@ -1587,7 +1566,14 @@ onMounted(() => {
   flex-wrap: wrap;
   align-items: center;
   padding: 4px 8px;
-  gap: 2px;
+  gap: 0.3em;
+}
+
+/* 功能按钮：字号 12px（全局按钮 14px 基准减两档）+ 文字到边框 0.2em + 按钮间距 0.3em */
+.mysql-ws__toolbar .v-btn {
+  --v-btn-size: 12px;
+  padding-left: 0.2em;
+  padding-right: 0.2em;
 }
 
 .mysql-ws__tab {
@@ -1652,14 +1638,6 @@ onMounted(() => {
 /* 对象分组切换按钮组 */
 .mysql-ws__kind-toggle {
   align-self: flex-start;
-}
-
-/* 工具条上的数据库切换下拉：紧凑宽度（不挤占工具条其余按钮） */
-.mysql-ws__db-select {
-  flex: 0 0 180px;
-  max-width: 180px;
-  min-width: 140px;
-  margin: 0 4px;
 }
 
 /* DDL / 权限展示区：等宽字体，可滚动 */

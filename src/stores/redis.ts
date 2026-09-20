@@ -98,6 +98,8 @@ export const useRedisStore = defineStore('redis', {
     connecting: false,
     /** 连接失败/断开信息（v-alert 展示） */
     connError: '' as string,
+    /** 断开标记（含异常断开）：树节点断开红色标注的数据来源，重连成功后清除 */
+    dropped: false,
     /** 当前连接对应的已保存连接 id（null = 未连接或非保存连接发起） */
     activeSavedId: null as string | null,
     /** 已保存的 Redis 连接（settings 表 redis_saved_connections 键，重启后仍保留） */
@@ -138,6 +140,7 @@ export const useRedisStore = defineStore('redis', {
       try {
         this.connId = await redisConnect(config)
         this.connLabel = `${config.host}:${config.port} / ${config.username ?? ''}`
+        this.dropped = false
         // 连接成功后立即拉取键列表（失败不回滚连接，由面板展示错误）
         try {
           await this.loadKeys()
@@ -167,6 +170,7 @@ export const useRedisStore = defineStore('redis', {
         this.activeSavedId = null
         this.keys = []
         this.db = 0
+        this.dropped = true
       }
     },
 

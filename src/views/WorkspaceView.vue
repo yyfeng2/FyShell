@@ -209,6 +209,10 @@ async function refreshMysqlTreeDbs(): Promise<void> {
 
 // 连接状态变化：任意入口（会话树/工作台）连接成功后刷新树中库节点；断开时保留历史库（灰色）。
 // 切库会产生新 conn_id（非 null），库列表随之自动刷新，不会误清
+/** 库节点「关闭数据库」收起标记（内存态，Navicat 关闭库语义）：收起后库叶子灰色展示，
+    重连成功后自动恢复 */
+const closedDbNames = ref(new Set<string>())
+
 watch(
   () => useMysqlStore().connId,
   (id) => {
@@ -216,6 +220,8 @@ watch(
       if (mysqlTreeDbs.value) mysqlTreeDbs.value.connected = false
       return
     }
+    // 重连后恢复全部关闭的库（收起标记仅在连接存活期间有意义）
+    closedDbNames.value = new Set()
     void refreshMysqlTreeDbs()
   },
 )
@@ -383,7 +389,7 @@ const flatNodes = computed<FlatNode[]>(() => {
             isMysql: false,
             isDbLeaf: true,
             dbName,
-            grey: !mysqlTreeDbs.value!.connected,
+            grey: !mysqlTreeDbs.value!.connected || closedDbNames.value.has(dbName),
           })
         }
       }
@@ -486,7 +492,7 @@ const flatNodes = computed<FlatNode[]>(() => {
             isMysql: false,
             isDbLeaf: true,
             dbName,
-            grey: !dbs.connected,
+            grey: !dbs.connected || closedDbNames.value.has(dbName),
           })
         }
       }
@@ -523,7 +529,7 @@ const flatNodes = computed<FlatNode[]>(() => {
             isMysql: false,
             isDbLeaf: true,
             dbName,
-            grey: !dbs.connected,
+            grey: !dbs.connected || closedDbNames.value.has(dbName),
           })
         }
       }
@@ -650,10 +656,15 @@ function treeIcon(node: FlatNode): string {
 function treeIconColor(node: FlatNode): string | null {
   if (node.isSection) return null
   if (node.isFolder) return 'amber'
-  // 数据库 host：已连接 primary（与数据库图标配套），未连接不着色（灰化弱化视觉）
-  if (node.isDbLeaf) return node.grey ? null : 'primary'
+  // 数据库叶子：已连接 success（绿色，全项目运行状态统一定义），未连接/已关闭灰色（整行 opacity 弱化）
+  if (node.isDbLeaf) return node.grey ? null : 'success'
+  // 数据库 host 节点：已连接绿色 / 断开（含异常断开）红色 / 未连接灰色
   if (node.isSavedConn || node.isMysql || node.sessionType === 'redis') {
-    return dbHostConnected(node) ? 'primary' : null
+    if (!dbHostConnected(node)) {
+      const store = node.isMysql ? useMysqlStore() : useRedisStore()
+      return store.dropped ? 'error' : 'grey'
+    }
+    return 'success'
   }
   if (node.color) return node.color
   switch (node.sessionType) {
@@ -821,12 +832,15 @@ const treeMenuCtx = computed(() => {
   }
   // 库叶子：操作对象即当前活动 MySQL 连接
   if (node.isDbLeaf) {
+    const connId = mysqlStore.connId
     return {
       kind: 'db-leaf' as const,
       isDb: true,
       isSessionNode: false,
-      connected: !!mysqlStore.connId,
-      connId: mysqlStore.connId,
+      connected: !!connId,
+      connId,
+      // 库打开态：连接存活且未被「关闭数据库」收起（收起的库以灰色展示）
+      open: !!connId && !closedDbNames.value.has(node.dbName ?? ''),
     }
   }
   // 已存连接常驻节点：isMysql=true → MySQL，否则 Redis
@@ -1233,6 +1247,37 @@ function menuRunSqlFile(): void {
   ioDialogVisible.value = true
 }
 
+/** 右键菜单"关闭数据库"：库叶子收起为灰色（closedDbNames 标记，重连后自动恢复） */
+function menuCloseDb(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node?.dbName) return
+  closedDbNames.value = new Set([...closedDbNames.value, node.dbName])
+}
+
+/** 右键菜单"打开数据库"：解除收起标记并打开数据库工作台 Tab */
+function menuOpenDb(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node?.dbName) return
+  if (closedDbNames.value.has(node.dbName)) {
+    const next = new Set([...closedDbNames.value])
+    next.delete(node.dbName)
+    closedDbNames.value = next
+  }
+  openMysqlTab()
+}
+
+/** 右键菜单"转储 SQL 文件"子菜单：挂载导入导出对话框（导出模式，预设是否包含建表语句） */
+function menuDumpSql(includeCreate: boolean): void {
+  treeMenu.visible = false
+  const connId = useMysqlStore().connId
+  if (!connId) return
+  ioIncludeCreateTable.value = includeCreate
+  ioDialogConnId.value = connId
+  ioDialogVisible.value = true
+}
+
 /** 右键菜单"新建数据库"：输入库名对话框（确认后走 mysql_db_create） */
 function menuCreateDb(): void {
   treeMenu.visible = false
@@ -1303,6 +1348,8 @@ async function createDb(): Promise<void> {
 /** 导入导出对话框（树右键"运行 SQL 文件"入口；connId 挂当前活动 MySQL 连接） */
 const ioDialogVisible = ref(false)
 const ioDialogConnId = ref('')
+/** 转储 SQL 文件子菜单预选：true=转储结构和数据 / false=仅转储结构 */
+const ioIncludeCreateTable = ref(false)
 
 // ---------------- Tab 管理 ----------------
 
@@ -2219,6 +2266,19 @@ onMounted(async () => {
         transferStatus.value = map
       }),
     )
+    // 托盘菜单「设置」：唤起主窗口后打开设置对话框（外观分区）
+    unlisteners.push(
+      await listen('tray-settings-requested', () => {
+        settingsSection.value = 'appearance'
+        showSettings.value = true
+      }),
+    )
+    // 托盘菜单「托盘」勾选态变更（勾选=关闭窗口隐藏到托盘）：同步设置 store
+    unlisteners.push(
+      await listen<boolean>('tray-close-to-tray-changed', (e) => {
+        settings.setTrayCloseToTray(e.payload)
+      }),
+    )
   } catch (e) {
     console.error('注册事件监听失败', e)
   }
@@ -2418,17 +2478,58 @@ onUnmounted(() => {
         :close-on-content-click="true"
       >
         <v-list density="compact">
-          <!-- 数据库叶子：打开/删除数据库 + 查询/SQL 文件 + 刷新 -->
+          <!-- 数据库叶子：Navicat 风格 12 项菜单（打开态感知：已连接绿/断开红/未连接灰，未实现项置灰） -->
           <template v-if="treeMenuCtx?.kind === 'db-leaf'">
-            <v-list-item @click="menuNewQuery">
+            <!-- 打开态首项：已打开=关闭数据库；未打开=打开数据库 -->
+            <v-list-item v-if="treeMenuCtx.open" @click="menuCloseDb">
+              <v-list-item-title>关闭数据库</v-list-item-title>
+            </v-list-item>
+            <v-list-item v-else @click="menuOpenDb">
               <v-list-item-title>打开数据库</v-list-item-title>
             </v-list-item>
-            <v-list-item @click="menuDropDb">
+            <v-list-item disabled>
+              <v-list-item-title title="开发中">编辑数据库...</v-list-item-title>
+            </v-list-item>
+            <v-list-item :disabled="!treeMenuCtx.connId" @click="menuCreateDb">
+              <v-list-item-title>新建数据库...</v-list-item-title>
+            </v-list-item>
+            <v-list-item :disabled="!treeMenuCtx.connId" @click="menuDropDb">
               <v-list-item-title class="text-error">删除数据库</v-list-item-title>
             </v-list-item>
             <v-divider />
-            <v-list-item :disabled="!treeMenuCtx.connId" @click="menuRunSqlFile">
+            <v-list-item @click="menuNewQuery">
+              <v-list-item-title>新建查询</v-list-item-title>
+            </v-list-item>
+            <v-divider />
+            <v-list-item @click="menuNewQuery">
+              <v-list-item-title>命令列界面...</v-list-item-title>
+            </v-list-item>
+            <v-list-item :disabled="!treeMenuCtx.open" @click="menuRunSqlFile">
               <v-list-item-title>运行 SQL 文件...</v-list-item-title>
+            </v-list-item>
+            <v-menu location="end" :close-on-content-click="true">
+              <template #activator="{ props: subProps }">
+                <v-list-item v-bind="subProps" :disabled="!treeMenuCtx.connId">
+                  <v-list-item-title>转储 SQL 文件</v-list-item-title>
+                </v-list-item>
+              </template>
+              <v-list density="compact">
+                <v-list-item @click="menuDumpSql(true)">
+                  <v-list-item-title>转储结构和数据</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="menuDumpSql(false)">
+                  <v-list-item-title>仅转储结构</v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-menu>
+            <v-list-item disabled>
+              <v-list-item-title title="开发中">打印数据库</v-list-item-title>
+            </v-list-item>
+            <v-list-item disabled>
+              <v-list-item-title title="开发中">逆向数据库到模型...</v-list-item-title>
+            </v-list-item>
+            <v-list-item disabled>
+              <v-list-item-title title="开发中">在数据库中查找</v-list-item-title>
             </v-list-item>
             <v-divider />
             <v-list-item @click="menuRefresh">
@@ -2690,7 +2791,11 @@ onUnmounted(() => {
     </v-dialog>
 
     <!-- 导入导出对话框（树右键"运行 SQL 文件..."入口；connId 挂当前活动 MySQL 连接） -->
-    <ImportExportDialog v-model="ioDialogVisible" :conn-id="ioDialogConnId" />
+    <ImportExportDialog
+      v-model="ioDialogVisible"
+      :conn-id="ioDialogConnId"
+      :initial-include-create-table="ioIncludeCreateTable"
+    />
 
     <!-- 文件菜单"打开"：会话列表对话框（Xshell 会话管理器风格，选择/双击/右键即打开） -->
     <SessionListDialog

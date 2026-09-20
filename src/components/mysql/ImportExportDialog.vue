@@ -223,7 +223,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import {
   mysqlExport,
@@ -240,6 +240,8 @@ const props = defineProps<{
   modelValue: boolean
   /** MySQL 连接 ID（useMysqlStore 的 connId，只读） */
   connId: string
+  /** 打开时预设「包含建表语句」（树右键"转储 SQL 文件"子菜单：结构和数据=true / 仅结构=false） */
+  initialIncludeCreateTable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -266,6 +268,16 @@ const executing = ref(false)
 const exportSql = ref('SELECT * FROM ')
 const exportFormat = ref<'csv' | 'json' | 'sql'>('csv')
 const includeCreateTable = ref(false)
+
+// 对话框打开时应用「包含建表语句」预选（转储 SQL 文件子菜单：结构和数据/仅结构）
+watch(
+  () => props.modelValue,
+  (open) => {
+    if (open && props.initialIncludeCreateTable !== undefined) {
+      includeCreateTable.value = props.initialIncludeCreateTable
+    }
+  },
+)
 
 // ---------- 导入参数 ----------
 const importTable = ref('')
