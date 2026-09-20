@@ -2722,7 +2722,7 @@ onUnmounted(() => {
             </v-list-item>
           </template>
 
-          <!-- 数据库连接节点（MySQL/Redis 会话 + 已存连接）：状态感知 -->
+          <!-- 数据库连接节点（MySQL/Redis 会话 + 已存连接）：状态感知；Redis 无数据库概念，仅保留连接管理项 -->
           <template v-else-if="treeMenuCtx?.kind === 'conn'">
             <v-list-item v-if="!treeMenuCtx.connected" @click="menuConnect">
               <v-list-item-title>打开连接</v-list-item-title>
@@ -2733,7 +2733,7 @@ onUnmounted(() => {
             <v-list-item @click="menuRename">
               <v-list-item-title>编辑连接...</v-list-item-title>
             </v-list-item>
-            <v-list-item v-if="treeMenuCtx.isSessionNode" @click="menuSessionSettings">
+            <v-list-item v-if="treeMenuCtx.isSessionNode && treeMenuCtx.isDb" @click="menuSessionSettings">
               <v-list-item-title>会话设置...</v-list-item-title>
             </v-list-item>
             <v-list-item v-if="treeMenuCtx.isSessionNode" @click="menuCloneConnection">
@@ -2742,16 +2742,19 @@ onUnmounted(() => {
             <v-list-item @click="menuDelete">
               <v-list-item-title class="text-error">删除连接</v-list-item-title>
             </v-list-item>
-            <v-divider />
-            <v-list-item :disabled="!treeMenuCtx.isDb || !treeMenuCtx.connected" @click="menuCreateDb">
-              <v-list-item-title>新建数据库...</v-list-item-title>
-            </v-list-item>
-            <v-list-item @click="menuNewQuery">
-              <v-list-item-title>新建查询</v-list-item-title>
-            </v-list-item>
-            <v-list-item :disabled="!treeMenuCtx.isDb || !treeMenuCtx.connected" @click="menuRunSqlFile">
-              <v-list-item-title>运行 SQL 文件...</v-list-item-title>
-            </v-list-item>
+            <!-- 数据库操作项仅 MySQL：Redis 无新建库/查询/SQL 文件 -->
+            <template v-if="treeMenuCtx.isDb">
+              <v-divider />
+              <v-list-item :disabled="!treeMenuCtx.connected" @click="menuCreateDb">
+                <v-list-item-title>新建数据库...</v-list-item-title>
+              </v-list-item>
+              <v-list-item @click="menuNewQuery">
+                <v-list-item-title>新建查询</v-list-item-title>
+              </v-list-item>
+              <v-list-item :disabled="!treeMenuCtx.connected" @click="menuRunSqlFile">
+                <v-list-item-title>运行 SQL 文件...</v-list-item-title>
+              </v-list-item>
+            </template>
             <v-divider />
             <v-list-item @click="menuRefresh">
               <v-list-item-title>刷新</v-list-item-title>
