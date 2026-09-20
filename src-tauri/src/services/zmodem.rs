@@ -255,13 +255,32 @@ fn run_recv(
         .map_err(|e| format!("初始化 ZMODEM 接收器失败: {e}"))?;
     // 自动接受模式（默认）：ZFILE 元数据解析后立即从偏移 0 接收，
     // 目录已由前端对话框选定；sz 多文件时逐个接收
-    // 方向识别期间截留的首帧字节（含哨兵帧）喂入状态机
-    if !prelude.is_empty() {
-        receiver
-            .submit_wire(&prelude)
-            .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
-    }
 
+    // 先冲出构造函数排队的 ZRINIT：submit_wire 在 outgoing 非空时被 blocked
+    // 挡住直接 break、消耗 0 字节——构造即排队的 ZRINIT 会让 prelude（含对端
+    // ZRQINIT）被静默丢弃
+    loop {
+        match receiver.poll() {
+            Action::WriteWire(bytes) => {
+                let n = bytes.len();
+                write_to_wire(write_tx, bytes);
+                receiver.wire_written(n);
+            }
+            _ => break,
+        }
+    }
+    // 方向识别期间截留的首帧字节（含哨兵帧）喂入状态机；未消费的残余保留
+    // 待后续管道数据合并（submit_wire 提前 break 会丢弃同批输入中完整帧
+    // 之后的字节）
+    let mut prelude = prelude;
+    // prelude 帧损坏（CRC 错误）可恢复：对端重试机制会重发握手帧，丢弃本批
+    // 继续等待重发即可；其余错误终止传输
+    let consumed = match receiver.submit_wire(&prelude) {
+        Ok(n) => n,
+        Err(e) if is_crc_error(&e) => prelude.len(),
+        Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
+    };
+    let mut leftover = prelude.split_off(consumed);
     let dir_path = PathBuf::from(dir);
     let mut file: Option<std::fs::File> = None;
     let mut file_name = String::new();
@@ -332,14 +351,34 @@ fn run_recv(
             }
         }
 
+        // 未消费残余优先喂入（outgoing 已排空；1 字节进展即继续）——完整帧
+        // 滞留残余会让对端等待响应自旋
+        if !leftover.is_empty() {
+            let consumed = receiver
+                .submit_wire(&leftover)
+                .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+            if consumed > 0 {
+                leftover.drain(..consumed);
+                continue;
+            }
+        }
+
         // 管道等待 + 喂入状态机；超时驱动重试，连续无数据超限判定链路失效
         match wait_pipe(pipe_rx) {
             PipeWait::Data(data) => {
                 idle_polls = 0;
-                if !data.is_empty() {
-                    receiver
-                        .submit_wire(&data)
-                        .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+                let mut buf = std::mem::take(&mut leftover);
+                buf.extend_from_slice(&data);
+                match receiver.submit_wire(&buf) {
+                    Ok(consumed) => {
+                        if consumed < buf.len() {
+                            leftover = buf.split_off(consumed);
+                        }
+                    }
+                    // CRC 损坏可恢复：状态机已排队 NAK（或对端重试机制会重发
+                    // 损坏帧），本批输入已耗尽，继续等待重发即可
+                    Err(e) if is_crc_error(&e) => {}
+                    Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
                 }
             }
             PipeWait::Timeout => {
@@ -405,9 +444,13 @@ fn run_send(
     // 未消费的残余保留待后续管道数据合并（submit_wire 提前 break 会丢弃
     // 同批输入中完整帧之后的字节）
     let mut prelude = prelude;
-    let consumed = sender
-        .submit_wire(&prelude)
-        .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+    // prelude 帧损坏（CRC 错误）可恢复：对端重试机制会重发握手帧，丢弃本批
+    // 继续等待重发即可；其余错误终止传输
+    let consumed = match sender.submit_wire(&prelude) {
+        Ok(n) => n,
+        Err(e) if is_crc_error(&e) => prelude.len(),
+        Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
+    };
     let mut leftover = prelude.split_off(consumed);
 
     let mut transferred: u64 = 0;
@@ -484,17 +527,34 @@ fn run_send(
             }
         }
 
+        // 未消费残余优先喂入（outgoing 已排空；1 字节进展即继续）——完整帧
+        // 滞留残余会让对端等待响应自旋
+        if !leftover.is_empty() {
+            let consumed = sender
+                .submit_wire(&leftover)
+                .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
+            if consumed > 0 {
+                leftover.drain(..consumed);
+                continue;
+            }
+        }
+
         // 管道等待 + 喂入状态机；超时驱动重试，连续无数据超限判定链路失效
         match wait_pipe(pipe_rx) {
             PipeWait::Data(data) => {
                 idle_polls = 0;
                 let mut buf = std::mem::take(&mut leftover);
                 buf.extend_from_slice(&data);
-                let consumed = sender
-                    .submit_wire(&buf)
-                    .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
-                if consumed < buf.len() {
-                    leftover = buf.split_off(consumed);
+                match sender.submit_wire(&buf) {
+                    Ok(consumed) => {
+                        if consumed < buf.len() {
+                            leftover = buf.split_off(consumed);
+                        }
+                    }
+                    // CRC 损坏可恢复：状态机已排队 NAK（或对端重试机制会重发
+                    // 损坏帧），本批输入已耗尽，继续等待重发即可
+                    Err(e) if is_crc_error(&e) => {}
+                    Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
                 }
             }
             PipeWait::Timeout => {
@@ -514,6 +574,14 @@ enum PipeWait {
     Data(Vec<u8>),
     Timeout,
     Disconnected,
+}
+
+/// CRC 校验错误可恢复：NAK 或对端重试机制会重发损坏帧，无需终止传输
+fn is_crc_error(e: &zmodem2::Error) -> bool {
+    matches!(
+        e,
+        zmodem2::Error::UnexpectedCrc16 | zmodem2::Error::UnexpectedCrc32
+    )
 }
 
 /// 等待读循环送来的一批输出（超时即 Timeout，管道关闭即 Disconnected）
