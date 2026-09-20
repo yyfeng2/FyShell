@@ -1,3 +1,4 @@
+pub mod color_scheme;
 pub mod session;
 pub mod ssh;
 pub mod sftp;

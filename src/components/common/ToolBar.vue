@@ -2,11 +2,26 @@
 /**
  * ToolBar —— 经典工具栏（参考 Xshell）
  *
- * 单行分组式：图标按钮按"新建 | 连接 | 传输"分组，组间竖分隔线；
- * 地址栏（可输入 + 下拉切换会话）在工具栏下方独立一行（AddressBar.vue）。
+ * 单行分组式：最左"导航"开关（按下态高亮），图标按钮按"新建 | 连接 | 传输"分组，
+ * 组间竖分隔线；右侧紧接"字体/编码/配色"快捷切换（图标+底部两字）。
+ * 字体按钮弹 Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效；
+ * 配色按钮打开配色方案对话框。地址栏在工具栏下方独立一行（AddressBar.vue）。
  * 所有按钮带 title 工具提示（Xshell 风格提示体系）。
  */
+import { computed } from 'vue'
+import { ENCODINGS } from '@/stores/session'
+
+/** 左导航展开态 / 终端字号 / 字体家族 / 字体样式 / 活动会话编码（父级注入，决定按下态与勾选态） */
+const props = defineProps<{
+  navOpen?: boolean
+  fontSize?: number
+  fontFamily?: string
+  fontStyle?: string
+  encoding?: string
+}>()
+
 const emit = defineEmits<{
+  (e: 'nav'): void
   (e: 'new-session'): void
   (e: 'new-folder'): void
   (e: 'connect'): void
@@ -14,28 +29,146 @@ const emit = defineEmits<{
   (e: 'search'): void
   (e: 'transfer'): void
   (e: 'sftp'): void
-  (e: 'help'): void
+  (e: 'font-size', size: number): void
+  (e: 'font-family', family: string): void
+  (e: 'font-style', style: string): void
+  (e: 'encoding', encoding: string): void
+  (e: 'scheme'): void
 }>()
+
+/** 字体快捷切换候选（px），完整范围仍在设置对话框"外观"分区 */
+const FONT_SIZES = [12, 14, 16, 18, 20, 24]
+
+/** 字体家族候选（label 显示名 + value 完整 CSS 列表），与设置对话框同一 CSS 值来源 */
+const FONT_FAMILIES = [
+  { label: 'Cascadia Mono', value: '"Cascadia Mono", Consolas, "Microsoft YaHei", monospace' },
+  { label: 'Consolas', value: 'Consolas, "Microsoft YaHei", monospace' },
+  { label: 'Courier New', value: '"Courier New", monospace' },
+  { label: 'JetBrains Mono', value: '"JetBrains Mono", Consolas, monospace' },
+  { label: 'Lucida Console', value: '"Lucida Console", monospace' },
+  { label: 'Source Code Pro', value: '"Source Code Pro", Consolas, monospace' },
+]
+
+/** 字体样式候选（Xshell 惯例首项显示 Normal，其余中文） */
+const FONT_STYLES = [
+  { label: 'Normal', value: 'normal' },
+  { label: '粗体', value: 'bold' },
+  { label: '斜体', value: 'italic' },
+]
+
+/** 解析 CSS 字体列表首项（去引号 trim），用于与候选 label 精确匹配 */
+function firstFamily(css?: string): string {
+  if (!css) return ''
+  return css.split(',')[0]?.trim().replace(/^"|"$/g, '') ?? ''
+}
 </script>
 
 <template>
   <div class="toolbar">
+    <!-- 导航开关（最左）：按下态高亮 -->
+    <v-btn
+      icon="mdi-view-sidebar"
+      size="20"
+      variant="text"
+      :active="props.navOpen"
+      title="左导航 开/收"
+      @click="emit('nav')"
+    />
+    <v-divider vertical inset class="toolbar__divider" />
     <!-- 新建组 -->
     <v-btn icon="mdi-plus" size="20" variant="text" title="新建会话 (Ctrl+T)" @click="emit('new-session')" />
     <v-btn icon="mdi-folder-plus-outline" size="20" variant="text" title="新建文件夹" @click="emit('new-folder')" />
-    <v-divider vertical inset class="mx-1 toolbar__divider" />
+    <v-divider vertical inset class="toolbar__divider" />
     <!-- 连接组：连接/断开保留语义色（全工具栏唯一的彩色点缀） -->
     <v-btn icon="mdi-lan-connect" size="20" variant="text" color="success" title="连接选中的会话" @click="emit('connect')" />
     <v-btn icon="mdi-lan-disconnect" size="20" variant="text" color="error" title="断开当前会话" @click="emit('disconnect')" />
-    <v-divider vertical inset class="mx-1 toolbar__divider" />
+    <v-divider vertical inset class="toolbar__divider" />
     <!-- 传输 / 视图组 -->
     <v-btn icon="mdi-magnify" size="20" variant="text" title="搜索会话" @click="emit('search')" />
     <v-btn icon="mdi-swap-vertical" size="20" variant="text" title="传输队列" @click="emit('transfer')" />
     <v-btn icon="mdi-folder-swap-outline" size="20" variant="text" title="SFTP 文件传输" @click="emit('sftp')" />
-    <v-divider vertical inset class="mx-1 toolbar__divider" />
+    <v-divider vertical inset class="toolbar__divider" />
 
-    <v-spacer />
-    <v-btn icon="mdi-help-circle-outline" size="20" variant="text" title="帮助" @click="emit('help')" />
+    <!-- 字体：Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效 -->
+    <v-menu location="bottom left" :close-on-content-click="false">
+      <template #activator="{ props: act }">
+        <v-btn v-bind="act" variant="text" class="toolbar__titled" title="终端字体">
+          <span class="toolbar__titled__body">
+            <v-icon icon="mdi-format-font" />
+            <span>字体</span>
+          </span>
+        </v-btn>
+      </template>
+      <div class="toolbar__fontpanel">
+        <div class="toolbar__fontpanel__row">
+          <span class="toolbar__fontpanel__label">字体</span>
+          <v-select
+            :model-value="props.fontFamily ?? FONT_FAMILIES[0].value"
+            :items="FONT_FAMILIES"
+            item-title="label"
+            item-value="value"
+            density="compact"
+            hide-details
+            class="toolbar__fontpanel__select"
+            @update:model-value="(v: string) => emit('font-family', v)"
+          />
+        </div>
+        <div class="toolbar__fontpanel__row">
+          <span class="toolbar__fontpanel__label">样式</span>
+          <v-select
+            :model-value="props.fontStyle ?? 'normal'"
+            :items="FONT_STYLES"
+            item-title="label"
+            item-value="value"
+            density="compact"
+            hide-details
+            class="toolbar__fontpanel__select"
+            @update:model-value="(v: string) => emit('font-style', v)"
+          />
+        </div>
+        <div class="toolbar__fontpanel__row">
+          <span class="toolbar__fontpanel__label">字号</span>
+          <v-select
+            :model-value="props.fontSize ?? 14"
+            :items="FONT_SIZES"
+            density="compact"
+            hide-details
+            class="toolbar__fontpanel__select"
+            @update:model-value="(v: number) => emit('font-size', v)"
+          />
+        </div>
+      </div>
+    </v-menu>
+
+    <!-- 编码：当前会话编码快捷切换 -->
+    <v-menu location="bottom end" :close-on-content-click="true">
+      <template #activator="{ props: act }">
+        <v-btn v-bind="act" variant="text" class="toolbar__titled" title="当前会话编码">
+          <span class="toolbar__titled__body">
+            <v-icon icon="mdi-translate" />
+            <span>编码</span>
+          </span>
+        </v-btn>
+      </template>
+      <v-list density="compact" class="toolbar__menu toolbar__menu--scroll">
+        <v-list-item v-for="enc in ENCODINGS" :key="enc" :value="enc" @click="emit('encoding', enc)">
+          <template #prepend>
+            <span class="toolbar__checkmark">
+              <v-icon v-if="enc === props.encoding" icon="mdi-check" size="13" />
+            </span>
+          </template>
+          <v-list-item-title>{{ enc }}</v-list-item-title>
+        </v-list-item>
+      </v-list>
+    </v-menu>
+
+    <!-- 配色：打开配色方案对话框 -->
+    <v-btn variant="text" class="toolbar__titled" title="选择配色方案" @click="emit('scheme')">
+      <span class="toolbar__titled__body">
+        <v-icon icon="mdi-palette" />
+        <span>配色</span>
+      </span>
+    </v-btn>
   </div>
 </template>
 
@@ -45,12 +178,14 @@ const emit = defineEmits<{
   align-items: center;
   min-height: 26px; /* 与 MenuBar/StatusBar 26px 节奏一致（原 20px 比相邻条带矮 6px） */
   padding: 0 4px;
+  gap: 6px; /* 图标间隔增加 1 字符（原相邻贴靠） */
   background: var(--fy-chrome-bg);
   user-select: none;
 }
 
 .toolbar__divider {
   height: 18px;
+  flex-shrink: 0;
 }
 
 /* 覆盖 Vuetify 竖向 inset divider 默认 margin-block 8px：工具栏行高收紧到内容高 */
@@ -58,8 +193,72 @@ const emit = defineEmits<{
   margin-block: 0;
 }
 
-/* 图标按钮：20px 按钮 + 16px 图标（Vuetify 默认 20px 图标偏粗糙），细腻清晰 */
+/* 图标按钮：20px 按钮 + 17px 图标（Vuetify 默认 20px 图标偏粗糙），细腻清晰 */
 .toolbar :deep(.v-btn .v-icon) {
-  font-size: 16px;
+  font-size: 17px;
+}
+
+/* 导航开关按下态：浅色背景高亮 */
+.toolbar :deep(.v-btn--active) {
+  background: rgb(var(--v-theme-on-surface) / 0.1);
+}
+
+/* 图标+底部汉字的快捷按钮：覆盖 v-btn 默认 64px min-width 与固定行高 */
+.toolbar :deep(.toolbar__titled) {
+  min-width: 0;
+  height: auto;
+  min-height: 0;
+  padding: 2px 8px;
+}
+
+.toolbar__titled__body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+
+.toolbar__titled__body > span:last-child {
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+/* 下拉菜单勾选列：固定宽度占位保持标题对齐（与 MenuBar 勾选列惯例一致） */
+.toolbar__checkmark {
+  display: inline-block;
+  width: 14px;
+}
+
+.toolbar__menu--scroll {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+/* 字体三下拉面板（Xshell 风格：label 左置 + 下拉框右排） */
+.toolbar__fontpanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: rgb(var(--v-theme-surface));
+  min-width: 260px;
+}
+
+.toolbar__fontpanel__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar__fontpanel__label {
+  font-size: 13px;
+  width: 56px;
+  flex-shrink: 0;
+  color: rgb(var(--v-theme-on-surface) / 0.75);
+}
+
+.toolbar__fontpanel__select {
+  flex: 1;
+  min-width: 0;
 }
 </style>

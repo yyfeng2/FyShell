@@ -16,11 +16,15 @@ import { useUiStore } from '@/stores/ui'
 /** 主题模式：浅色 / 深色 / 跟随系统 */
 export type ThemeMode = 'light' | 'dark' | 'auto'
 
+/** 终端字体样式：常规 / 粗体 / 斜体（xterm fontWeight，斜体经容器类触发） */
+export type FontFamilyStyle = 'normal' | 'bold' | 'italic'
+
 /** 设置项 key（SQLite settings 表，snake_case） */
 export const SETTING_KEYS = {
   themeMode: 'theme_mode',
   terminalFontSize: 'terminal_font_size',
   terminalFontFamily: 'terminal_font_family',
+  terminalFontStyle: 'terminal_font_style',
   terminalScrollback: 'terminal_scrollback',
   terminalCursorBlink: 'terminal_cursor_blink',
   sftpDownloadDir: 'sftp_download_dir',
@@ -48,6 +52,7 @@ const DEFAULTS = {
   theme_mode: 'auto' as ThemeMode,
   terminal_font_size: 14,
   terminal_font_family: '"Cascadia Mono", Consolas, "Microsoft YaHei", monospace',
+  terminal_font_style: 'normal' as FontFamilyStyle,
   terminal_scrollback: 10000,
   terminal_cursor_blink: true,
   sftp_download_dir: '',
@@ -77,6 +82,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const terminalFontSize = ref(DEFAULTS.terminal_font_size)
   /** 终端字体家族（xterm fontFamily CSS 列表） */
   const terminalFontFamily = ref(DEFAULTS.terminal_font_family)
+  /** 终端字体样式（常规/粗体/斜体，xterm fontWeight，斜体经容器类触发） */
+  const terminalFontStyle = ref<FontFamilyStyle>(DEFAULTS.terminal_font_style)
   /** 滚动缓冲行数 */
   const terminalScrollback = ref(DEFAULTS.terminal_scrollback)
   /** 光标闪烁 */
@@ -132,6 +139,10 @@ export const useSettingsStore = defineStore('settings', () => {
         }
         const family = map[SETTING_KEYS.terminalFontFamily]
         if (family !== undefined && family !== '') terminalFontFamily.value = family
+        const fontStyle = map[SETTING_KEYS.terminalFontStyle]
+        if (fontStyle === 'normal' || fontStyle === 'bold' || fontStyle === 'italic') {
+          terminalFontStyle.value = fontStyle
+        }
         const scrollback = Number(map[SETTING_KEYS.terminalScrollback])
         if (Number.isFinite(scrollback) && scrollback >= 0) {
           terminalScrollback.value = Math.round(scrollback)
@@ -244,6 +255,12 @@ export const useSettingsStore = defineStore('settings', () => {
     persist(SETTING_KEYS.terminalFontFamily, family)
   }
 
+  /** 终端字体样式（常规/粗体/斜体），变更实时生效到已打开终端（useXterm 联动） */
+  function setTerminalFontStyle(style: FontFamilyStyle): void {
+    terminalFontStyle.value = style
+    persist(SETTING_KEYS.terminalFontStyle, style)
+  }
+
   /** 滚动缓冲行数 */
   function setTerminalScrollback(rows: number): void {
     if (!Number.isFinite(rows) || rows < 0) return
@@ -347,6 +364,7 @@ export const useSettingsStore = defineStore('settings', () => {
     themeMode,
     terminalFontSize,
     terminalFontFamily,
+    terminalFontStyle,
     terminalScrollback,
     terminalCursorBlink,
     sftpDownloadDir,
@@ -369,6 +387,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setThemeMode,
     setTerminalFontSize,
     setTerminalFontFamily,
+    setTerminalFontStyle,
     setTerminalScrollback,
     setTerminalCursorBlink,
     setSftpDownloadDir,

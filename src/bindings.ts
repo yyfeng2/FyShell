@@ -350,6 +350,10 @@ export const commands = {
 	settingsGet: (key: string) => __TAURI_INVOKE<string | null>("settings_get", { key }),
 	/**  写入单个设置项（幂等覆盖；value 统一序列化为字符串） */
 	settingsSet: (key: string, value: string) => __TAURI_INVOKE<null>("settings_set", { key, value }),
+	/**  读取配色方案文件（JSON 文本） */
+	schemeReadFile: (path: string) => __TAURI_INVOKE<string>("scheme_read_file", { path }),
+	/**  写入配色方案文件（JSON 文本，已存在时覆盖） */
+	schemeWriteFile: (path: string, content: string) => __TAURI_INVOKE<null>("scheme_write_file", { path, content }),
 	/**  读取会话级 SSH 选项覆盖项（裸 key -> value 映射；未覆盖的键由前端回退全局值） */
 	sshoptSessionList: (sessionId: string) => __TAURI_INVOKE<{ [key in string]: string }>("sshopt_session_list", { sessionId }),
 	/**  写入会话级 SSH 选项覆盖项（覆盖全局值；value 统一序列化为字符串） */

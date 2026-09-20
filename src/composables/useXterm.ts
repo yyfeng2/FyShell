@@ -15,6 +15,8 @@ import { WebglAddon } from '@xterm/addon-webgl'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import '@xterm/xterm/css/xterm.css'
 import { useSettingsStore } from '@/stores/settings'
+import { useColorSchemeStore } from '@/stores/colorScheme'
+import { schemeToTheme } from '@/data/colorSchemes'
 import { useKeyMappingStore } from '@/stores/keyMapping'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useUiStore } from '@/stores/ui'
@@ -83,6 +85,13 @@ function normalizeEncoding(encoding: string): string {
   return name
 }
 
+/** xterm 字重映射（FontFamilyStyle → fontWeight；italic 时字重保持常规） */
+const FONT_WEIGHT_MAP = {
+  normal: 'normal',
+  bold: 'bold',
+  italic: 'normal',
+} as const
+
 export function useXterm(options: UseXtermOptions = {}) {
   const containerRef: Ref<HTMLElement | null> = ref(null)
 
@@ -90,6 +99,7 @@ export function useXterm(options: UseXtermOptions = {}) {
   const settings = useSettingsStore()
   const keyMappingStore = useKeyMappingStore()
   const sshOpts = useSshOptionsStore()
+  const colorSchemes = useColorSchemeStore()
   const ui = useUiStore()
 
   // 键位映射拦截器需要最新映射列表（启动即加载，幂等）
@@ -317,14 +327,20 @@ export function useXterm(options: UseXtermOptions = {}) {
       [
         settings.terminalFontSize,
         settings.terminalFontFamily,
+        settings.terminalFontStyle,
         settings.terminalScrollback,
         settings.terminalCursorBlink,
         settings.selectionWordSeparators,
       ] as const,
-    ([fontSize, fontFamily, scrollback, cursorBlink, wordSeparator]) => {
+    ([fontSize, fontFamily, fontStyle, scrollback, cursorBlink, wordSeparator]) => {
       if (!term) return
       if (Number.isFinite(fontSize) && fontSize > 0) term.options.fontSize = fontSize
       if (fontFamily) term.options.fontFamily = fontFamily
+      if (fontStyle) {
+        term.options.fontWeight = FONT_WEIGHT_MAP[fontStyle]
+        // xterm 无 fontStyle option：斜体经容器类触发（theme.css 全局规则）
+        containerRef.value?.classList.toggle('fy-term-italic', fontStyle === 'italic')
+      }
       if (Number.isFinite(scrollback) && scrollback >= 0) term.options.scrollback = scrollback
       term.options.cursorBlink = !!cursorBlink
       if (wordSeparator) term.options.wordSeparator = wordSeparator
@@ -332,6 +348,21 @@ export function useXterm(options: UseXtermOptions = {}) {
       scheduleFit()
     },
   )
+
+  // 配色方案切换实时生效（对话框 select 即应用并持久化，useXterm watch 联动）
+  watch(
+    () => colorSchemes.applied,
+    (scheme) => {
+      if (!term) return
+      term.options.theme = { ...schemeToTheme(scheme) }
+    },
+  )
+
+  // 配色方案 store 为异步加载（SQLite），创建先于加载完成的终端按当前方案补应用一次
+  void colorSchemes.ensureLoaded().then(() => {
+    if (!term) return
+    term.options.theme = { ...schemeToTheme(colorSchemes.applied) }
+  })
 
   // URL 超链接开关/前缀实时生效：重建 provider（无终端时仅记录，新终端创建时生效）
   watch(
@@ -426,14 +457,16 @@ export function useXterm(options: UseXtermOptions = {}) {
     if (!container) throw new Error('终端容器未挂载，无法初始化 xterm')
 
     term = new Terminal({
-      theme: { ...TERMINAL_DARK_THEME },
+      theme: { ...schemeToTheme(colorSchemes.applied) },
       fontFamily: options.fontFamily ?? settings.terminalFontFamily,
       fontSize: options.fontSize ?? settings.terminalFontSize,
+      fontWeight: FONT_WEIGHT_MAP[settings.terminalFontStyle],
       cursorBlink: settings.terminalCursorBlink,
       scrollback: settings.terminalScrollback,
       wordSeparator: settings.selectionWordSeparators,
       allowProposedApi: true,
     })
+    container.classList.toggle('fy-term-italic', settings.terminalFontStyle === 'italic')
     fitAddon = new FitAddon()
     term.loadAddon(fitAddon)
     term.open(container)

@@ -309,7 +309,7 @@ import { telnetConnect, telnetDisconnect } from '@/api/telnet'
 import { serialConnect, serialDisconnect, serialList, type SerialPortInfo } from '@/api/serial'
 import type { AuthProfile } from '@/api/types'
 import AuthProfileForm from '@/components/ssh/session/AuthProfileForm.vue'
-import { useSessionStore, type SessionConfig, type AuthType } from '@/stores/session'
+import { useSessionStore, ENCODINGS, type SessionConfig, type AuthType } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 
 type AuthTypeKind = AuthType extends { type: infer T } ? T : never
@@ -342,8 +342,6 @@ const theme = useTheme()
 
 /** 当前主题 primary 色值（颜色选择器未设置时的默认值，与应用主题色关联） */
 const themePrimary = computed<string>(() => theme.current.value.colors.primary ?? '#2E6FDB')
-
-const ENCODINGS = ['UTF-8', 'GBK', 'GB18030', 'Big5', 'Shift_JIS', 'EUC-JP', 'EUC-KR', 'ISO-8859-1', 'Windows-1251', 'KOI8-R']
 
 const AUTH_OPTIONS: { value: AuthTypeKind; title: string }[] = [
   { value: 'password', title: '密码' },

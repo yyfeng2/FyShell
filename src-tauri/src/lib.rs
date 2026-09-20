@@ -146,6 +146,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // 配色方案文件导入导出（commands/color_scheme.rs）
+            commands::color_scheme::scheme_read_file,
+            commands::color_scheme::scheme_write_file,
             // SSH 选项会话级覆盖（commands/settings.rs，sshopt_session_{session_id}_{key}）
             commands::settings::sshopt_session_list,
             commands::settings::sshopt_session_set,
@@ -345,6 +348,9 @@ pub fn run() {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // 配色方案文件导入导出（commands/color_scheme.rs）
+            commands::color_scheme::scheme_read_file,
+            commands::color_scheme::scheme_write_file,
             // SSH 选项会话级覆盖（commands/settings.rs，sshopt_session_{session_id}_{key}）
             commands::settings::sshopt_session_list,
             commands::settings::sshopt_session_set,

@@ -55,6 +55,9 @@ export interface SessionNode {
 
 type UnknownRecord = Record<string, unknown>
 
+/** 终端编码候选（会话表单与工具栏"编码"快捷切换共用） */
+export const ENCODINGS = ['UTF-8', 'GBK', 'GB18030', 'Big5', 'Shift_JIS', 'EUC-JP', 'EUC-KR', 'ISO-8859-1', 'Windows-1251', 'KOI8-R']
+
 /** 容错判断：节点是否为文件夹（兼容 kind / is_folder / 有无 children 三种返回形态） */
 export function isFolderNode(node: SessionNode): boolean {
   const raw = node as unknown as UnknownRecord

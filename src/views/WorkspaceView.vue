@@ -18,6 +18,7 @@ import MenuBar from '@/components/common/MenuBar.vue'
 import MasterPasswordDialog from '@/components/common/MasterPasswordDialog.vue'
 import ShortcutListDialog from '@/components/common/ShortcutListDialog.vue'
 import SettingsDialog from '@/components/common/SettingsDialog.vue'
+import ColorSchemeDialog from '@/components/common/ColorSchemeDialog.vue'
 import SshOptionsDialog from '@/components/ssh/options/SshOptionsDialog.vue'
 import ToolBar from '@/components/common/ToolBar.vue'
 import AddressBar from '@/components/common/AddressBar.vue'
@@ -42,7 +43,7 @@ import { mysqlDbList, mysqlDbSwitch, mysqlDbCreate, mysqlDbDrop } from '@/api/my
 import { sessionList, sessionClone } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
-import { useSettingsStore } from '@/stores/settings'
+import { useSettingsStore, type FontFamilyStyle } from '@/stores/settings'
 import { useSessionStore, type SessionConfig } from '@/stores/session'
 import type { RedisConnection } from '@/api/types'
 import { useSshOptionsStore } from '@/stores/sshOptions'
@@ -1904,11 +1905,38 @@ function onMenuTabAction(id: string): void {
   activeId.value = id
 }
 
-/** 工具栏帮助按钮：打开设置对话框"关于"分区（与菜单"关于 FyShell"一致） */
-function openAbout(): void {
-  settingsSection.value = 'about'
-  showSettings.value = true
+/** 工具栏"字体"面板字号切换：改终端默认字号（实时生效到已打开终端并持久化） */
+function onToolbarFont(size: number): void {
+  settings.setTerminalFontSize(size)
 }
+
+/** 工具栏"字体"面板字体家族切换：改终端默认字体（useXterm watch 联动） */
+function onToolbarFontFamily(family: string): void {
+  settings.setTerminalFontFamily(family)
+}
+
+/** 工具栏"字体"面板字体样式切换：常规/粗体/斜体（useXterm watch 联动） */
+function onToolbarFontStyle(style: string): void {
+  settings.setTerminalFontStyle(style as FontFamilyStyle)
+}
+
+/** 工具栏"编码"快捷切换：改活动会话编码（保存后树刷新，终端 watch 联动重解码） */
+async function onToolbarEncoding(encoding: string): Promise<void> {
+  const sessionId = activeTab.value?.sessionId
+  if (!sessionId || sessionId.startsWith('local-')) {
+    ui.toast('本地终端无会话编码，请先连接一个会话', 'warning')
+    return
+  }
+  const cfg = sessionStore.getSessionById(sessionId)
+  if (!cfg || cfg.encoding === encoding) return
+  await sessionStore.save({ ...cfg, encoding })
+  await loadTree() // 本地树刷新后 activeSessionEncoding/状态栏与终端 watch 联动
+  ui.toast(`编码已切换为 ${encoding}`)
+}
+
+/** 配色方案对话框开关（工具栏"配色"按钮） */
+const showColorScheme = ref(false)
+
 /** 会话设置目标：会话节点 id与会话名（会话模式，编辑写会话级键覆盖全局值） */
 const sshOptionsSessionId = ref<string | null>(null)
 const sshOptionsSessionName = ref('')
@@ -2242,6 +2270,12 @@ onUnmounted(() => {
       @tab-action="onMenuTabAction"
     />
     <ToolBar
+      :nav-open="!ui.navCollapsed"
+      :font-size="settings.terminalFontSize"
+      :font-family="settings.terminalFontFamily"
+      :font-style="settings.terminalFontStyle"
+      :encoding="activeSessionEncoding"
+      @nav="ui.toggleNav()"
       @new-session="openSessionForm"
       @new-folder="showFolderDialog = true"
       @connect="onCreate"
@@ -2249,7 +2283,11 @@ onUnmounted(() => {
       @search="focusSearch"
       @transfer="openTransferTab"
       @sftp="openSftpTab"
-      @help="openAbout"
+      @font-size="onToolbarFont"
+      @font-family="onToolbarFontFamily"
+      @font-style="onToolbarFontStyle"
+      @encoding="onToolbarEncoding"
+      @scheme="showColorScheme = true"
     />
     <!-- 地址栏（Xshell 惯例：工具栏下独立一整行，可输入地址回车连接，下拉切换会话） -->
     <AddressBar
@@ -2663,6 +2701,8 @@ onUnmounted(() => {
     <!-- 主密码设置对话框（首次设置 + 修改/校验） -->
     <MasterPasswordDialog v-model="showMasterPassword" />
     <ShortcutListDialog v-model="showShortcutList" />
+    <!-- 配色方案对话框（工具栏"配色"入口，Xshell 风格方案管理） -->
+    <ColorSchemeDialog v-model="showColorScheme" />
 
     <!-- 高功能设置对话框（外观/终端/SFTP/数据/安全/关于），主密码为快捷入口 -->
     <SettingsDialog

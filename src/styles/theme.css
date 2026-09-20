@@ -503,3 +503,9 @@ body {
 .v-overlay.v-theme--dark * {
   scrollbar-color: #3a3d40 #1a1c1e;
 }
+
+/* 终端字体样式 italic（工具栏"字体"面板切换）：xterm 无 fontStyle option，
+   经容器类触发（useXterm toggle）；DOM renderer 生效，WebGL renderer 尽力 */
+.fy-term-italic .xterm-rows {
+  font-style: italic;
+}
