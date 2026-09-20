@@ -2029,16 +2029,17 @@ async function onMenuAction(action: string): Promise<void> {
       await getCurrentWindow().close()
       break
     case 'copy':
+    case 'cut':
     case 'paste':
     case 'select-all': {
       // 真实执行（Xshell 菜单肌肉记忆）：活动终端窗格存在时执行剪贴板操作，无终端时提示快捷键
       const pane = paneRefs.get(activeId.value ?? '')
       if (!pane) {
-        ui.toast('终端内 Ctrl+Shift+C 复制 / Ctrl+Shift+V 粘贴 / Ctrl+Shift+A 全选', 'info')
+        ui.toast('终端内 Ctrl+C 复制 / Ctrl+V 粘贴 / Ctrl+Shift+A 全选', 'info')
         break
       }
-      if (action === 'copy') {
-        // 复制：选中内容写入剪贴板（含复制后处理），无选中时提示
+      if (action === 'copy' || action === 'cut') {
+        // 复制/剪切：选中内容写入剪贴板（终端选区无删除语义，剪切即复制），无选中时提示
         const copied = await pane.copySelection()
         if (!copied) ui.toast('当前无选中内容', 'info')
       } else if (action === 'paste') {

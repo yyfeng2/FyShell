@@ -777,7 +777,23 @@ export function useXterm(options: UseXtermOptions = {}) {
         if (!interceptor(ev)) return false
       }
       if (ev.type !== 'keydown') return true
-      // 终端复制/粘贴/全选：Ctrl+Shift 组合（Xshell 惯例，避免 Ctrl+C 与中断信号冲突）
+      // OS 标准剪贴板快捷键（Windows Terminal 惯例，与操作系统一致）：
+      // Ctrl+C / Ctrl+X 有选中即复制，无选中放行（Ctrl+C 放行 = SIGINT 中断信号，
+      // Ctrl+X 放行 = bash emacs 前缀键）；Ctrl+V 直接粘贴。
+      // Ctrl+A 不拦截（bash readline 行首键，全选仍走 Ctrl+Shift+A）。
+      if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'c' || ev.key === 'C' || ev.key === 'x' || ev.key === 'X')) {
+        const sel = term?.getSelection()
+        if (sel) {
+          void navigator.clipboard.writeText(sel).catch(() => {})
+          return false
+        }
+        return true
+      }
+      if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
+        void pasteFromClipboard()
+        return false
+      }
+      // 终端复制/粘贴/全选：Ctrl+Shift 组合（Xshell 惯例，意图明确，与标准快捷键并存）
       if (ev.ctrlKey && ev.shiftKey && (ev.key === 'C' || ev.key === 'c')) {
         const sel = term?.getSelection()
         if (sel) void navigator.clipboard.writeText(sel).catch(() => {})

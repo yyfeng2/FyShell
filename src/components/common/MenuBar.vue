@@ -59,8 +59,9 @@ const MENUS: MenuDef[] = [
     title: '编辑',
     accel: 'E',
     items: [
-      { title: '复制', action: 'copy', shortcut: 'Ctrl+Shift+C' },
-      { title: '粘贴', action: 'paste', shortcut: 'Ctrl+Shift+V' },
+      { title: '剪切', action: 'cut', shortcut: 'Ctrl+X' },
+      { title: '复制', action: 'copy', shortcut: 'Ctrl+C' },
+      { title: '粘贴', action: 'paste', shortcut: 'Ctrl+V' },
       { title: '全选', action: 'select-all', shortcut: 'Ctrl+Shift+A' },
     ],
   },

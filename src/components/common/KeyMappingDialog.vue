@@ -128,12 +128,12 @@ const ui = useUiStore()
 /** 菜单命令下拉选项（对齐 MenuBar MENUS 的 action 集，全部在 WorkspaceView 接线） */
 const MENU_COMMANDS: { title: string; value: string }[] = [
   { title: '新建会话', value: 'new-session' },
+  { title: '剪切', value: 'cut' },
   { title: '复制', value: 'copy' },
   { title: '粘贴', value: 'paste' },
   { title: '全选', value: 'select-all' },
   { title: '切换左导航', value: 'toggle-nav' },
   { title: '快速命令栏', value: 'toggle-quickbar' },
-  { title: '切换主题（深色/浅色）', value: 'toggle-theme' },
   { title: '传输队列', value: 'transfer' },
   { title: 'SFTP 文件传输', value: 'sftp' },
   { title: '快捷命令', value: 'quick-command' },
