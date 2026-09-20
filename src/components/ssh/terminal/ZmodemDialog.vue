@@ -8,8 +8,22 @@
     <v-card>
       <v-card-title class="text-h6">ZMODEM 传输</v-card-title>
 
+      <!-- 选择器打开中：系统选择器未出现/被错过时的可见反馈 -->
+      <template v-if="mode === 'picking'">
+        <v-card-text>
+          <p class="text-body-2 mb-0">
+            正在等待选择{{ current?.direction === 'send' ? '要上传的文件' : '保存目录' }}…
+            若未弹出选择窗口，请直接取消后重试。
+          </p>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn color="error" variant="text" @click="cancel">取消</v-btn>
+        </v-card-actions>
+      </template>
+
       <!-- 方向未知兜底：哨兵帧无法区分 rz/sz 时手选 -->
-      <template v-if="mode === 'choose'">
+      <template v-else-if="mode === 'choose'">
         <v-card-text>
           <p class="text-body-2 mb-0">
             无法自动识别传输方向。请选择操作：
@@ -96,7 +110,7 @@ interface ZmodemEndPayload {
   message: string
 }
 
-/** 对话框模式：idle 隐藏 / picking 系统选择器打开中（对话框隐藏）/ choose 方向手选 / progress 传输中 / failed 失败 */
+/** 对话框模式：idle 隐藏 / picking 系统选择器打开中（对话框显示等待提示）/ choose 方向手选 / progress 传输中 / failed 失败 */
 type DialogMode = 'idle' | 'picking' | 'choose' | 'progress' | 'failed'
 
 /** 待选择的请求队列（连续多次 rz/sz 时排队） */
@@ -107,7 +121,9 @@ const active = ref<ZmodemProgressPayload | null>(null)
 const ended = ref<ZmodemEndPayload | null>(null)
 const mode = ref<DialogMode>('idle')
 
-const show = computed(() => mode.value !== 'idle' && mode.value !== 'picking')
+/** picking 期间对话框保持可见：选择器被错过/未出现时终端无任何输出的 60s
+ * 等待窗内，这是用户唯一能看到的反馈（并可立即取消） */
+const show = computed(() => mode.value !== 'idle')
 const current = computed(() => pending.value[0] ?? null)
 
 const percent = computed(() => {
@@ -268,8 +284,11 @@ onMounted(() => {
         ended.value = payload
         mode.value = 'failed'
       }
-    } else if (mode.value === 'choose' && pending.value.length === 0) {
-      // 待选请求被清空：回到隐藏态
+    } else if (
+      (mode.value === 'choose' || mode.value === 'picking') &&
+      pending.value.length === 0
+    ) {
+      // 待选请求被清空（如选择等待中超时自动取消）：回到隐藏态
       mode.value = 'idle'
     }
   }).then((unlistenEnd) => {
