@@ -22,9 +22,9 @@ export function mysqlDisconnect(connId: string): Promise<void> {
   return invoke<void>('mysql_disconnect', { connId });
 }
 
-/** 列出当前库的全部表信息 */
-export function mysqlListTables(connId: string): Promise<MySqlTableInfo[]> {
-  return invoke<MySqlTableInfo[]>('mysql_list_tables', { connId });
+/** 列出当前库的全部表信息；db 可选（传入时列指定库的表，工具对话框源库联动） */
+export function mysqlListTables(connId: string, db?: string): Promise<MySqlTableInfo[]> {
+  return invoke<MySqlTableInfo[]>('mysql_list_tables', { connId, db: db ?? null });
 }
 
 /** 分页查询：SELECT 类语句，返回列名/行数据/总数/分页信息 */

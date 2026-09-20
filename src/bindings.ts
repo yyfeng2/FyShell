@@ -126,8 +126,13 @@ export const commands = {
 	mysqlConnect: (config: MySqlConnection) => __TAURI_INVOKE<string>("mysql_connect", { config }),
 	/**  `mysql_disconnect` (conn_id: String) -> () */
 	mysqlDisconnect: (connId: string) => __TAURI_INVOKE<null>("mysql_disconnect", { connId }),
-	/**  `mysql_list_tables` (conn_id: String) -> Vec<MySqlTableInfo> */
-	mysqlListTables: (connId: string) => __TAURI_INVOKE<MySqlTableInfo[]>("mysql_list_tables", { connId }),
+	/**
+	 *  `mysql_list_tables` (conn_id: String [, db: String]) -> Vec<MySqlTableInfo>
+	 * 
+	 *  db 可选：未传时列当前默认库的表（工作台/网格惯例）；传入时列指定库的表
+	 *  （工具对话框「数据传输/数据同步」的源库下拉联动，`db` 限定不依赖连接当前库）。
+	 */
+	mysqlListTables: (connId: string, db: string | null) => __TAURI_INVOKE<MySqlTableInfo[]>("mysql_list_tables", { connId, db }),
 	/**  `mysql_query` (conn_id: String, sql: String, page: u32, page_size: u32) -> MySqlQueryResult */
 	mysqlQuery: (connId: string, sql: string, page: number, pageSize: number) => __TAURI_INVOKE<MySqlQueryResult>("mysql_query", { connId, sql, page, pageSize }),
 	/**
@@ -237,6 +242,23 @@ export const commands = {
 	 *  `confirmed: true` 重新调用。
 	 */
 	mysqlImport: (connId: string, options: MySqlImportOptions, confirmed: boolean | null) => __TAURI_INVOKE<MySqlIoResult>("mysql_import", { connId, options, confirmed }),
+	/**
+	 *  `mysql_data_transfer` (source_conn_id: String, options: MySqlTransferOptions)
+	 *  -> Vec<MySqlTransferTableResult>（逐表行数与跳过标记）
+	 */
+	mysqlDataTransfer: (sourceConnId: string, options: MySqlTransferOptions) => __TAURI_INVOKE<MySqlTransferTableResult[]>("mysql_data_transfer", { sourceConnId, options }),
+	/**  `mysql_data_generate` (conn_id: String, options: MySqlGenerateOptions) -> u64（插入行数） */
+	mysqlDataGenerate: (connId: string, options: MySqlGenerateOptions) => __TAURI_INVOKE<number>("mysql_data_generate", { connId, options }),
+	/**
+	 *  `mysql_data_sync` (source_conn_id: String, options: MySqlDataSyncOptions [, execute: bool])
+	 *  -> MySqlDataSyncOutcome（execute=false 仅比对返回差异，true 按选项应用）
+	 */
+	mysqlDataSync: (sourceConnId: string, options: MySqlDataSyncOptions, execute: boolean | null) => __TAURI_INVOKE<MySqlDataSyncOutcome>("mysql_data_sync", { sourceConnId, options, execute }),
+	/**
+	 *  `mysql_structure_sync` (source_conn_id: String, options: MySqlStructureSyncOptions [, execute: bool])
+	 *  -> MySqlStructureSyncPlan（execute=false 仅比对返回计划，true 在目标端执行）
+	 */
+	mysqlStructureSync: (sourceConnId: string, options: MySqlStructureSyncOptions, execute: boolean | null) => __TAURI_INVOKE<MySqlStructureSyncPlan>("mysql_structure_sync", { sourceConnId, options, execute }),
 	/**  `mysql_object_list` (conn_id: String, kind: String) -> Vec<MySqlObjectInfo> */
 	mysqlObjectList: (connId: string, kind: string) => __TAURI_INVOKE<MySqlObjectInfo[]>("mysql_object_list", { connId, kind }),
 	/**  `mysql_object_ddl` (conn_id: String, kind: String, name: String) -> MySqlObjectDdl */
@@ -572,6 +594,47 @@ export type MySqlConnection = {
 };
 
 /**
+ *  数据同步请求（mysql_data_sync）
+ * 
+ *  按主键比对两表数据；主键结构不一致或缺失时报错。
+ */
+export type MySqlDataSyncOptions = {
+	/**  源表名（source_conn_id 连接的 source_db 库） */
+	source_db: string,
+	source_table: string,
+	/**  目标连接 ID + 库名 + 表名 */
+	target_conn_id: string,
+	target_db: string,
+	target_table: string,
+	/**  插入目标端缺失的行 */
+	insert_missing: boolean,
+	/**  删除目标端多余的行 */
+	delete_extra: boolean,
+	/**  更新两端都有但内容不一致的行（REPLACE INTO） */
+	update_diff: boolean,
+};
+
+/**
+ *  数据同步比对结果（mysql_data_sync 返回）
+ * 
+ *  execute=false 时仅有计数与样例；execute=true 为应用后的计数。
+ *  样例为差异行的主键值（按主键列序），三组各限 20 条。
+ */
+export type MySqlDataSyncOutcome = {
+	/**  主键列名（按列序） */
+	key_columns: string[],
+	/**  仅源端有（目标端缺失） */
+	only_source: number,
+	/**  仅目标端有（源端没有） */
+	only_target: number,
+	/**  两端都有但非主键列不一致 */
+	changed: number,
+	sample_source: string[][],
+	sample_target: string[][],
+	sample_changed: string[][],
+};
+
+/**
  *  数据库清单（mysql_db_list 返回）
  * 
  *  host 与 current_db 一并回传：前端「复制 Host」按钮与数据库切换下拉共用，
@@ -671,6 +734,35 @@ export type MySqlForeignKeyInfo = {
 	on_delete: string,
 	/**  ON UPDATE 规则（同上） */
 	on_update: string,
+};
+
+/**
+ *  数据生成单列规则
+ * 
+ *  kind 取值：int / decimal / string / uuid / name / phone / email / datetime / fixed；
+ *  min/max 用于 int 与 decimal，length 用于 string，values 用于 fixed（候选池），
+ *  null_ratio 为 NULL 概率百分比（0-100，None = 不产生 NULL）。
+ */
+export type MySqlGenerateColumnRule = {
+	name: string,
+	kind: string,
+	min: number | null,
+	max: number | null,
+	length: number | null,
+	values: string[],
+	null_ratio: number | null,
+};
+
+/**  数据生成请求（mysql_data_generate） */
+export type MySqlGenerateOptions = {
+	/**  目标表名（当前连接的当前库） */
+	table: string,
+	/**  生成行数（1-100000） */
+	rows: number,
+	/**  生成前清空表（TRUNCATE） */
+	truncate: boolean,
+	/**  每列生成规则 */
+	columns: MySqlGenerateColumnRule[],
 };
 
 /**  SHOW GRANTS FOR 的每条授权语句（单个用户可能有多条，含同义行） */
@@ -788,6 +880,33 @@ export type MySqlSavedQueryItem = {
 	created_at: string,
 };
 
+/**
+ *  结构同步逐表差异项
+ * 
+ *  kind：create = 目标缺失该表（sql 为源端 SHOW CREATE TABLE 原文，表名已重限定）；
+ *  alter = 双方共有但列定义有差异（sql 为逐条 ALTER）；
+ *  same = 结构一致（sql 为空）。
+ */
+export type MySqlStructureSyncItem = {
+	table: string,
+	kind: string,
+	sql: string,
+};
+
+/**  结构同步请求（mysql_structure_sync） */
+export type MySqlStructureSyncOptions = {
+	/**  源库名（source_conn_id 连接） */
+	source_db: string,
+	/**  目标连接 ID + 库名 */
+	target_conn_id: string,
+	target_db: string,
+};
+
+/**  结构同步计划（mysql_structure_sync 返回） */
+export type MySqlStructureSyncPlan = {
+	items: MySqlStructureSyncItem[],
+};
+
 /**  表结构 DDL（mysql_table_show_create 返回，SHOW CREATE TABLE 结果） */
 export type MySqlTableDdl = {
 	table: string,
@@ -813,6 +932,33 @@ export type MySqlTableInfo = {
 	rows: number,
 	comment: string,
 	engine: string,
+};
+
+/**  数据传输请求（mysql_data_transfer） */
+export type MySqlTransferOptions = {
+	/**  源库名（source_conn_id 连接，全部 SQL 以 `db`.`table` 限定） */
+	source_db: string,
+	/**  目标连接 ID（前端 mysql_connect 预先建立的独立连接，可与源同连接） */
+	target_conn_id: string,
+	/**  目标库名 */
+	target_db: string,
+	/**  要传输的表名列表（源库中的表，顺序即传输顺序） */
+	tables: string[],
+	/**  传输结构（目标端建表） */
+	include_structure: boolean,
+	/**  传输数据（批量 INSERT） */
+	include_data: boolean,
+	/**  目标表已存在时 DROP 重建（false = 跳过该表结构，数据仍按 include_data 传输） */
+	recreate: boolean,
+};
+
+/**  数据传输逐表结果（mysql_data_transfer 返回） */
+export type MySqlTransferTableResult = {
+	table: string,
+	/**  传输的行数（仅结构时为 0） */
+	rows: number,
+	/**  是否跳过（目标表已存在且未开启覆盖重建） */
+	skipped: boolean,
 };
 
 /**  mysql.user 表中的一行用户信息（User, Host 联合为主键） */

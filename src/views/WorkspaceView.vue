@@ -35,6 +35,10 @@ import ComposePane from '@/components/common/quickcommand/ComposePane.vue'
 import LogViewer from '@/components/ssh/log/LogViewer.vue'
 import MysqlDbWorkspace from '@/components/mysql/MysqlDbWorkspace.vue'
 import ImportExportDialog from '@/components/mysql/ImportExportDialog.vue'
+import DataTransferDialog from '@/components/mysql/DataTransferDialog.vue'
+import DataGenerateDialog from '@/components/mysql/DataGenerateDialog.vue'
+import DbSyncDialog from '@/components/mysql/DbSyncDialog.vue'
+import StructureSyncDialog from '@/components/mysql/StructureSyncDialog.vue'
 import EditDatabaseDialog from '@/components/mysql/EditDatabaseDialog.vue'
 import NewDatabaseDialog from '@/components/mysql/NewDatabaseDialog.vue'
 import ErModelDialog from '@/components/mysql/ErModelDialog.vue'
@@ -1456,6 +1460,16 @@ const erDbName = ref('')
 const showFindDialog = ref(false)
 const findDbName = ref('')
 
+// ---------------- 工具栏数据库工具 4 项（数据传输/数据生成/数据同步/结构同步） ----------------
+
+/** MySQL 已连接时显示 4 个数据库工具按钮（与激活 Tab 无关），断开后隐藏 */
+const mysqlDbTools = computed(() => !!useMysqlStore().connId)
+
+const showDbTransfer = ref(false)
+const showDataGenerate = ref(false)
+const showDbSync = ref(false)
+const showStructureSync = ref(false)
+
 /** SQL 字符串字面量（单引号翻倍转义） */
 function sqlStr(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
@@ -2526,6 +2540,7 @@ onUnmounted(() => {
       :font-family="settings.terminalFontFamily"
       :font-style="settings.terminalFontStyle"
       :encoding="activeSessionEncoding"
+      :db-tools="mysqlDbTools"
       @nav="ui.toggleNav()"
       @new-session="openSessionForm"
       @new-folder="showFolderDialog = true"
@@ -2539,6 +2554,10 @@ onUnmounted(() => {
       @font-style="onToolbarFontStyle"
       @encoding="onToolbarEncoding"
       @scheme="showColorScheme = true"
+      @db-transfer="showDbTransfer = true"
+      @db-generate="showDataGenerate = true"
+      @db-sync="showDbSync = true"
+      @db-structure-sync="showStructureSync = true"
     />
     <!-- 地址栏（Xshell 惯例：工具栏下独立一整行，可输入地址回车连接，下拉切换会话） -->
     <AddressBar
@@ -2976,6 +2995,24 @@ onUnmounted(() => {
       v-model="showFindDialog"
       :conn-id="mysqlConnId"
       :db-name="findDbName"
+    />
+
+    <!-- 工具栏数据库工具 4 项对话框（connId 挂当前活动 MySQL 连接） -->
+    <DataTransferDialog
+      v-model="showDbTransfer"
+      :conn-id="mysqlConnId"
+      @completed="refreshMysqlTreeDbs"
+    />
+    <DataGenerateDialog
+      v-model="showDataGenerate"
+      :conn-id="mysqlConnId"
+      @completed="refreshMysqlTreeDbs"
+    />
+    <DbSyncDialog v-model="showDbSync" :conn-id="mysqlConnId" @completed="refreshMysqlTreeDbs" />
+    <StructureSyncDialog
+      v-model="showStructureSync"
+      :conn-id="mysqlConnId"
+      @completed="refreshMysqlTreeDbs"
     />
 
     <!-- 文件菜单"打开"：会话列表对话框（Xshell 会话管理器风格，选择/双击/右键即打开） -->

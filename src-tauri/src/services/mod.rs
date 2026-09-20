@@ -16,6 +16,7 @@ pub mod mysql_io;
 pub mod mysql_objects;
 pub mod mysql_user;
 pub mod mysql_db;
+pub mod mysql_tools;
 pub mod mysql_backup;
 pub mod settings_store;
 pub mod trace;

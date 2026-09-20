@@ -22,11 +22,17 @@ pub async fn mysql_disconnect(conn_id: String) -> Result<(), AppError> {
     services::mysql::disconnect(&conn_id).await
 }
 
-/// `mysql_list_tables` (conn_id: String) -> Vec<MySqlTableInfo>
+/// `mysql_list_tables` (conn_id: String [, db: String]) -> Vec<MySqlTableInfo>
+///
+/// db 可选：未传时列当前默认库的表（工作台/网格惯例）；传入时列指定库的表
+/// （工具对话框「数据传输/数据同步」的源库下拉联动，`db` 限定不依赖连接当前库）。
 #[tauri::command]
 #[specta::specta]
-pub async fn mysql_list_tables(conn_id: String) -> Result<Vec<MySqlTableInfo>, AppError> {
-    services::mysql::list_tables(&conn_id).await
+pub async fn mysql_list_tables(
+    conn_id: String,
+    db: Option<String>,
+) -> Result<Vec<MySqlTableInfo>, AppError> {
+    services::mysql::list_tables(&conn_id, db.as_deref()).await
 }
 
 /// `mysql_query` (conn_id: String, sql: String, page: u32, page_size: u32) -> MySqlQueryResult

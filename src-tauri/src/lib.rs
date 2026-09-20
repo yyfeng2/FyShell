@@ -108,6 +108,11 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             // 导入导出（commands/mysql_io.rs，P2）
             commands::mysql_io::mysql_export,
             commands::mysql_io::mysql_import,
+            // 工具级功能（commands/mysql_tools.rs）：数据传输/数据生成/数据同步/结构同步
+            commands::mysql_tools::mysql_data_transfer,
+            commands::mysql_tools::mysql_data_generate,
+            commands::mysql_tools::mysql_data_sync,
+            commands::mysql_tools::mysql_structure_sync,
             // 数据库对象（commands/mysql_objects.rs）：视图/函数/过程/触发器/事件
             commands::mysql_objects::mysql_object_list,
             commands::mysql_objects::mysql_object_ddl,
@@ -315,6 +320,11 @@ pub fn run() {
             // 导入导出（commands/mysql_io.rs，P2）
             commands::mysql_io::mysql_export,
             commands::mysql_io::mysql_import,
+            // 工具级功能（commands/mysql_tools.rs）：数据传输/数据生成/数据同步/结构同步
+            commands::mysql_tools::mysql_data_transfer,
+            commands::mysql_tools::mysql_data_generate,
+            commands::mysql_tools::mysql_data_sync,
+            commands::mysql_tools::mysql_structure_sync,
             // 数据库对象（commands/mysql_objects.rs）：视图/函数/过程/触发器/事件
             commands::mysql_objects::mysql_object_list,
             commands::mysql_objects::mysql_object_ddl,

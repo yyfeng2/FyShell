@@ -2076,6 +2076,7 @@ dependencies = [
  "mysql_async",
  "pbkdf2 0.12.2",
  "portable-pty",
+ "rand 0.8.8",
  "redis",
  "rusqlite",
  "russh",

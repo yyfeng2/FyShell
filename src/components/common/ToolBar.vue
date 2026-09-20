@@ -13,13 +13,15 @@ import { computed, ref } from 'vue'
 import { ENCODINGS } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
 
-/** 左导航展开态 / 终端字号 / 字体家族 / 字体样式 / 活动会话编码（父级注入，决定按下态与勾选态） */
+/** 左导航展开态 / 终端字号 / 字体家族 / 字体样式 / 活动会话编码 / 数据库工具可见态（父级注入，决定按下态与显示） */
 const props = defineProps<{
   navOpen?: boolean
   fontSize?: number
   fontFamily?: string
   fontStyle?: string
   encoding?: string
+  /** MySQL 已连接时为 true：显示数据库工具 4 按钮（数据传输/数据生成/数据同步/结构同步） */
+  dbTools?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -31,6 +33,10 @@ const emit = defineEmits<{
   (e: 'search'): void
   (e: 'transfer'): void
   (e: 'sftp'): void
+  (e: 'db-transfer'): void
+  (e: 'db-generate'): void
+  (e: 'db-sync'): void
+  (e: 'db-structure-sync'): void
   (e: 'font-size', size: number): void
   (e: 'font-family', family: string): void
   (e: 'font-style', style: string): void
@@ -139,6 +145,54 @@ function onContextMenu(e: MouseEvent): void {
         <span>传文件</span>
       </span>
     </v-btn>
+    <!-- 数据库工具组（仿 Navicat）：仅 MySQL 已连接时出现，断开隐藏 -->
+    <template v-if="props.dbTools">
+      <v-divider vertical inset class="toolbar__divider" />
+      <v-btn
+        variant="text"
+        title="数据传输：跨库复制表与数据"
+        class="toolbar__titled"
+        @click="emit('db-transfer')"
+      >
+        <span class="toolbar__titled__body">
+          <v-icon icon="mdi-database-arrow-right-outline" />
+          <span>数据传输</span>
+        </span>
+      </v-btn>
+      <v-btn
+        variant="text"
+        title="数据生成：批量生成测试数据"
+        class="toolbar__titled"
+        @click="emit('db-generate')"
+      >
+        <span class="toolbar__titled__body">
+          <v-icon icon="mdi-dice-multiple-outline" />
+          <span>数据生成</span>
+        </span>
+      </v-btn>
+      <v-btn
+        variant="text"
+        title="数据同步：按主键比对并同步"
+        class="toolbar__titled"
+        @click="emit('db-sync')"
+      >
+        <span class="toolbar__titled__body">
+          <v-icon icon="mdi-database-refresh-outline" />
+          <span>数据同步</span>
+        </span>
+      </v-btn>
+      <v-btn
+        variant="text"
+        title="结构同步：比对并同步表结构"
+        class="toolbar__titled"
+        @click="emit('db-structure-sync')"
+      >
+        <span class="toolbar__titled__body">
+          <v-icon icon="mdi-compare-horizontal" />
+          <span>结构同步</span>
+        </span>
+      </v-btn>
+    </template>
     <v-divider vertical inset class="toolbar__divider" />
 
     <!-- 字体：Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效 -->

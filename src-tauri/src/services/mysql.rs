@@ -175,9 +175,9 @@ pub async fn disconnect(conn_id: &str) -> Result<(), AppError> {
 }
 
 /// mysql_list_tables：information_schema 单查询取所有表的行数/注释/引擎
-pub async fn list_tables(conn_id: &str) -> Result<Vec<MySqlTableInfo>, AppError> {
+pub async fn list_tables(conn_id: &str, db: Option<&str>) -> Result<Vec<MySqlTableInfo>, AppError> {
     let (mut conn, from_tx) = take_conn(conn_id).await?;
-    let outcome = do_list_tables(&mut conn).await;
+    let outcome = do_list_tables(&mut conn, db).await;
     if from_tx {
         restore_tx_conn(conn_id, conn);
     }
@@ -186,17 +186,21 @@ pub async fn list_tables(conn_id: &str) -> Result<Vec<MySqlTableInfo>, AppError>
 
 /// 表列表主体（拆出以便错误早退时仍归还事务连接：take 出的独占连接必须放回，
 /// 否则用户显式事务失去句柄，后续 commit/rollback 报「该连接无活跃事务」）
-async fn do_list_tables(conn: &mut Conn) -> Result<Vec<MySqlTableInfo>, AppError> {
-    // 未显式指定 schema 时取当前默认数据库（SELECT DATABASE()；
-    // 事务连接与池连接同源，当前库上下文一致，统一用此查询兜底）。
-    // 无默认库（schema 为空）时不报错：information_schema 查询无法限定库，
-    // 返回空表清单，用户在库切换下拉中选库后自动刷新
-    let Some(schema) = conn
-        .query_first::<Option<String>, _>("SELECT DATABASE()")
-        .await
-        .map_err(mysql_err)?
-        .flatten()
-    else {
+///
+/// db 为 None 时取当前默认数据库（SELECT DATABASE()；事务连接与池连接同源，
+/// 当前库上下文一致，统一用此查询兜底）；Some(db) 时以 `db` 限定
+/// （information_schema TABLE_SCHEMA 过滤，供工具对话框列出任意库的表清单）。
+/// 无默认库（schema 为空）时不报错：information_schema 查询无法限定库，
+/// 返回空表清单，用户在库切换下拉中选库后自动刷新
+async fn do_list_tables(conn: &mut Conn, db: Option<&str>) -> Result<Vec<MySqlTableInfo>, AppError> {
+    let Some(schema) = (match db {
+        Some(db) => Some(db.to_string()),
+        None => conn
+            .query_first::<Option<String>, _>("SELECT DATABASE()")
+            .await
+            .map_err(mysql_err)?
+            .flatten(),
+    }) else {
         return Ok(Vec::new());
     };
 
@@ -207,7 +211,7 @@ async fn do_list_tables(conn: &mut Conn) -> Result<Vec<MySqlTableInfo>, AppError
                     WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' \
                     ORDER BY TABLE_NAME";
     let mut result = conn
-        .exec_iter(info_sql, (Value::Bytes(schema.into_bytes()),))
+        .exec_iter(info_sql, (Value::Bytes(schema.clone().into_bytes()),))
         .await
         .map_err(mysql_err)?;
 
@@ -231,11 +235,18 @@ async fn do_list_tables(conn: &mut Conn) -> Result<Vec<MySqlTableInfo>, AppError
     }
     result.drop_result().await.map_err(mysql_err)?;
     // 精确行数：TABLE_ROWS 是估算值（performance_schema 表显示固定估计数如 131072，
-    // 与实际不符），逐表 COUNT(*) 用 UNION ALL 合并单条查询得出
+    // 与实际不符），逐表 COUNT(*) 用 UNION ALL 合并单条查询得出。
+    // COUNT 带 schema 限定（`schema`.`table`）：db 参数指定库时连接当前库可能是别的库
     if !tables.is_empty() {
         let count_sql = tables
             .iter()
-            .map(|t| format!("SELECT COUNT(*) FROM `{}`", t.name.replace('`', "``")))
+            .map(|t| {
+                format!(
+                    "SELECT COUNT(*) FROM `{}`.`{}`",
+                    schema,
+                    t.name.replace('`', "``")
+                )
+            })
             .collect::<Vec<_>>()
             .join(" UNION ALL ");
         let mut result = conn.query_iter(count_sql).await.map_err(mysql_err)?;
