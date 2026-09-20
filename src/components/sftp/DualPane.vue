@@ -5,6 +5,7 @@
       <div class="dual-pane__title">本地</div>
       <FilePane
         side="local"
+        :session-id="sessionId"
         :path="localPath"
         @update:path="setLocalPath"
         @transfer-request="(entries) => handleTransfer(entries, 'local')"
