@@ -446,6 +446,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     sessionTypeOf,
     // 动作
     openTerminal,
+    connectSession,
     closeBySessionId,
     renameBySessionId,
     closeTerminal,

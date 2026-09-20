@@ -83,8 +83,8 @@
                 />
               </div>
             </v-col>
-            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'mysql' || sessionKind === 'redis'" cols="12" sm="6">
-              <!-- Redis 用户名可空（RedisConnection.username 为 string|null），ssh/mysql 仍必填 -->
+            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'sftp' || sessionKind === 'mysql' || sessionKind === 'redis'" cols="12" sm="6">
+              <!-- Redis 用户名可空（RedisConnection.username 为 string|null），ssh/sftp/mysql 仍必填 -->
               <div class="fy-field-row" :class="{ 'fy-field-row--required': sessionKind !== 'redis' }">
                 <span class="fy-field-row__label">用户名</span>
                 <v-text-field
@@ -95,7 +95,7 @@
                 />
               </div>
             </v-col>
-            <v-col v-if="sessionKind === 'ssh'" cols="12" sm="6">
+            <v-col v-if="sessionKind === 'ssh' || sessionKind === 'sftp'" cols="12" sm="6">
               <div class="fy-field-row">
                 <span class="fy-field-row__label">认证方式</span>
                 <v-select
@@ -135,7 +135,7 @@
               </div>
             </v-col>
 
-            <v-col v-if="sessionKind === 'ssh' && authType === 'publicKey'" cols="12">
+            <v-col v-if="(sessionKind === 'ssh' || sessionKind === 'sftp') && authType === 'publicKey'" cols="12">
               <!-- 认证配置文件（P1）：仅私钥认证时显示；选择后认证方式由配置文件接管，一处改全局生效 -->
               <div class="d-flex align-start">
                 <div class="fy-field-row mr-2 session-form__profile-row">
@@ -158,7 +158,7 @@
 
             <!-- 密码 / 交互式 -->
             <v-col
-              v-if="sessionKind === 'mysql' || sessionKind === 'redis' || (sessionKind === 'ssh' && (authType === 'password' || authType === 'interactive'))"
+              v-if="sessionKind === 'mysql' || sessionKind === 'redis' || ((sessionKind === 'ssh' || sessionKind === 'sftp') && (authType === 'password' || authType === 'interactive'))"
               cols="12"
             >
               <div class="fy-field-row">
@@ -235,7 +235,7 @@
               </div>
             </v-col>
 
-            <template v-if="sessionKind === 'ssh'">
+            <template v-if="sessionKind === 'ssh' || sessionKind === 'sftp'">
               <v-col cols="12" sm="6">
                 <div class="fy-field-row">
                   <span class="fy-field-row__label">编码</span>
@@ -315,7 +315,7 @@ import { useUiStore } from '@/stores/ui'
 type AuthTypeKind = AuthType extends { type: infer T } ? T : never
 
 /** 会话类型：SSH 终端 / 数据库（MySQL/Redis）/ Telnet 兼容（Telnet/RLOGIN）/ 串口 */
-type SessionKind = 'ssh' | 'mysql' | 'redis' | 'telnet' | 'rlogin' | 'serial'
+type SessionKind = 'ssh' | 'mysql' | 'redis' | 'telnet' | 'rlogin' | 'serial' | 'sftp'
 
 /** 契约 P1：SessionConfig 可选携带 profile_id（认证配置文件引用） */
 type SessionConfigWithProfile = SessionConfig & { profile_id?: string | null }
@@ -351,9 +351,10 @@ const AUTH_OPTIONS: { value: AuthTypeKind; title: string }[] = [
   { value: 'jump', title: '跳板机' },
 ]
 
-/** 会话类型：SSH 终端 / 数据库（MySQL/Redis）/ Telnet（含 RLOGIN 兼容）/ 串口 */
+/** 会话类型：SSH 终端 / 独立 SFTP / 数据库（MySQL/Redis）/ Telnet（含 RLOGIN 兼容）/ 串口 */
 const SESSION_KINDS: { value: SessionKind; title: string }[] = [
   { value: 'ssh', title: 'SSH' },
+  { value: 'sftp', title: 'SFTP 文件传输' },
   { value: 'mysql', title: '数据库 (MySQL)' },
   { value: 'redis', title: '数据库 (Redis)' },
   { value: 'telnet', title: 'Telnet' },
@@ -477,7 +478,7 @@ watch(sessionKind, (kind) => {
 
 /** session_type 字符串 → 表单类型（未知类型回退 SSH） */
 function mapSessionKind(t: string | null | undefined): SessionKind {
-  if (t === 'mysql' || t === 'redis' || t === 'telnet' || t === 'rlogin' || t === 'serial') return t
+  if (t === 'mysql' || t === 'redis' || t === 'telnet' || t === 'rlogin' || t === 'serial' || t === 'sftp') return t
   return 'ssh'
 }
 
@@ -569,7 +570,7 @@ const jumpCandidates = computed(() =>
 function buildConfig(): SessionConfigWithProfile {
   const prof = findProfile()
   /** 配置文件仅在私钥认证下生效（与字段显示时机一致，切走后手动认证生效） */
-  const profileActive = prof !== undefined && sessionKind.value === 'ssh' && authType.value === 'publicKey'
+  const profileActive = prof !== undefined && (sessionKind.value === 'ssh' || sessionKind.value === 'sftp') && authType.value === 'publicKey'
   let auth: AuthType
   if (profileActive) {
     // 认证方式从配置文件解析（深拷贝，避免与会话配置共享引用）
@@ -577,7 +578,7 @@ function buildConfig(): SessionConfigWithProfile {
   } else if (sessionKind.value === 'mysql' || sessionKind.value === 'redis') {
     // 数据库会话（MySQL/Redis）：认证即用户名/密码（auth_type 仅作存储载体）
     auth = { type: 'password', password: password.value }
-  } else if (sessionKind.value !== 'ssh') {
+  } else if (sessionKind.value !== 'ssh' && sessionKind.value !== 'sftp') {
     // byte-stream 会话（telnet/rlogin/serial）：无 SSH 认证概念，auth_type 仅作存储载体
     auth = { type: 'noAuth' }
   } else {
@@ -676,7 +677,8 @@ async function runTest(): Promise<void> {
     return
   }
   // byte-stream 会话（telnet/rlogin/serial）：telnet/serial 建连后立即断开作为测试
-  if (sessionKind.value !== 'ssh') {
+  //（独立 SFTP 会话不进此分支：SFTP 基于 SSH，落末尾的 sessionTest 走 SSH 测试路径）
+  if (sessionKind.value !== 'ssh' && sessionKind.value !== 'sftp') {
     testing.value = true
     testResult.value = null
     const id = `test-${Date.now()}`

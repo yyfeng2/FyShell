@@ -659,6 +659,8 @@ function treeIcon(node: FlatNode): string {
       return 'mdi-send'
     case 'serial':
       return 'mdi-usb-port'
+    case 'sftp':
+      return 'mdi-folder-swap-outline'
     default:
       return 'mdi-console'
   }
@@ -780,21 +782,7 @@ function onNodeClick(node: FlatNode): void {
   // 会话单击即连接：每次单击都新建独立连接 Tab（不限制多开，同一会话可并存多个终端）
   const target = findNode(nodes.value, node.id)
   if (!target) return
-  const stype = target.config?.session_type
-  if (stype === 'mysql') {
-    void connectMysqlSession(target)
-    return
-  }
-  if (stype === 'redis') {
-    void connectRedisSession(target)
-    return
-  }
-  // Telnet / RLOGIN / 串口：byte-stream 会话打开终端（持久会话路径）
-  if (stype === 'telnet' || stype === 'rlogin' || stype === 'serial') {
-    openByteStreamSession(target)
-    return
-  }
-  openTerminal(target)
+  openSessionByType(target)
 }
 
 /** 树节点键盘操作：Enter 打开/连接，Space 选中/折叠 */
@@ -888,23 +876,8 @@ function menuConnect(): void {
   if (!node.isFolder) {
     const target = findNode(nodes.value, node.id)
     if (!target) return
-    const stype = target.config?.session_type
-    // 数据库会话：切到 MySQL 工作台并按会话配置建连（不开终端）
-    if (stype === 'mysql') {
-      void connectMysqlSession(target)
-      return
-    }
-    // Redis 数据库会话：切到 Redis 工作台并按会话配置建连（不开终端）
-    if (stype === 'redis') {
-      void connectRedisSession(target)
-      return
-    }
-    // Telnet / RLOGIN / 串口：byte-stream 会话打开终端（持久会话路径）
-    if (stype === 'telnet' || stype === 'rlogin' || stype === 'serial') {
-      openByteStreamSession(target)
-      return
-    }
-    openTerminal(target)
+    // 数据库会话切工作台、telnet 系开终端、sftp 开独立 SFTP 双栏 Tab（统一分发）
+    openSessionByType(target)
   }
 }
 
@@ -1824,9 +1797,9 @@ function openTransferTab(): void {
   activeId.value = tab.id
 }
 
-/** 打开 SFTP 双栏 Tab（单例，P0）：本地/远程双栏文件传输 */
+/** 打开 SFTP 双栏 Tab（单例，P0）：本地/远程双栏文件传输（绑定最近终端会话，独立 SFTP 会话 Tab 不参与单例判定） */
 function openSftpTab(): void {
-  const existing = tabs.value.find((t) => t.type === 'sftp')
+  const existing = tabs.value.find((t) => t.type === 'sftp' && !t.sessionId)
   if (existing) {
     activeId.value = existing.id
     return
@@ -1834,6 +1807,63 @@ function openSftpTab(): void {
   const tab: WorkTab = { id: genTabId(), type: 'sftp', title: 'SFTP 文件传输' }
   tabs.value.push(tab)
   activeId.value = tab.id
+}
+
+/**
+ * 打开独立 SFTP 会话（树节点双击）：
+ * 建 SSH 连接（SFTP 子系统基于 SSH channel）后直接打开 SFTP 双栏 Tab。
+ * Xshell 多开惯例：每会话每次打开都新建独立连接 Tab（connId 为连接路由键）。
+ * 失败：移除 Tab 并 toast（connectSession 的 catch 已把连接状态置 disconnected）
+ */
+async function openSftpSession(node: { id: string; name: string; color?: string | null }): Promise<void> {
+  const tabColor: string | null = node.color || sshOpts.defaultTabColor || null
+  const tab: WorkTab = {
+    id: genTabId(),
+    type: 'sftp',
+    sessionId: node.id,
+    connId: genTabId(),
+    title: node.name,
+    color: tabColor,
+  }
+  tabs.value.push(tab)
+  activeId.value = tab.id
+  try {
+    // sessionType 缺省 'ssh' → connectSession 萰到 sshConnect 路由（后端按会话配置建连并注册 ssh_sessions），
+    // 输出无窗格写入器被安全丢弃；断开按记录的类型路由 sshDisconnect
+    await terminalStore.connectSession({ id: node.id, name: node.name, color: tabColor }, tab.connId)
+  } catch (e) {
+    tabs.value = tabs.value.filter((t) => t.id !== tab.id)
+    if (activeId.value === tab.id) {
+      activeId.value = tabs.value.at(-1)?.id ?? null
+    }
+    ui.toast(`连接「${node.name}」失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+  }
+}
+
+/**
+ * 按会话类型统一分发打开（树点击/右键打开连接/Ctrl+T/保存后/会话列表/复制会话共用的路由）：
+ * mysql/redis → 各自工作台，telnet/rlogin/serial → byte-stream 终端，
+ * sftp → 独立 SFTP 双栏 Tab，缺省/ssh → 终端
+ */
+function openSessionByType(target: SessionNode): void {
+  const stype = target.config?.session_type
+  if (stype === 'mysql') {
+    void connectMysqlSession(target)
+    return
+  }
+  if (stype === 'redis') {
+    void connectRedisSession(target)
+    return
+  }
+  if (stype === 'telnet' || stype === 'rlogin' || stype === 'serial') {
+    openByteStreamSession(target)
+    return
+  }
+  if (stype === 'sftp') {
+    void openSftpSession(target)
+    return
+  }
+  openTerminal(target)
 }
 
 /** 打开 SSH 隧道 Tab（单例，P1） */
@@ -1889,7 +1919,7 @@ function onCreate(): void {
   if (selectedId.value) {
     const node = findNode(nodes.value, selectedId.value)
     if (node && !node.is_folder) {
-      openTerminal(node)
+      openSessionByType(node)
       return
     }
   }
@@ -1908,6 +1938,10 @@ function closeTab(id: string): void {
     // 同步清理失败状态与重连闭包（Tab 已关闭，就地重试入口随之消失）
     failedConns.value.delete(closed.id)
     retryHandlers.delete(closed.id)
+  }
+  // 独立 SFTP 会话 Tab 关闭即断开（连接键不命中终端 Tab → 直接 sshDisconnect 清理 ssh_sessions）
+  if (closed?.type === 'sftp' && closed.connId) {
+    void terminalStore.closeBySessionId(closed.connId)
   }
   // MySQL/Redis 工作台 Tab 关闭即断开（与右键"关闭连接"行为一致，驱动树中历史库灰化）
   if (closed?.type === 'mysql') {
@@ -1984,6 +2018,30 @@ const activeSessionStatus = computed(() => {
   return key ? (connStatus.value.get(key) ?? null) : null
 })
 
+/** 工具栏"字体/编码/配色"可见态：活动 Tab 为已连接的 SSH 终端时出现，无连接/断开隐藏（本地终端不算 SSH 连接） */
+const sshQuickToggles = computed(() => {
+  const tab = activeTab.value
+  if (!tab || tab.type !== 'terminal') return false
+  if (!tab.sessionId || tab.sessionId.startsWith('local-')) return false
+  return connStatus.value.get(tab.connId ?? tab.sessionId) === 'connected'
+})
+
+/** SFTP 工具可见态（传输/传文件按钮）：任一 SSH 终端已连接（耦合 SFTP 可用）
+    或任一独立 SFTP 会话 Tab 已连接；全部断开隐藏（与激活 Tab 无关） */
+const sftpTools = computed(() => {
+  const anySshTerminal = tabs.value.some((t) => {
+    if (t.type !== 'terminal' || !t.connId || !t.sessionId || t.sessionId.startsWith('local-')) return false
+    const stype = findNode(nodes.value, t.sessionId)?.config?.session_type
+    // null/undefined/'ssh' = SSH 会话（SFTP 能力）；数据库与 byte-stream 会话不含 SFTP
+    return (stype == null || stype === 'ssh' || stype === 'sftp')
+      && connStatus.value.get(t.connId) === 'connected'
+  })
+  const anySftpSession = tabs.value.some(
+    (t) => t.type === 'sftp' && !!t.connId && connStatus.value.get(t.connId) === 'connected',
+  )
+  return anySshTerminal || anySftpSession
+})
+
 const activeSessionName = computed(() => activeTab.value?.title ?? '')
 
 /** 活动会话主机地址（状态栏展示，取自会话配置） */
@@ -2046,9 +2104,14 @@ function quickConnect(host: string): void {
   showSessionForm.value = true
 }
 
-/** 会话保存成功（新建/编辑/快速连接）：刷新树并打开对应终端 */
+/** 会话保存成功（新建/编辑/快速连接）：刷新树并按类型打开（sftp 会话开独立 SFTP 双栏 Tab） */
 async function onSessionSaved(config: SessionConfig): Promise<void> {
   await loadTree()
+  const node = findNode(nodes.value, config.id)
+  if (node && !node.is_folder) {
+    openSessionByType(node)
+    return
+  }
   openTerminal({ id: config.id, name: config.name, color: config.color })
 }
 
@@ -2077,6 +2140,11 @@ const sessionListFlat = computed(() => {
 function openSessionFromList(target: { id: string; name: string }): void {
   showSessionListDialog.value = false
   selectedId.value = target.id
+  const node = findNode(nodes.value, target.id)
+  if (node && !node.is_folder) {
+    openSessionByType(node)
+    return
+  }
   openTerminal(target)
 }
 
@@ -2210,10 +2278,18 @@ function onSessionSettings(tabId: string): void {
 function onDuplicateSession(tabId: string): void {
   const tab = tabs.value.find((t) => t.id === tabId)
   if (!tab) return
+  if (tab.type === 'sftp' && tab.sessionId) {
+    // 独立 SFTP 会话 Tab：复制即再开一个同会话的 SFTP 双栏 Tab
+    const node = findNode(nodes.value, tab.sessionId)
+    if (node && !node.is_folder) {
+      void openSftpSession(node)
+      return
+    }
+  }
   if (tab.type === 'terminal' && tab.sessionId) {
     const node = findNode(nodes.value, tab.sessionId)
     if (node) {
-      openTerminal(node)
+      openSessionByType(node)
       return
     }
   }
@@ -2232,6 +2308,14 @@ const lastTerminalSessionId = computed<string>(() => {
   const t = terminalStore.tabs.at(-1)
   return t?.panes[0]?.sessionId ?? ''
 })
+
+/** SFTP 双栏远程栏会话键：独立 SFTP 会话 Tab 连接就绪后用自身连接键（未就绪为空串，
+    FilePane 提示选择会话且连接完成时 sessionId 变化触发重载）；工具栏单例 Tab 回退
+    最近终端会话键（现有 SSH 耦合不变） */
+function sftpPaneSessionId(tab: WorkTab): string {
+  if (!tab.connId) return lastTerminalSessionId.value
+  return terminalStore.isConnected(tab.connId) ? tab.connId : ''
+}
 
 const lastTerminalSessionName = computed(() => terminalStore.tabs.at(-1)?.title ?? '')
 
@@ -2494,7 +2578,7 @@ onMounted(async () => {
   if (urlSessionId) {
     const node = findNode(nodes.value, urlSessionId)
     if (node && !node.is_folder) {
-      openTerminal(node)
+      openSessionByType(node)
     } else {
       ui.toast('未找到对应会话，无法自动打开终端', 'warning')
     }
@@ -2540,7 +2624,9 @@ onUnmounted(() => {
       :font-family="settings.terminalFontFamily"
       :font-style="settings.terminalFontStyle"
       :encoding="activeSessionEncoding"
+      :ssh-connected="sshQuickToggles"
       :db-tools="mysqlDbTools"
+      :sftp-tools="sftpTools"
       @nav="ui.toggleNav()"
       @new-session="openSessionForm"
       @new-folder="showFolderDialog = true"
@@ -2875,8 +2961,8 @@ onUnmounted(() => {
             <TransferQueueView v-else-if="tab.type === 'transfer'" />
             <DualPane
               v-else-if="tab.type === 'sftp'"
-              :session-id="lastTerminalSessionId"
-              :session-name="lastTerminalSessionName"
+              :session-id="sftpPaneSessionId(tab)"
+              :session-name="tab.sessionId ? tab.title : lastTerminalSessionName"
               @remote-path-change="(p: string) => (currentPath = p)"
             />
             <TunnelView v-else-if="tab.type === 'tunnel'" />

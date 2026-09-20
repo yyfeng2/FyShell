@@ -3,7 +3,7 @@
  * ToolBar —— 经典工具栏（参考 Xshell）
  *
  * 单行分组式：最左"导航"开关（按下态高亮），按钮按"新建 | 连接 | 传输"分组，
- * 组间竖分隔线；右侧紧接"字体/编码/配色"快捷切换。
+ * 组间竖分隔线；右侧紧接"字体/编码/配色"快捷切换（随 SSH 连接出现，无连接隐藏）。
  * 全部按钮为"图标+底部汉字"结构（toolbar__titled，2-3 字简单命名）。
  * 字体按钮弹 Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效；
  * 配色按钮打开配色方案对话框。地址栏在工具栏下方独立一行（AddressBar.vue）。
@@ -13,7 +13,7 @@ import { computed, ref } from 'vue'
 import { ENCODINGS } from '@/stores/session'
 import { useSettingsStore } from '@/stores/settings'
 
-/** 左导航展开态 / 终端字号 / 字体家族 / 字体样式 / 活动会话编码 / 数据库工具可见态（父级注入，决定按下态与显示） */
+/** 左导航展开态 / 终端字号 / 字体家族 / 字体样式 / 活动会话编码 / 数据库与 SFTP 工具可见态（父级注入，决定按下态与显示） */
 const props = defineProps<{
   navOpen?: boolean
   fontSize?: number
@@ -22,6 +22,10 @@ const props = defineProps<{
   encoding?: string
   /** MySQL 已连接时为 true：显示数据库工具 4 按钮（数据传输/数据生成/数据同步/结构同步） */
   dbTools?: boolean
+  /** 活动会话为已连接的 SSH 终端时为 true：显示"字体/编码/配色"快捷切换（无连接隐藏） */
+  sshConnected?: boolean
+  /** 有已连接的 SSH 终端（耦合 SFTP）或已连接的独立 SFTP 会话时为 true：显示传输/传文件 2 按钮 */
+  sftpTools?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -133,18 +137,21 @@ function onContextMenu(e: MouseEvent): void {
         <span>搜索</span>
       </span>
     </v-btn>
-    <v-btn variant="text" title="传输队列" class="toolbar__titled" @click="emit('transfer')">
-      <span class="toolbar__titled__body">
-        <v-icon icon="mdi-swap-vertical" />
-        <span>传输</span>
-      </span>
-    </v-btn>
-    <v-btn variant="text" title="SFTP 文件传输" class="toolbar__titled" @click="emit('sftp')">
-      <span class="toolbar__titled__body">
-        <v-icon icon="mdi-folder-swap-outline" />
-        <span>传文件</span>
-      </span>
-    </v-btn>
+    <!-- 传输/传文件跟随 SFTP 可用性：有已连接的 SSH 终端（耦合 SFTP）或独立 SFTP 会话时出现，全部断开隐藏 -->
+    <template v-if="props.sftpTools">
+      <v-btn variant="text" title="传输队列" class="toolbar__titled" @click="emit('transfer')">
+        <span class="toolbar__titled__body">
+          <v-icon icon="mdi-swap-vertical" />
+          <span>传输</span>
+        </span>
+      </v-btn>
+      <v-btn variant="text" title="SFTP 文件传输" class="toolbar__titled" @click="emit('sftp')">
+        <span class="toolbar__titled__body">
+          <v-icon icon="mdi-folder-swap-outline" />
+          <span>传文件</span>
+        </span>
+      </v-btn>
+    </template>
     <!-- 数据库工具组（仿 Navicat）：仅 MySQL 已连接时出现，断开隐藏 -->
     <template v-if="props.dbTools">
       <v-divider vertical inset class="toolbar__divider" />
@@ -193,88 +200,91 @@ function onContextMenu(e: MouseEvent): void {
         </span>
       </v-btn>
     </template>
-    <v-divider vertical inset class="toolbar__divider" />
+    <!-- 字体/编码/配色组：随 SSH 连接出现（活动会话已连接），无连接隐藏 -->
+    <template v-if="props.sshConnected">
+      <v-divider vertical inset class="toolbar__divider" />
 
-    <!-- 字体：Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效 -->
-    <v-menu location="bottom left" :close-on-content-click="false">
-      <template #activator="{ props: act }">
-        <v-btn v-bind="act" variant="text" class="toolbar__titled" title="终端字体">
-          <span class="toolbar__titled__body">
-            <v-icon icon="mdi-format-font" />
-            <span>字体</span>
-          </span>
-        </v-btn>
-      </template>
-      <div class="toolbar__fontpanel">
-        <div class="toolbar__fontpanel__row">
-          <span class="toolbar__fontpanel__label">字体</span>
-          <v-select
-            :model-value="props.fontFamily ?? FONT_FAMILIES[0].value"
-            :items="FONT_FAMILIES"
-            item-title="label"
-            item-value="value"
-            density="compact"
-            hide-details
-            class="toolbar__fontpanel__select"
-            @update:model-value="(v: string) => emit('font-family', v)"
-          />
-        </div>
-        <div class="toolbar__fontpanel__row">
-          <span class="toolbar__fontpanel__label">样式</span>
-          <v-select
-            :model-value="props.fontStyle ?? 'normal'"
-            :items="FONT_STYLES"
-            item-title="label"
-            item-value="value"
-            density="compact"
-            hide-details
-            class="toolbar__fontpanel__select"
-            @update:model-value="(v: string) => emit('font-style', v)"
-          />
-        </div>
-        <div class="toolbar__fontpanel__row">
-          <span class="toolbar__fontpanel__label">字号</span>
-          <v-select
-            :model-value="props.fontSize ?? 14"
-            :items="FONT_SIZES"
-            density="compact"
-            hide-details
-            class="toolbar__fontpanel__select"
-            @update:model-value="(v: number) => emit('font-size', v)"
-          />
-        </div>
-      </div>
-    </v-menu>
-
-    <!-- 编码：当前会话编码快捷切换 -->
-    <v-menu location="bottom end" :close-on-content-click="true">
-      <template #activator="{ props: act }">
-        <v-btn v-bind="act" variant="text" class="toolbar__titled" title="当前会话编码">
-          <span class="toolbar__titled__body">
-            <v-icon icon="mdi-translate" />
-            <span>编码</span>
-          </span>
-        </v-btn>
-      </template>
-      <v-list density="compact" class="toolbar__menu toolbar__menu--scroll">
-        <v-list-item v-for="enc in ENCODINGS" :key="enc" :value="enc" @click="emit('encoding', enc)">
-          <template #prepend>
-            <span class="toolbar__checkmark">
-              <v-icon v-if="enc === props.encoding" icon="mdi-check" size="13" />
+      <!-- 字体：Xshell 式三下拉面板（字体家族/字体样式/字号），选择即生效 -->
+      <v-menu location="bottom left" :close-on-content-click="false">
+        <template #activator="{ props: act }">
+          <v-btn v-bind="act" variant="text" class="toolbar__titled" title="终端字体">
+            <span class="toolbar__titled__body">
+              <v-icon icon="mdi-format-font" />
+              <span>字体</span>
             </span>
-          </template>
-          <v-list-item-title>{{ enc }}</v-list-item-title>
-        </v-list-item>
-      </v-list>
-    </v-menu>
+          </v-btn>
+        </template>
+        <div class="toolbar__fontpanel">
+          <div class="toolbar__fontpanel__row">
+            <span class="toolbar__fontpanel__label">字体</span>
+            <v-select
+              :model-value="props.fontFamily ?? FONT_FAMILIES[0].value"
+              :items="FONT_FAMILIES"
+              item-title="label"
+              item-value="value"
+              density="compact"
+              hide-details
+              class="toolbar__fontpanel__select"
+              @update:model-value="(v: string) => emit('font-family', v)"
+            />
+          </div>
+          <div class="toolbar__fontpanel__row">
+            <span class="toolbar__fontpanel__label">样式</span>
+            <v-select
+              :model-value="props.fontStyle ?? 'normal'"
+              :items="FONT_STYLES"
+              item-title="label"
+              item-value="value"
+              density="compact"
+              hide-details
+              class="toolbar__fontpanel__select"
+              @update:model-value="(v: string) => emit('font-style', v)"
+            />
+          </div>
+          <div class="toolbar__fontpanel__row">
+            <span class="toolbar__fontpanel__label">字号</span>
+            <v-select
+              :model-value="props.fontSize ?? 14"
+              :items="FONT_SIZES"
+              density="compact"
+              hide-details
+              class="toolbar__fontpanel__select"
+              @update:model-value="(v: number) => emit('font-size', v)"
+            />
+          </div>
+        </div>
+      </v-menu>
 
-    <!-- 配色：打开配色方案对话框 -->
-    <v-btn variant="text" class="toolbar__titled" title="选择配色方案" @click="emit('scheme')">
-      <span class="toolbar__titled__body">
-        <v-icon icon="mdi-palette" />
-        <span>配色</span>
-      </span>
-    </v-btn>
+      <!-- 编码：当前会话编码快捷切换 -->
+      <v-menu location="bottom end" :close-on-content-click="true">
+        <template #activator="{ props: act }">
+          <v-btn v-bind="act" variant="text" class="toolbar__titled" title="当前会话编码">
+            <span class="toolbar__titled__body">
+              <v-icon icon="mdi-translate" />
+              <span>编码</span>
+            </span>
+          </v-btn>
+        </template>
+        <v-list density="compact" class="toolbar__menu toolbar__menu--scroll">
+          <v-list-item v-for="enc in ENCODINGS" :key="enc" :value="enc" @click="emit('encoding', enc)">
+            <template #prepend>
+              <span class="toolbar__checkmark">
+                <v-icon v-if="enc === props.encoding" icon="mdi-check" size="13" />
+              </span>
+            </template>
+            <v-list-item-title>{{ enc }}</v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </v-menu>
+
+      <!-- 配色：打开配色方案对话框 -->
+      <v-btn variant="text" class="toolbar__titled" title="选择配色方案" @click="emit('scheme')">
+        <span class="toolbar__titled__body">
+          <v-icon icon="mdi-palette" />
+          <span>配色</span>
+        </span>
+      </v-btn>
+    </template>
 
     <!-- 右键菜单：查看子菜单（图标/小图标，与全局设置共用同一 store 状态） -->
     <v-menu v-model="ctxOpen" :target="ctxTarget" location="bottom left">
