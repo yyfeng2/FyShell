@@ -114,10 +114,6 @@ export const useUiStore = defineStore('ui', () => {
     theme.value = value
   }
 
-  function toggleTheme(): void {
-    setTheme(theme.value === 'dark' ? 'light' : 'dark')
-  }
-
   // ---------------- 左导航折叠 ----------------
 
   /** 左导航是否折叠（折叠 = 收起；自动隐藏模式下鼠标悬停左缘可临时弹出） */
@@ -230,7 +226,6 @@ export const useUiStore = defineStore('ui', () => {
     dismissToast,
     theme,
     setTheme,
-    toggleTheme,
     navCollapsed,
     navAutoHide,
     toggleNav,

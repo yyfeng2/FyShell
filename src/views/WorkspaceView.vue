@@ -2051,14 +2051,6 @@ async function onMenuAction(action: string): Promise<void> {
     case 'toggle-nav':
       ui.navCollapsed = !ui.navCollapsed
       break
-    case 'toggle-theme':
-      ui.toggleTheme()
-      // 与设置对话框同步：菜单切换主题后更新设置中的主题模式并持久化
-      settings.setThemeMode(ui.theme)
-      break
-    case 'toggle-nav-autohide':
-      ui.navAutoHide = !ui.navAutoHide
-      break
     case 'toggle-quickbar':
       ui.quickBarVisible = !ui.quickBarVisible
       break
