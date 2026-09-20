@@ -415,6 +415,14 @@ export const useTerminalStore = defineStore('terminal', () => {
     if (!tab) return
 
     const sessionIds = new Set(tab.panes.map((p) => p.sessionId))
+    // 先移除标签再判定共享：正被关闭的 tab 仍在 tabs.value 时，
+    // sessionUsedElsewhere 恒为 true，disconnect 与状态清理会被完全跳过
+    // （曾导致 sessionStatus 残留 connected、后端连接不断开）
+    tabs.value = tabs.value.filter((t) => t.tabId !== tabId)
+    if (activeTabId.value === tabId) {
+      activeTabId.value = tabs.value.at(-1)?.tabId ?? null
+    }
+
     for (const sessionId of sessionIds) {
       if (!sessionUsedElsewhere(sessionId)) {
         await disconnectSession(sessionId).catch((e) => {
@@ -422,11 +430,6 @@ export const useTerminalStore = defineStore('terminal', () => {
         })
         cleanupSession(sessionId)
       }
-    }
-
-    tabs.value = tabs.value.filter((t) => t.tabId !== tabId)
-    if (activeTabId.value === tabId) {
-      activeTabId.value = tabs.value.at(-1)?.tabId ?? null
     }
   }
 

@@ -292,6 +292,21 @@ fn run_send(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string());
     let total = source.metadata().map(|m| m.len()).unwrap_or(0);
+
+    // 注册文件元数据：状态机收到 ZRINIT 后自动发 ZFILE（zmodem2 要求
+    // 调用方在 WaitReceiverInit/ReadyForFile 阶段显式 start_file，
+    // 否则状态机干等、ReadFile 动作永不出现 → 传输饿死超时）
+    sender
+        .start_file(zmodem2::FileInfo::new(
+            file_name.as_bytes(),
+            Some(zmodem2::Position::new(u32::try_from(total).unwrap_or(u32::MAX))),
+        ))
+        .map_err(|e| format!("注册 ZMODEM 文件失败: {e}"))?;
+    // 单文件传输：当前文件完成后发 ZFIN 结束会话
+    sender
+        .finish()
+        .map_err(|e| format!("注册 ZMODEM 结束请求失败: {e}"))?;
+
     let mut transferred: u64 = 0;
     let mut last_emit = Instant::now();
     let mut idle_polls: u32 = 0;
