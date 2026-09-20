@@ -100,6 +100,7 @@
               :key="t.name"
               :active="t.name === selectedTable"
               @click="selectTable(t.name)"
+              @contextmenu.prevent="openTableCtx($event, t.name)"
             >
               <template #prepend>
                 <v-icon size="small" color="primary">mdi-table</v-icon>
@@ -539,6 +540,86 @@
       </v-card>
     </template>
 
+    <!-- 表右键菜单套件（Navicat 表对象菜单）：打开/设计/删除/清空/截断/复制表/转储/打印/维护/逆向模型等
+         （与单元格右键菜单同款 fixed 定位 + 覆盖层关闭） -->
+    <template v-if="tableCtx">
+      <div
+        class="mysql-grid__ctx-overlay"
+        @click="tableCtx = null"
+        @contextmenu.prevent="tableCtx = null"
+      />
+      <v-card
+        class="mysql-grid__ctx-menu mysql-grid__ctx-menu--table"
+        :style="{ top: `${tableCtx.y}px`, left: `${tableCtx.x}px` }"
+      >
+        <v-list density="compact" nav>
+          <v-list-item prepend-icon="mdi-table-arrow-right" @click="withCtxTable(openTable)">打开表</v-list-item>
+          <v-list-item prepend-icon="mdi-pencil" @click="withCtxTable(designTable)">设计表</v-list-item>
+          <v-list-item prepend-icon="mdi-table-plus" :disabled="!store.isConnected" @click="withCtxTable(() => openDesigner('', true))">新建表</v-list-item>
+          <v-list-item prepend-icon="mdi-table-remove" :disabled="!store.isConnected" @click="withCtxTable(dropTable)">删除表</v-list-item>
+          <v-list-item prepend-icon="mdi-eraser" :disabled="!store.isConnected" @click="withCtxTable(clearTable)">清空表</v-list-item>
+          <v-list-item prepend-icon="mdi-arrow-collapse-vertical" :disabled="!store.isConnected" @click="withCtxTable(truncateTable)">截断表</v-list-item>
+
+          <!-- 复制表：结构 / 结构和数据（新表名对话框） -->
+          <v-list-group value="tcopy">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-content-copy" title="复制表" />
+            </template>
+            <v-list-item title="复制表结构" @click="withCtxTable(copyStructure)" />
+            <v-list-item title="复制表结构和数据" @click="withCtxTable(copyData)" />
+          </v-list-group>
+
+          <v-list-item disabled>
+            <v-list-item-title title="开发中">设置权限</v-list-item-title>
+          </v-list-item>
+
+          <v-list-item prepend-icon="mdi-file-import-outline" :disabled="!store.isConnected" @click="withCtxTable(openImportWizard)">导入向导...</v-list-item>
+          <v-list-item prepend-icon="mdi-file-export-outline" :disabled="!store.isConnected" @click="withCtxTable(openExportWizard)">导出向导...</v-list-item>
+          <v-list-item disabled>
+            <v-list-item-title title="开发中">数据生成...</v-list-item-title>
+          </v-list-item>
+
+          <!-- 转储 SQL 文件：预设 SELECT 当前表 + includeCreateTable（与库级转储同款语义） -->
+          <v-list-group value="tdump">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-database-export" title="转储 SQL 文件" />
+            </template>
+            <v-list-item title="结构和数据" @click="withCtxTable(dumpStructureData)" />
+            <v-list-item title="仅结构" @click="withCtxTable(dumpStructureOnly)" />
+          </v-list-group>
+
+          <v-list-item prepend-icon="mdi-printer" :disabled="!store.isConnected" @click="withCtxTable(printTable)">打印表</v-list-item>
+
+          <!-- 维护：OPTIMIZE/ANALYZE/CHECK/REPAIR TABLE -->
+          <v-list-group value="tmaintain">
+            <template #activator="{ props: act }">
+              <v-list-item v-bind="act" prepend-icon="mdi-wrench" title="维护" />
+            </template>
+            <v-list-item title="优化表" @click="withCtxTable((n) => maintainTable(n, 'OPTIMIZE'))" />
+            <v-list-item title="分析表" @click="withCtxTable((n) => maintainTable(n, 'ANALYZE'))" />
+            <v-list-item title="检查表" @click="withCtxTable((n) => maintainTable(n, 'CHECK'))" />
+            <v-list-item title="修复表" @click="withCtxTable((n) => maintainTable(n, 'REPAIR'))" />
+          </v-list-group>
+
+          <v-list-item prepend-icon="mdi-file-tree-outline" :disabled="!store.isConnected" @click="withCtxTable(openErModel)">逆向表到模型...</v-list-item>
+          <v-list-item disabled>
+            <v-list-item-title title="开发中">创建图表...</v-list-item-title>
+          </v-list-item>
+          <v-list-item disabled>
+            <v-list-item-title title="开发中">管理组...</v-list-item-title>
+          </v-list-item>
+
+          <v-list-item prepend-icon="mdi-content-copy" @click="withCtxTable(copyTableName)">复制</v-list-item>
+          <v-list-item prepend-icon="mdi-rename-box" :disabled="!store.isConnected" @click="withCtxTable(renameTable)">重命名</v-list-item>
+          <v-list-item disabled>
+            <v-list-item-title title="开发中">创建打开表快捷方式...</v-list-item-title>
+          </v-list-item>
+
+          <v-list-item prepend-icon="mdi-refresh" @click="withCtxTable(() => refreshTables())">刷新</v-list-item>
+        </v-list>
+      </v-card>
+    </template>
+
     <!-- 自定义填充值对话框：对选中区域内所有单元格填充该值 -->
     <v-dialog v-model="showFillDialog" width="420">
       <v-card>
@@ -675,7 +756,47 @@
     />
     <HistoryDrawer v-model="showHistory" @recall="recallSql" />
     <ExplainPanel v-model="showExplain" :conn-id="store.connId ?? ''" :sql="sql" />
-    <ImportExportDialog v-model="showIo" :conn-id="store.connId ?? ''" />
+    <ImportExportDialog
+      v-model="showIo"
+      :conn-id="store.connId ?? ''"
+      :initial-mode="ioModePreset ?? undefined"
+      :initial-export-sql="ioExportSqlPreset ?? undefined"
+      :initial-import-table="ioImportTablePreset ?? undefined"
+    />
+    <ErModelDialog v-model="showEr" :conn-id="store.connId ?? ''" :db-name="erDbName" :table-name="erTableName" />
+
+    <!-- 复制表/重命名对话框：新表名输入（复制表结构/结构和数据/重命名共用） -->
+    <v-dialog v-model="showCopyDialog" width="420">
+      <v-card>
+        <v-card-title class="d-flex align-center text-subtitle-1">
+          {{ copyMode === 'rename' ? '重命名表' : '复制表' }}
+          <v-spacer />
+          <v-btn icon="mdi-close" size="x-small" variant="text" title="关闭" @click="showCopyDialog = false" />
+        </v-card-title>
+        <v-divider />
+        <v-card-text>
+          <div class="text-caption text-medium-emphasis mb-1">
+            {{ copyMode === 'rename' ? `将表「${copySource}」重命名为：` : `源表：${copySource}` }}
+          </div>
+          <v-text-field
+            v-model="copyName"
+            density="compact"
+            variant="outlined"
+            single-line
+            hide-details
+            autofocus
+            label="新表名"
+            @keyup.enter="confirmCopy"
+          />
+        </v-card-text>
+        <v-divider />
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" @click="showCopyDialog = false">取消</v-btn>
+          <v-btn color="primary" :loading="copyRunning" @click="confirmCopy">确认</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- 保存查询对话框：命名保存当前 SQL（可选绑定当前连接） -->
     <v-dialog v-model="showSaveQuery" max-width="420">
@@ -725,8 +846,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useMysqlStore } from '@/stores/mysql'
+import { mysqlQuery } from '@/api/mysql'
+import type { MySqlQueryResult } from '@/api/types'
 import { useUiStore } from '@/stores/ui'
 import {
   mysqlDeleteRow,
@@ -744,6 +867,7 @@ import TableDesigner from '@/views/mysql/TableDesigner.vue'
 import HistoryDrawer from './HistoryDrawer.vue'
 import ExplainPanel from './ExplainPanel.vue'
 import ImportExportDialog from './ImportExportDialog.vue'
+import ErModelDialog from './ErModelDialog.vue'
 
 const store = useMysqlStore()
 const ui = useUiStore()
@@ -890,6 +1014,280 @@ function startSideResize(e: MouseEvent): void {
   }
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
+}
+
+// ---------- 表右键菜单（Navicat 表对象菜单） ----------
+
+/** 表右键菜单状态：屏幕坐标 + 目标表名 */
+const tableCtx = ref<{ x: number; y: number; name: string } | null>(null)
+
+/** 打开表右键菜单（坐标钳制到视口内；菜单含多组子菜单，预留足够高度） */
+function openTableCtx(e: MouseEvent, name: string): void {
+  tableCtx.value = {
+    x: Math.min(e.clientX, window.innerWidth - 220),
+    y: Math.min(e.clientY, window.innerHeight - 460),
+    name,
+  }
+}
+
+/** 菜单动作统一入口：读取目标表名 → 关闭菜单 → 执行 */
+function withCtxTable(fn: (name: string) => void): void {
+  const name = tableCtx.value?.name
+  tableCtx.value = null
+  if (name) fn(name)
+}
+
+/** 打开表：选中并填入 SELECT（与单击列表项一致） */
+function openTable(name: string): void {
+  selectTable(name)
+}
+
+/** 复制：表名到剪贴板 */
+function copyTableName(name: string): void {
+  void navigator.clipboard
+    .writeText(name)
+    .then(() => ui.toast(`表名「${name}」已复制到剪贴板`, 'success'))
+    .catch((e) => ui.toast(`复制失败：${errText(e)}`, 'error'))
+}
+
+/** 设计表：打开设计器编辑该表 */
+function designTable(name: string): void {
+  openDesigner(name, false)
+}
+
+/** 删除/清空/截断表：执行表级 SQL（危险 SQL 由 store.pendingConfirm 确认框二次确认） */
+function dropTable(name: string): void {
+  void execTableSql(`DROP TABLE \`${name}\``, `表「${name}」已删除`, { clearSelected: true })
+}
+
+function clearTable(name: string): void {
+  void execTableSql(`DELETE FROM \`${name}\``, `表「${name}」已清空`)
+}
+
+function truncateTable(name: string): void {
+  void execTableSql(`TRUNCATE TABLE \`${name}\``, `表「${name}」已截断`)
+}
+
+/** 执行表级 SQL：needsConfirm=true 时确认框由 store 驱动弹出，此处只返回不报成功 */
+async function execTableSql(
+  sqlText: string,
+  successMsg: string,
+  opts?: { clearSelected?: boolean },
+): Promise<void> {
+  try {
+    const outcome = await store.executeSql(sqlText)
+    if (outcome.needsConfirm) return
+    ui.toast(successMsg, 'success')
+    if (opts?.clearSelected && selectedTable.value) selectedTable.value = ''
+    await refreshTables()
+  } catch (e) {
+    ui.toast(errText(e), 'error')
+  }
+}
+
+/** 维护：OPTIMIZE/ANALYZE/CHECK/REPAIR TABLE（非危险语句直接执行） */
+function maintainTable(name: string, op: 'OPTIMIZE' | 'ANALYZE' | 'CHECK' | 'REPAIR'): void {
+  void execTableSql(`${op} TABLE \`${name}\``, `表「${name}」${op} 完成`)
+}
+
+// 复制表 / 重命名：新表名对话框（structure=仅结构 data=含数据 rename=重命名）
+type CopyMode = 'structure' | 'data' | 'rename'
+const showCopyDialog = ref(false)
+const copyMode = ref<CopyMode>('structure')
+const copySource = ref('')
+const copyName = ref('')
+const copyRunning = ref(false)
+
+function openCopyDialog(mode: CopyMode, name: string): void {
+  copyMode.value = mode
+  copySource.value = name
+  copyName.value = mode === 'rename' ? name : `${name}_copy`
+  showCopyDialog.value = true
+}
+
+function copyStructure(name: string): void {
+  openCopyDialog('structure', name)
+}
+
+function copyData(name: string): void {
+  openCopyDialog('data', name)
+}
+
+function renameTable(name: string): void {
+  openCopyDialog('rename', name)
+}
+
+/** 确认复制/重命名：CREATE TABLE LIKE（+ INSERT SELECT）/ RENAME TABLE */
+async function confirmCopy(): Promise<void> {
+  const newName = copyName.value.trim()
+  if (!newName || newName.includes('`')) {
+    ui.toast('请填写合法的表名（不含反引号）', 'warning')
+    return
+  }
+  copyRunning.value = true
+  try {
+    if (copyMode.value === 'rename') {
+      await store.executeSql(`RENAME TABLE \`${copySource.value}\` TO \`${newName}\``)
+      ui.toast(`表「${copySource.value}」已重命名为「${newName}」`, 'success')
+    } else {
+      await store.executeSql(`CREATE TABLE \`${newName}\` LIKE \`${copySource.value}\``)
+      if (copyMode.value === 'data') {
+        await store.executeSql(`INSERT INTO \`${newName}\` SELECT * FROM \`${copySource.value}\``)
+      }
+      ui.toast(
+        copyMode.value === 'data'
+          ? `已复制表「${copySource.value}」到「${newName}」（含数据）`
+          : `已复制表「${copySource.value}」到「${newName}」（仅结构）`,
+        'success',
+      )
+    }
+    showCopyDialog.value = false
+    await refreshTables()
+  } catch (e) {
+    ui.toast(errText(e), 'error')
+  } finally {
+    copyRunning.value = false
+  }
+}
+
+// ---------- 表右键：导入/导出向导 + 转储 SQL 文件 ----------
+
+/** 向导打开预设（null = 不预设；表右键菜单入口设置，工具条导入导出按钮保持 null 不干扰已填 SQL） */
+const ioModePreset = ref<'export' | 'import' | null>(null)
+const ioExportSqlPreset = ref<string | null>(null)
+const ioImportTablePreset = ref<string | null>(null)
+
+function openImportWizard(name: string): void {
+  ioModePreset.value = 'import'
+  ioExportSqlPreset.value = null
+  ioImportTablePreset.value = name
+  showIo.value = true
+}
+
+function openExportWizard(name: string): void {
+  ioModePreset.value = 'export'
+  ioExportSqlPreset.value = null
+  ioImportTablePreset.value = null
+  showIo.value = true
+}
+
+/** 转储 SQL 文件：预设 SELECT 当前表（结构和数据=带建表语句 / 仅结构），与库级转储同款语义 */
+function dumpStructureData(name: string): void {
+  ioModePreset.value = 'export'
+  ioExportSqlPreset.value = `SELECT * FROM \`${name}\``
+  ioImportTablePreset.value = null
+  showIo.value = true
+}
+
+function dumpStructureOnly(name: string): void {
+  dumpStructureData(name)
+}
+
+// 向导关闭后清除预设（避免下次工具条打开时误用上次菜单的预设）
+watch(showIo, (open) => {
+  if (!open) {
+    ioModePreset.value = null
+    ioExportSqlPreset.value = null
+    ioImportTablePreset.value = null
+  }
+})
+
+// ---------- 表右键：打印表 / 逆向表到模型 ----------
+
+/** SQL 字符串字面量（单引号翻倍转义） */
+function sqlStr(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+/** 右键菜单"打印表"：查列定义生成单表结构报告并调起 WebView 打印 */
+async function printTable(name: string): Promise<void> {
+  const connId = store.connId
+  if (!connId) return
+  try {
+    const colResult = await mysqlQuery(
+      connId,
+      `SELECT COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE, COLUMN_KEY, COLUMN_COMMENT FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ${sqlStr(name)} ORDER BY ORDINAL_POSITION`,
+      1,
+      100000,
+    )
+    printTableReport(name, colResult)
+  } catch (e) {
+    ui.toast(`打印表失败：${errText(e)}`, 'error')
+  }
+}
+
+/** 拼单表结构报告 HTML（打印表）：表名/行数/引擎/注释 + 列定义表格 */
+function printTableReport(name: string, colResult: MySqlQueryResult): string {
+  const esc = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const info = store.tables.find((t) => t.name === name)
+  const colRows = colResult.rows
+    .map((row) => {
+      const nullable = row[2] === 'YES' ? 'NULL' : 'NOT NULL'
+      const key = row[3] === 'PRI' ? ' PRI' : row[3] === 'UNI' ? ' UK' : row[3] === 'MUL' ? ' MUL' : ''
+      const line = `${row[0] ?? ''}  ${row[1] ?? ''}  ${nullable}${key}${row[4] ? `  ${row[4]}` : ''}`
+      return `<tr><td>${esc(line)}</td></tr>`
+    })
+    .join('')
+  return `<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>表结构 - ${esc(name)}</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; font-size: 12px; color: #222; margin: 24px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .gen { color: #666; margin: 0 0 14px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #bbb; padding: 3px 8px; text-align: left; }
+  th { background: #f0f0f0; }
+</style></head><body>
+<h1>表结构：${esc(name)}</h1>
+<p class="gen">生成时间：${new Date().toLocaleString('zh-CN')}　行数（预估）：${info?.rows ?? 0}　引擎：${esc(info?.engine ?? '-')}${info?.comment ? `　注释：${esc(info.comment)}` : ''}</p>
+<table><thead><tr><th>列定义</th></tr></thead><tbody>${colRows}</tbody></table>
+</body></html>`
+}
+
+/** 隐藏 iframe 写入 HTML 并调起打印（WebView2 内打印，不弹新窗口） */
+function printHtml(html: string): void {
+  const iframe = document.createElement('iframe')
+  iframe.style.position = 'fixed'
+  iframe.style.width = '0'
+  iframe.style.height = '0'
+  iframe.style.border = 'none'
+  document.body.appendChild(iframe)
+  const doc = iframe.contentDocument
+  if (!doc) {
+    document.body.removeChild(iframe)
+    return
+  }
+  doc.open()
+  doc.write(html)
+  doc.close()
+  iframe.contentWindow?.focus()
+  iframe.contentWindow?.print()
+  window.setTimeout(() => document.body.removeChild(iframe), 60_000)
+}
+
+// 逆向表到模型：单表模式 ER 图对话框
+const showEr = ref(false)
+const erDbName = ref('')
+const erTableName = ref('')
+
+/** 右键菜单"逆向表到模型..."：查当前库名后打开 ER 图对话框（单表模式，含直接外键关系） */
+async function openErModel(name: string): Promise<void> {
+  const connId = store.connId
+  if (!connId) return
+  try {
+    const r = await mysqlQuery(connId, 'SELECT DATABASE() AS db', 1, 10)
+    const dbName = r.rows[0]?.[0] ?? ''
+    if (!dbName) {
+      ui.toast('当前连接未选择数据库', 'warning')
+      return
+    }
+    erDbName.value = dbName
+    erTableName.value = name
+    showEr.value = true
+  } catch (e) {
+    ui.toast(`打开表模型失败：${errText(e)}`, 'error')
+  }
 }
 
 // ---------- SQL 编辑与执行 ----------
@@ -2300,6 +2698,37 @@ th[title='单击选中整列'] {
   position: fixed;
   z-index: 2001;
   min-width: 180px;
+}
+
+/* 表右键菜单（Navicat 表对象菜单）紧凑化：字体 12px（对话按钮同款，14px 基准减两档），行间 0.3em，
+   图标与文字间距 0.5em（em 以菜单 12px 字号为基准）；仅作用于表菜单，单元格右键菜单不受影响。
+   min-height !important 压过全局列表 28px !important，标题/图标用更高特异性压过全局 14px */
+.mysql-grid__ctx-menu--table {
+  font-size: 12px;
+}
+
+.mysql-grid__ctx-menu--table .v-list {
+  row-gap: 0.3em;
+}
+
+/* 标题/图标/spacer 由 v-list-item 内部渲染（无 data-v 属性），必须 :deep 穿透，
+   否则组激活项（复制表/转储 SQL 文件/维护）回退全局 14px */
+.mysql-grid__ctx-menu--table .v-list :deep(.v-list-item) {
+  min-height: 0 !important;
+  padding-block: 0 !important;
+}
+
+.mysql-grid__ctx-menu--table .v-list :deep(.v-list-item-title) {
+  font-size: 1em;
+  line-height: 1.3;
+}
+
+.mysql-grid__ctx-menu--table .v-list :deep(.v-list-item .v-icon) {
+  font-size: 1em;
+}
+
+.mysql-grid__ctx-menu--table .v-list :deep(.v-list-item__prepend > .v-icon ~ .v-list-item__spacer) {
+  width: 0.5em;
 }
 
 /* 编辑预览对话框中的 SQL 片段（与危险确认框共用类名） */

@@ -242,6 +242,12 @@ const props = defineProps<{
   connId: string
   /** 打开时预设「包含建表语句」（树右键"转储 SQL 文件"子菜单：结构和数据=true / 仅结构=false） */
   initialIncludeCreateTable?: boolean
+  /** 打开时预设导出/导入模式（表右键「导出向导.../导入向导...」入口） */
+  initialMode?: IoMode
+  /** 打开时预设导出 SQL（表右键「转储 SQL 文件」：SELECT * FROM `table`） */
+  initialExportSql?: string
+  /** 打开时预设导入目标表（表右键「导入向导...」） */
+  initialImportTable?: string
 }>()
 
 const emit = defineEmits<{
@@ -275,6 +281,16 @@ watch(
   (open) => {
     if (open && props.initialIncludeCreateTable !== undefined) {
       includeCreateTable.value = props.initialIncludeCreateTable
+    }
+    // 表右键菜单入口：预设模式 / 导出 SQL / 导入目标表
+    if (open && props.initialMode !== undefined) {
+      mode.value = props.initialMode
+    }
+    if (open && props.initialExportSql !== undefined) {
+      exportSql.value = props.initialExportSql
+    }
+    if (open && props.initialImportTable !== undefined) {
+      importTable.value = props.initialImportTable
     }
   },
 )

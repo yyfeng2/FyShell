@@ -9,7 +9,7 @@
       <!-- 顶部：标题 + 关闭 -->
       <div class="er-model__header">
         <v-icon size="small" class="mr-1">mdi-file-tree-outline</v-icon>
-        <span class="er-model__title">逆向数据库到模型（{{ dbName }}）</span>
+        <span class="er-model__title">{{ tableName ? `表模型（${tableName}）` : `逆向数据库到模型（${dbName}）` }}</span>
         <v-spacer />
         <v-btn
           size="small"
@@ -55,6 +55,8 @@ const props = defineProps<{
   modelValue: boolean
   connId: string
   dbName: string
+  /** 可选：单表模式（表右键「逆向表到模型...」），只渲染该表及其直接外键关系 */
+  tableName?: string
 }>()
 
 const emit = defineEmits<{
@@ -92,17 +94,22 @@ async function load(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
+    // 单表模式（表右键入口）：列只取该表，外键取该表参与的直接关系
+    const tableFilter = props.tableName ? ` AND TABLE_NAME = ${sqlStr(props.tableName)}` : ''
     // 列/主键：TABLE_NAME/COLUMN_NAME/COLUMN_TYPE/COLUMN_KEY，按表/列序
     const colResult = await mysqlQuery(
       props.connId,
-      `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ${sqlStr(props.dbName)} ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+      `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ${sqlStr(props.dbName)}${tableFilter} ORDER BY TABLE_NAME, ORDINAL_POSITION`,
       1,
       100000,
     )
-    // 外键：子表/子列/父表/父列
+    // 外键：子表/子列/父表/父列（单表模式取该表作为子表或父表的关系）
+    const fkFilter = props.tableName
+      ? ` AND (TABLE_NAME = ${sqlStr(props.tableName)} OR REFERENCED_TABLE_NAME = ${sqlStr(props.tableName)})`
+      : ''
     const fkResult = await mysqlQuery(
       props.connId,
-      `SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ${sqlStr(props.dbName)} AND REFERENCED_TABLE_NAME IS NOT NULL`,
+      `SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA = ${sqlStr(props.dbName)} AND REFERENCED_TABLE_NAME IS NOT NULL${fkFilter}`,
       1,
       100000,
     )
@@ -134,21 +141,30 @@ async function load(): Promise<void> {
     // 关系线：父表 ||--o{ 子表（FK 多对一），去重
     const relSet = new Set<string>()
     const rels: string[] = []
+    // 单表模式下：列查询只取了目标表，直接关联的父/子表以裸实体（无属性块）参与连线
+    const relatedTables = new Set<string>()
     fkResult.rows.forEach((row) => {
-      const child = sanitize(row[0] ?? '')
+      const childTable = row[0] ?? ''
+      const parentTable = row[2] ?? ''
+      const child = sanitize(childTable)
       const fkCol = sanitize(row[1] ?? '')
-      const parent = sanitize(row[2] ?? '')
-      if (!(parent && child && byTable.has(parent) && byTable.has(child))) {
-        return
-      }
+      const parent = sanitize(parentTable)
+      if (!(parent && child)) return
+      if (!byTable.has(childTable)) relatedTables.add(childTable)
+      if (!byTable.has(parentTable)) relatedTables.add(parentTable)
       const key = `${parent}|${child}|${fkCol}`
       if (relSet.has(key)) return
       relSet.add(key)
       rels.push(`  ${parent} ||--o{ ${child} : "${fkCol}"`)
     })
+    relatedTables.forEach((table) => {
+      entities.push(`  ${sanitize(table)}`)
+    })
 
     if (entities.length === 0) {
-      error.value = '该库中没有可渲染的表'
+      error.value = props.tableName
+        ? '该表没有可渲染的列'
+        : '该库中没有可渲染的表'
       svg.value = ''
       return
     }
