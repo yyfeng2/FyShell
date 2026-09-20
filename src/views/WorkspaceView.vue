@@ -2303,21 +2303,30 @@ const activeTerminalId = computed(() => {
   return tab?.type === 'terminal' && tab.sessionId ? tab.sessionId : null
 })
 
-/** 最近打开的终端会话（SFTP 双栏远程栏默认浏览对象；无终端 Tab 时为空） */
-const lastTerminalSessionId = computed<string>(() => {
-  const t = terminalStore.tabs.at(-1)
-  return t?.panes[0]?.sessionId ?? ''
+/** 最近一个可作 SFTP 远程栏的终端会话（倒序找已连接的 SSH 终端；本地/Telnet/串口与
+    断开会话无 SFTP 能力排除——断开后自动回退到更早的已连接会话） */
+const lastTerminalSession = computed<{ id: string; name: string } | null>(() => {
+  const tabs = terminalStore.tabs
+  for (let i = tabs.length - 1; i >= 0; i--) {
+    const t = tabs[i]
+    const sid = t?.panes[0]?.sessionId
+    if (!sid || sid.startsWith('local-')) continue
+    if (terminalStore.isConnected(sid) && terminalStore.sessionTypeOf(sid) === 'ssh') {
+      return { id: sid, name: t.title }
+    }
+  }
+  return null
 })
 
 /** SFTP 双栏远程栏会话键：独立 SFTP 会话 Tab 连接就绪后用自身连接键（未就绪为空串，
     FilePane 提示选择会话且连接完成时 sessionId 变化触发重载）；工具栏单例 Tab 回退
-    最近终端会话键（现有 SSH 耦合不变） */
+    最近可用 SSH 会话键（现有 SSH 耦合不变） */
 function sftpPaneSessionId(tab: WorkTab): string {
-  if (!tab.connId) return lastTerminalSessionId.value
+  if (!tab.connId) return lastTerminalSession.value?.id ?? ''
   return terminalStore.isConnected(tab.connId) ? tab.connId : ''
 }
 
-const lastTerminalSessionName = computed(() => terminalStore.tabs.at(-1)?.title ?? '')
+const lastTerminalSessionName = computed(() => lastTerminalSession.value?.name ?? '')
 
 /** 快捷命令发送完成（Compose Pane）：汇总成败 toast */
 function onComposeSent(payload: { commandText: string; sessionIds: string[] }): void {
