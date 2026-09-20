@@ -780,7 +780,6 @@ export function useXterm(options: UseXtermOptions = {}) {
       // OS 标准剪贴板快捷键（Windows Terminal 惯例，与操作系统一致）：
       // Ctrl+C / Ctrl+X 有选中即复制，无选中放行（Ctrl+C 放行 = SIGINT 中断信号，
       // Ctrl+X 放行 = bash emacs 前缀键）；Ctrl+V 直接粘贴。
-      // Ctrl+A 不拦截（bash readline 行首键，全选仍走 Ctrl+Shift+A）。
       if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'c' || ev.key === 'C' || ev.key === 'x' || ev.key === 'X')) {
         const sel = term?.getSelection()
         if (sel) {
@@ -791,6 +790,11 @@ export function useXterm(options: UseXtermOptions = {}) {
       }
       if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
         void pasteFromClipboard()
+        return false
+      }
+      // Ctrl+A 全选（OS 标准，用户指定；注意与 bash readline 行首键冲突，Home 键仍可用）
+      if (ev.ctrlKey && !ev.shiftKey && !ev.altKey && (ev.key === 'a' || ev.key === 'A')) {
+        term?.selectAll()
         return false
       }
       // 终端复制/粘贴/全选：Ctrl+Shift 组合（Xshell 惯例，意图明确，与标准快捷键并存）

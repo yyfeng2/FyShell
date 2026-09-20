@@ -27,6 +27,7 @@ const TERMINAL_SHORTCUTS: ShortcutItem[] = [
   { keys: 'Ctrl+C', desc: '复制选中内容（无选中时发送中断信号）' },
   { keys: 'Ctrl+X', desc: '剪切选中内容' },
   { keys: 'Ctrl+V', desc: '粘贴剪贴板' },
+  { keys: 'Ctrl+A', desc: '全选' },
   { keys: 'Ctrl+Shift+C', desc: '复制选中内容' },
   { keys: 'Ctrl+Shift+V', desc: '粘贴剪贴板' },
   { keys: 'Ctrl+Shift+A', desc: '全选' },

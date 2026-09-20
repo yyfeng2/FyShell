@@ -62,7 +62,7 @@ const MENUS: MenuDef[] = [
       { title: '剪切', action: 'cut', shortcut: 'Ctrl+X' },
       { title: '复制', action: 'copy', shortcut: 'Ctrl+C' },
       { title: '粘贴', action: 'paste', shortcut: 'Ctrl+V' },
-      { title: '全选', action: 'select-all', shortcut: 'Ctrl+Shift+A' },
+      { title: '全选', action: 'select-all', shortcut: 'Ctrl+A' },
     ],
   },
   {
@@ -92,7 +92,6 @@ const MENUS: MenuDef[] = [
     accel: 'S',
     items: [
       { title: '全局设置…', action: 'settings' },
-      { title: '会话设置…', action: 'session-settings' },
       { title: '主密码设置…', action: 'master-password', dividerBefore: true },
     ],
   },

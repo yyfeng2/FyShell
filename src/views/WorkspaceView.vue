@@ -2035,7 +2035,7 @@ async function onMenuAction(action: string): Promise<void> {
       // 真实执行（Xshell 菜单肌肉记忆）：活动终端窗格存在时执行剪贴板操作，无终端时提示快捷键
       const pane = paneRefs.get(activeId.value ?? '')
       if (!pane) {
-        ui.toast('终端内 Ctrl+C 复制 / Ctrl+V 粘贴 / Ctrl+Shift+A 全选', 'info')
+        ui.toast('终端内 Ctrl+C 复制 / Ctrl+V 粘贴 / Ctrl+A 全选', 'info')
         break
       }
       if (action === 'copy' || action === 'cut') {
@@ -2069,10 +2069,6 @@ async function onMenuAction(action: string): Promise<void> {
       break
     case 'tunnel':
       openTunnelTab()
-      break
-    case 'session-settings':
-      // 会话设置：对当前活动会话打开（会话模式，编辑写会话级键）
-      openSessionSettingsFor(activeTab.value ?? null)
       break
     case 'mysql':
       openMysqlTab()
