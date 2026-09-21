@@ -316,7 +316,7 @@
                 <td
                   v-for="(cell, ci) in row.cells"
                   :key="ci"
-                  class="text-body-2 mysql-grid__cell"
+                  class="mysql-grid__cell"
                   :class="{
                     'mysql-grid__cell--edited': isEdited(row.originalIndex, ci),
                     'mysql-grid__cell--editable': canEdit,
@@ -2579,13 +2579,30 @@ function onConnected(connLabel: string): void {
 
 .mysql-grid__result-table {
   height: 100%;
+  /* 数据网格表格区（数据库显示内容）：容器设 12px 基准（2026-09-21 用户指定，
+     与表右键菜单同款模式），th/td/NULL/编辑输入框/图标 1em 跟随 */
+  font-size: 12px;
 }
 
-/* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性） */
+/* 行距 0.5em（单元格上下 padding）；th/td 的 v-table 默认字号 0.875rem 需显式覆盖为 1em；
+   padding-block !important 压过 Vuetify 密度样式（同 min-height 覆盖惯例） */
+.mysql-grid__result-table :deep(th),
+.mysql-grid__result-table :deep(td) {
+  font-size: 1em;
+  padding-block: 0.5em !important;
+}
+
+/* 表头主键/排序图标：1em 跟随 + 与文字间距 0.5em（mr-1 带 !important 须同级强度覆盖） */
+.mysql-grid__result-table :deep(th .v-icon) {
+  font-size: 1em;
+  margin-inline-end: 0.5em !important;
+}
+
+/* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
 .mysql-grid__null {
   font-style: italic;
   opacity: 0.55;
-  font-size: 14px;
+  font-size: 1em;
 }
 
 /* 待提交修改中的 NULL：额外加下划线与警告色边框强调 */
@@ -2675,13 +2692,13 @@ th[title='单击选中整列'] {
   cursor: pointer;
 }
 
-/* 单元格内联编辑输入框（原生 input，占满单元格） */
+/* 单元格内联编辑输入框（原生 input，占满单元格；1em 跟随容器 12px） */
 .mysql-grid__cell-input {
   width: 100%;
   border: 1px solid rgba(var(--v-theme-primary), 0.6);
   border-radius: 4px;
   padding: 2px 4px;
-  font-size: 14px;
+  font-size: 1em;
   background: transparent;
   color: rgb(var(--v-theme-on-surface));
   outline: none;
