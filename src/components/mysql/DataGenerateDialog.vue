@@ -552,4 +552,16 @@ function onToggle(v: boolean): void {
   text-align: left;
   white-space: nowrap;
 }
+
+/* rem 换算非整数档修复：text-caption/subtitle-2 10.5/12.25px → 12px 整数档 */
+.text-caption,
+.text-subtitle-2,
+.text-body-2 {
+  font-size: 12px !important;
+}
+
+/* x-small chip 统一 11px（工具栏按钮档） */
+:deep(.v-chip--size-x-small .v-chip__content) {
+  font-size: 11px !important;
+}
 </style>

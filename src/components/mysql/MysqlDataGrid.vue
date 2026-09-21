@@ -2801,4 +2801,9 @@ th[title='单击选中整列'] {
 .mysql-grid__pager .v-pagination {
   flex: 1 1 auto;
 }
+
+/* x-small chip 统一 11px（工具栏按钮档），rem 换算 8.75px 超小 */
+:deep(.v-chip--size-x-small .v-chip__content) {
+  font-size: 11px !important;
+}
 </style>

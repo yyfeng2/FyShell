@@ -403,4 +403,11 @@ function formatDuration(durationMs: number | null): string {
   padding: 8px 12px;
   color: rgb(var(--v-theme-error));
 }
+
+/* rem 换算非整数档修复：text-caption/body-2 10.5/12.25px → 12px 整数档 */
+.text-caption,
+.text-subtitle-2,
+.text-body-2 {
+  font-size: 12px !important;
+}
 </style>
