@@ -2680,25 +2680,31 @@ th[title='单击选中整列'] {
   cursor: pointer;
 }
 
-/* 单元格内联编辑输入框（原生 input，占满单元格；1em 跟随容器 12px） */
-.mysql-grid__cell-input {
-  width: 100%;
-  border: 1px solid rgba(var(--v-theme-primary), 0.6);
-  border-radius: 4px;
-  padding: 2px 4px;
-  font-size: 1em;
-  background: transparent;
-  color: rgb(var(--v-theme-on-surface));
-  outline: none;
-}
-
-/* 编辑态单元格：单框显示（2026-09-21 用户指定）——去掉 td 外层框线
-   （--selected/--edited outline）与选中背景，只保留 input 内层 border 单层框；
-   padding 0.1em 使编辑框紧贴单元格 */
+/* 编辑态单元格：Excel 式——td 网格线消失，input 直角实线边框占满单元格
+   （替代网格线位置，无间隙无圆角；td border 透明保留占位防止行高变化） */
 .mysql-grid__result-table :deep(td:has(> input.mysql-grid__cell-input)) {
-  padding: 0.1em !important;
+  padding: 0 !important;
   outline: none !important;
   background: none !important;
+  border-right-color: transparent !important;
+  border-bottom-color: transparent !important;
+}
+
+/* 单元格内联编辑输入框：不透明主色实线直角边框，占满 td（1em 跟随容器 12px） */
+.mysql-grid__cell-input {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: block;
+  border: 1.5px solid rgb(var(--v-theme-primary));
+  border-radius: 0;
+  padding: 2px 6px;
+  font-size: 1em;
+  font-family: inherit;
+  background: rgb(var(--v-theme-surface));
+  color: rgb(var(--v-theme-on-surface));
+  outline: none;
+  box-shadow: none;
 }
 
 /* 右键菜单覆盖层与菜单本体（fixed 定位，跟随鼠标坐标） */
