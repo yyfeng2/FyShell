@@ -2665,11 +2665,14 @@ function onConnected(connLabel: string): void {
   background: rgba(var(--v-theme-warning), 0.08);
 }
 
-/* 单元格选中区域（矩形选区）：Excel 式单框高亮——只保留 outline 单边框，
-   去掉浅蓝填充色块（色块边界与网格线/编辑框构成多层框，用户指定单框） */
-.mysql-grid__cell--selected {
+/* 单元格选中区域（矩形选区）：Excel 式单框——outline 单线；自己的网格线透明
+   （outline 画在 box 外侧 1px，与 border-right/bottom 紧贴成灰+蓝双线，即用户指的双层）；
+   左/上边的邻格线由 outline 覆盖 */
+.mysql-grid__result-table :deep(td.mysql-grid__cell--selected) {
   outline: 1px solid rgba(var(--v-theme-primary), 0.6);
   background: transparent;
+  border-right-color: transparent !important;
+  border-bottom-color: transparent !important;
 }
 
 /* 列头可单击选中整列 */
