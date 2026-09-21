@@ -2700,12 +2700,13 @@ th[title='单击选中整列'] {
   min-width: 180px;
 }
 
-/* 表右键菜单（Navicat 表对象菜单）紧凑化：字体 13px（次级菜单同款，2026-09-21 用户指定
-   "字体加1个字符"），行间 0.3em，图标与文字间距 0.5em（em 以菜单字号为基准）；
+/* 表右键菜单（Navicat 表对象菜单）紧凑化：字体 12px（2026-09-21 用户指定改回 12px），
+   字体显式声明系统微软雅黑；行间 0.3em，图标与文字间距 0.5em（em 以菜单字号为基准）；
    仅作用于表菜单，单元格右键菜单不受影响。
    min-height !important 压过全局列表 28px !important，标题/图标用更高特异性压过全局 14px */
 .mysql-grid__ctx-menu--table {
-  font-size: 13px;
+  font-size: 12px;
+  font-family: var(--fy-font);
 }
 
 .mysql-grid__ctx-menu--table .v-list {
