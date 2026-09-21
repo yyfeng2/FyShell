@@ -30,7 +30,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU4QjE5QURGNzI2RTBCQ0QKUldUTkMyNXkzNXF4V0ZmWVhJMUhONlBzbmJZQkRFK1ZPTC9rTnJTdm9NS25ocktSS3I4RlBDUEEK",
       "endpoints": [
-        "https://releases.example.com/fyshell/{{target}}/{{current_version}}"
+        "https://github.com/yyfeng2/fyshell/releases/latest/download/latest.json"
       ]
     }
   },
