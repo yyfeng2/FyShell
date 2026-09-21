@@ -397,6 +397,12 @@ export const commands = {
 	settingsGet: (key: string) => __TAURI_INVOKE<string | null>("settings_get", { key }),
 	/**  写入单个设置项（幂等覆盖；value 统一序列化为字符串） */
 	settingsSet: (key: string, value: string) => __TAURI_INVOKE<null>("settings_set", { key, value }),
+	/**
+	 *  删除全部用户数据（恢复到首次运行状态，不可恢复）：清空全部用户数据表 +
+	 *  会话日志。含导航树/保存的连接/查询历史/备份档案/快捷命令/键位映射/
+	 *  SFTP 收藏/隧道/认证配置/应用设置/主密码保险库；运行中的内存状态重启后重置。
+	 */
+	userDataClear: () => __TAURI_INVOKE<null>("user_data_clear"),
 	/**  设置关闭到托盘行为（运行时状态 + 托盘菜单勾选态同步） */
 	traySetCloseToTray: (enabled: boolean) => __TAURI_INVOKE<null>("tray_set_close_to_tray", { enabled }),
 	/**  读取配色方案文件（JSON 文本） */

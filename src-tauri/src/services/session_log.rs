@@ -160,3 +160,21 @@ fn is_valid_date(date: &str) -> bool {
             .enumerate()
             .all(|(i, &c)| if i == 4 || i == 7 { c == b'-' } else { c.is_ascii_digit() })
 }
+
+/// 清空全部会话日志（删除日志根目录下所有内容并重建空目录）。
+///
+/// 同时清空 enabled 集合：活跃会话此后不再向已删除的日志路径写入，
+/// 需重新开启落盘才会继续记录。
+pub fn clear_all() -> Result<(), AppError> {
+    let Some(state) = LOG_STATE.get() else {
+        return Ok(()); // 未初始化（无日志功能）时无事可做
+    };
+    state
+        .enabled
+        .lock()
+        .expect("session_log enabled 锁中毒")
+        .clear();
+    std::fs::remove_dir_all(&state.logs_root)?;
+    std::fs::create_dir_all(&state.logs_root)?;
+    Ok(())
+}

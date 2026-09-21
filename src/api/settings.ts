@@ -28,3 +28,8 @@ export function settingsSet(key: string, value: string): Promise<void> {
 export function traySetCloseToTray(enabled: boolean): Promise<void> {
   return invoke<void>('tray_set_close_to_tray', { enabled });
 }
+
+/** 删除全部用户数据（恢复到首次运行状态，不可恢复）：用户数据表 + 会话日志 */
+export function userDataClear(): Promise<void> {
+  return invoke<void>('user_data_clear');
+}

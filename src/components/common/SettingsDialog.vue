@@ -382,6 +382,18 @@
                 清除
               </v-btn>
             </div>
+            <div class="settings-dialog__row">
+              <div>
+                <div class="settings-dialog__row-title">删除用户数据</div>
+                <div class="settings-dialog__row-desc">
+                  清空导航树会话/文件夹、保存的连接、查询历史、备份档案、快捷命令、键位映射、SFTP
+                  收藏、隧道、应用设置与主密码保险库，恢复到首次运行状态，不可恢复。
+                </div>
+              </div>
+              <v-btn size="small" color="error" variant="tonal" @click="clearAllUserData">
+                删除…
+              </v-btn>
+            </div>
           </template>
 
           <!-- 安全（主密码快捷入口） -->
@@ -407,6 +419,12 @@
               <div>
                 <div class="settings-dialog__row-title">应用版本</div>
                 <div class="settings-dialog__row-desc">FyShell v{{ appVersion }}</div>
+              </div>
+            </div>
+            <div class="settings-dialog__row">
+              <div>
+                <div class="settings-dialog__row-title">作者</div>
+                <div class="settings-dialog__row-desc">yyfeng · 564792432@qq.com</div>
               </div>
             </div>
             <div class="settings-dialog__row">
@@ -460,7 +478,7 @@
  * - SFTP：默认下载目录（文本输入 + 目录选择按钮）
  * - 数据：清除查询历史（mysql_history_clear，带确认）、清除无效数据（清空传输临时缓存）
  * - 安全：主密码设置快捷入口（复用 MasterPasswordDialog 的打开机制）
- * - 关于：应用版本（tauri.conf.json version）+ 技术栈说明
+ * - 关于：应用版本（tauri.conf.json version）+ 作者联系方式 + 技术栈说明
  *
  * 所有设置项变更即写回后端 SQLite（settings 表），重启后仍保留。
  */
@@ -469,6 +487,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { open } from '@tauri-apps/plugin-dialog'
 import { mysqlHistoryClear } from '@/api/mysqlConsole'
 import { transferClear } from '@/api/sftp'
+import { userDataClear } from '@/api/settings'
 import KeyMappingDialog from '@/components/common/KeyMappingDialog.vue'
 import { formatShortcutCombo, SETTING_KEYS, SHORTCUT_DEFAULTS, useSettingsStore, type ThemeMode, type MouseButtonAction } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -686,6 +705,26 @@ async function clearInvalidData(): Promise<void> {
     ui.toast('临时缓存已清空', 'success')
   } catch (e) {
     ui.toast(`清除失败：${String(e)}`, 'error')
+  }
+}
+
+/**
+ * 删除全部用户数据（恢复到首次运行状态）：清空全部用户数据表 + 会话日志。
+ * 二次确认列出全部删除项；成功后刷新 WebView 重置前端缓存状态（数据库已清空）。
+ */
+async function clearAllUserData(): Promise<void> {
+  const ok = await ui.confirm({
+    title: '删除用户数据',
+    message: '确定删除全部用户数据吗？将清空导航树会话与文件夹、保存的连接、MySQL/Redis 查询历史与保存的查询、备份档案、快捷命令、键位映射、SFTP 收藏、隧道、认证配置、应用设置以及主密码与凭据保险库，恢复到首次运行状态。此操作不可恢复。',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await userDataClear()
+    // 刷新 WebView：前端 Pinia 缓存（导航树/设置等）全部重置为空数据
+    window.location.reload()
+  } catch (e) {
+    ui.toast(`删除用户数据失败：${String(e)}`, 'error')
   }
 }
 

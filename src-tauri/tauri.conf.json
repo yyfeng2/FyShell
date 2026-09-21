@@ -18,8 +18,7 @@
         "height": 800,
         "minWidth": 960,
         "minHeight": 600,
-        "center": true,
-        "additionalBrowserArgs": "--remote-debugging-port=9222"
+        "center": true
       }
     ],
     "security": {
@@ -37,6 +36,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "publisher": "yyfeng",
     "icon": ["icons/icon.ico", "icons/icon.png"],
     "createUpdaterArtifacts": true
   }

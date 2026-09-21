@@ -9,6 +9,40 @@ mod tray;
 
 use tauri::Manager;
 
+/// 数据目录解析优先级：
+/// 1. `FYSHELL_DATA_DIR` 环境变量（非空时生效，高级用户指定数据目录）
+/// 2. 便携模式（`--features portable` 编译期启用）：数据存 exe 同级 `data/` 目录（单文件版数据跟 exe 走）
+/// 3. 默认：系统应用数据目录（安装包模式，Windows 为 %APPDATA%\\com.fyshell.app）
+///
+/// exe 同级存在 `data_dir.conf`（内容为目录路径）时优先于 2/3 生效（两种模式均可指定数据目录）。
+fn resolve_data_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+    if let Ok(dir) = std::env::var("FYSHELL_DATA_DIR") {
+        if !dir.trim().is_empty() {
+            return Ok(std::path::PathBuf::from(dir.trim().to_string()));
+        }
+    }
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()));
+    if let Some(exe_dir) = exe_dir {
+        // data_dir.conf 指定数据目录（首行为目录路径，安装/便携两模式均可用）
+        let conf = exe_dir.join("data_dir.conf");
+        if conf.exists() {
+            if let Ok(content) = std::fs::read_to_string(&conf) {
+                let dir = content.trim();
+                if !dir.is_empty() {
+                    return Ok(std::path::PathBuf::from(dir.to_string()));
+                }
+            }
+        }
+        // 便携模式：数据存 exe 同级 data/ 目录（启动时自动创建）
+        #[cfg(feature = "portable")]
+        return Ok(exe_dir.join("data"));
+    }
+    // 默认：系统应用数据目录（安装包模式）
+    Ok(app.path().app_data_dir()?)
+}
+
 // IPC 类型绑定自动生成（tauri-specta）：debug 构建时导出 TS 绑定到 ../src/bindings.ts，
 // bindings.ts 即 IPC 类型的权威来源；src/api/*.ts 手写封装保持可用。
 // 下方 generate_handler 保持全部命令注册与功能不变，Builder 仅负责收集命令类型元数据并导出。
@@ -154,6 +188,8 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // 删除全部用户数据（恢复到首次运行状态：用户数据表 + 会话日志）
+            commands::settings::user_data_clear,
             // 托盘（commands/tray.rs）：关闭到托盘行为（托盘菜单/设置对话框双入口）
             commands::tray::tray_set_close_to_tray,
             // 配色方案文件导入导出（commands/color_scheme.rs）
@@ -366,6 +402,8 @@ pub fn run() {
             commands::settings::settings_get_all,
             commands::settings::settings_get,
             commands::settings::settings_set,
+            // 删除全部用户数据（恢复到首次运行状态：用户数据表 + 会话日志）
+            commands::settings::user_data_clear,
             // 托盘（commands/tray.rs）：关闭到托盘行为（托盘菜单/设置对话框双入口）
             commands::tray::tray_set_close_to_tray,
             // 配色方案文件导入导出（commands/color_scheme.rs）
@@ -398,14 +436,15 @@ pub fn run() {
             commands::serial::serial_alive,
         ])
         .setup(|app| {
-            // 会话配置存储：数据库路径经 Tauri API 获取（setup 在任何命令之前运行）
-            let config_store = crate::services::config_store::ConfigStore::open(
-                &app.path().app_data_dir()?,
-            )?;
+            // 数据目录解析（环境变量/便携模式/data_dir.conf/系统默认，见 resolve_data_dir）
+            let data_dir = resolve_data_dir(app.handle())?;
+            std::fs::create_dir_all(&data_dir)?;
+
+            // 会话配置存储：数据库路径经数据目录解析（setup 在任何命令之前运行）
+            let config_store = crate::services::config_store::ConfigStore::open(&data_dir)?;
             app.manage(state::AppState::new(config_store));
 
             // P1 各服务的模块级注册表初始化（数据库路径注入）
-            let data_dir = app.path().app_data_dir()?;
             crate::services::auth_profile::init(&data_dir)?;
             crate::services::session_log::init(&data_dir)?;
             crate::services::quick_command_store::init(&data_dir)?;

@@ -51,3 +51,14 @@ pub fn sshopt_session_set(session_id: String, key: String, value: String) -> Res
 pub fn sshopt_session_delete(session_id: String, key: String) -> Result<(), AppError> {
     settings_store::session_delete(&session_id, &key)
 }
+
+/// 删除全部用户数据（恢复到首次运行状态，不可恢复）：清空全部用户数据表 +
+/// 会话日志。含导航树/保存的连接/查询历史/备份档案/快捷命令/键位映射/
+/// SFTP 收藏/隧道/认证配置/应用设置/主密码保险库；运行中的内存状态重启后重置。
+#[tauri::command]
+#[specta::specta]
+pub fn user_data_clear() -> Result<(), AppError> {
+    settings_store::clear_all_user_data()?;
+    crate::services::session_log::clear_all()?;
+    Ok(())
+}

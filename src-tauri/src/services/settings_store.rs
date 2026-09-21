@@ -140,3 +140,44 @@ pub fn session_delete(session_id: &str, key: &str) -> Result<(), AppError> {
     )?;
     Ok(())
 }
+
+// ---------------- 全部用户数据清理（恢复到首次运行状态） ----------------
+
+/// 全部用户数据表：各服务模块在 setup 时统一建表（config_store/vault 共用 meta 表）。
+/// 清空即删除导航树/保存的连接/查询历史/备份档案/快捷命令/键位映射/SFTP 收藏/
+/// 隧道/认证配置/应用设置/主密码保险库，恢复到首次运行状态。
+const USER_DATA_TABLES: &[&str] = &[
+    "folders",
+    "sessions",
+    "meta",
+    "settings",
+    "key_mappings",
+    "backup_profiles",
+    "backup_runs",
+    "query_history",
+    "saved_queries",
+    "quick_folders",
+    "quick_commands",
+    "sftp_favorites",
+    "tunnels",
+    "auth_profiles",
+];
+
+/// 清空全部用户数据表（不可恢复）。
+///
+/// 运行中的内存状态（连接池、vault DEK 等）不受影响，应用重启后回到首次运行状态。
+pub fn clear_all_user_data() -> Result<(), AppError> {
+    let conn = lock();
+    for table in USER_DATA_TABLES {
+        // 逐表清理：个别表缺失（服务建表条件变化）时跳过，其余表照常清空
+        let exists: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |r| r.get(0),
+        )?;
+        if exists {
+            conn.execute(&format!("DELETE FROM {table}"), [])?;
+        }
+    }
+    Ok(())
+}

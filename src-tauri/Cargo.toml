@@ -2,6 +2,12 @@
 name = "fyshell"
 version = "0.1.0"
 edition = "2021"
+authors = ["yyfeng <564792432@qq.com>"]
+
+# 便携模式（单文件版）：--features portable 编译，数据存 exe 同级 data/ 目录；
+# 不开启则数据存系统应用数据目录（安装包模式）
+[features]
+portable = []
 
 [lib]
 name = "fyshell_lib"
