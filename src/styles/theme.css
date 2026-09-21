@@ -508,3 +508,17 @@ body {
 .fy-term-italic .xterm-rows {
   font-style: italic;
 }
+
+/* ---------- Vuetify 排版工具类字体覆盖 ---------- */
+
+/* 根因：Vuetify 3 的 .text-body-2 / .text-caption / .text-subtitle-2 等工具类自带
+   font-family: Roboto，类选择器特异性高于 html,body 的继承，导致 MySQL 数据面板、
+   SFTP「会话」标题等处文字回落 Roboto，破坏全站微软雅黑一致性（同一表格内
+   表头雅黑、单元格 Roboto）。统一覆盖回全站字体 --fy-font。 */
+.text-body-1,
+.text-body-2,
+.text-caption,
+.text-subtitle-1,
+.text-subtitle-2 {
+  font-family: var(--fy-font);
+}
