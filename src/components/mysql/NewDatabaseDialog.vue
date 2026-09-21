@@ -246,11 +246,18 @@ watch(
   padding: 10px 16px;
 }
 
-/* 底部按钮：字号 12px（全局 14px 基准减两档）+ 边框到文字上下 0.3em、左右 0.5em */
+/* 底部按钮：字号 14px（与全局主体档一致）+ 边框到文字上下 0.3em、左右 0.5em */
 .new-db__footer .v-btn {
-  --v-btn-size: 12px;
+  --v-btn-size: 14px;
   --v-btn-height: auto;
   height: auto;
   padding: 0.3em 0.5em;
+}
+
+/* rem 换算非整数档修复：text-caption 10.5px → 12px 整数档 */
+.text-caption,
+.text-subtitle-2,
+.text-body-2 {
+  font-size: 12px !important;
 }
 </style>

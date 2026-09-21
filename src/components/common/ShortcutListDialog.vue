@@ -72,7 +72,7 @@ const TERMINAL_SHORTCUTS: ShortcutItem[] = [
 
 <style scoped>
 .shortcut-list__group {
-  font-size: 13px;
+  font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.6);
   margin-bottom: 4px;
 }

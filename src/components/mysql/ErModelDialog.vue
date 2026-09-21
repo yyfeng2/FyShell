@@ -220,4 +220,16 @@ watch(
   max-width: 100%;
   height: auto;
 }
+
+/* 标题栏按钮继承标题 16px，统一压回主体档 14px */
+.er-model__header :deep(.v-btn) {
+  font-size: 14px;
+}
+
+/* rem 换算非整数档修复：text-caption 10.5px → 12px 整数档 */
+.text-caption,
+.text-subtitle-2,
+.text-body-2 {
+  font-size: 12px !important;
+}
 </style>
