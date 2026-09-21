@@ -2599,41 +2599,22 @@ function onConnected(connLabel: string): void {
   margin-inline-end: 0.5em !important;
 }
 
-/* 行高收紧（2026-09-21 用户指定"高度太大"）：① 去掉 tbody td 的 Vuetify 默认
-   border-bottom 行分隔线（与 result 容器外框构成"内外两个边框"），行分隔靠斑马纹
-   ② checkbox 高度 28px 撑高行，强制跟随字号压缩 */
-.mysql-grid__result-table :deep(tbody tr td) {
-  border-bottom: none !important;
-}
-
+/* 行高收紧（2026-09-21 用户指定"高度太大"）：checkbox 高度 28px 撑高行，
+   强制跟随字号压缩 */
 .mysql-grid__result-table :deep(.v-selection-control) {
   height: 1.75em !important;
   min-height: 0 !important;
 }
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
-.mysql-grid__null {
-  font-style: italic;
-  opacity: 0.55;
-  font-size: 1em;
-}
+/* SQL NULL：普通文字（2026-09-21 用户指定"最简表格模式"，灰色斜体等待殊样式已去除） */
 
-/* 待提交修改中的 NULL：额外加下划线与警告色边框强调 */
-.mysql-grid__null--edited {
-  border-bottom: 1px dashed rgba(var(--v-theme-warning), 0.8);
-}
-
-/* 可编辑单元格：悬停提示可编辑；待提交修改：警告色左侧描边 */
+/* 可编辑单元格：光标提示可编辑；待提交修改：警告色左侧描边 */
 .mysql-grid__cell--editable {
   cursor: pointer;
 }
 
-.mysql-grid__cell--editable:hover {
-  outline: 1px solid rgba(var(--v-theme-primary), 0.4);
-}
-
 .mysql-grid__cell--edited {
-  outline: 1px dashed rgba(var(--v-theme-warning), 0.8);
   background: rgba(var(--v-theme-warning), 0.08);
 }
 
@@ -2642,23 +2623,13 @@ function onConnected(connLabel: string): void {
   background: rgba(var(--v-theme-primary), 0.08);
 }
 
-/* 奇偶行斑马纹（Navicat 式隔行着色，宽表横向扫描防串行）。
-   用 background-image 叠加而非替换 background-color：锁定列的不透明
-   surface 底色与选中/编辑态的着色保持原样，半透明层只叠在其上 */
-.mysql-grid__result-table :deep(tbody tr:nth-child(even)) td {
-  background-image: linear-gradient(
-    rgba(var(--v-theme-on-surface), 0.035),
-    rgba(var(--v-theme-on-surface), 0.035)
-  );
-}
-
-/* 行 hover 反馈：扫过行高亮（0.05 档，浅于行选中 0.08 / 单元格选区 0.1，
-   符合"hover < 选中"的层级直觉）；声明在斑马纹之后，hover 时覆盖之 */
-.mysql-grid__result-table :deep(tbody tr:hover) td {
-  background-image: linear-gradient(
-    rgba(var(--v-theme-on-surface), 0.05),
-    rgba(var(--v-theme-on-surface), 0.05)
-  );
+/* 最简表格模式（2026-09-21 用户指定，参考 Excel 极简网格）：白底 + 横竖细网格线，
+   无斑马纹/无行 hover 高亮/无 NULL 特殊样式；border-right+bottom 在 separate 模式
+   下与相邻单元格不叠加（各一条线），形成完整网格 */
+.mysql-grid__result-table :deep(th),
+.mysql-grid__result-table :deep(td) {
+  border-right: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 /* 列锁定：sticky 冻结（不透明底色防止下方内容透出；表头层级高于单元格） */
