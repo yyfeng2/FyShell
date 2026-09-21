@@ -2665,10 +2665,11 @@ function onConnected(connLabel: string): void {
   background: rgba(var(--v-theme-warning), 0.08);
 }
 
-/* 单元格选中区域高亮（矩形选区） */
+/* 单元格选中区域（矩形选区）：Excel 式单框高亮——只保留 outline 单边框，
+   去掉浅蓝填充色块（色块边界与网格线/编辑框构成多层框，用户指定单框） */
 .mysql-grid__cell--selected {
   outline: 1px solid rgba(var(--v-theme-primary), 0.6);
-  background: rgba(var(--v-theme-primary), 0.1);
+  background: transparent;
 }
 
 /* 列头可单击选中整列 */
