@@ -2584,7 +2584,8 @@ function onConnected(connLabel: string): void {
   font-size: 12px;
 }
 
-/* 行距 0.5em（单元格上下 padding）；th/td 的 v-table 默认字号 0.875rem 需显式覆盖为 1em；
+/* 行距 0.5em（单元格上下 padding，文字与边框 0.5 个字符，2026-09-21 用户指定）；
+   th/td 的 v-table 默认字号 0.875rem 需显式覆盖为 1em；
    padding-block !important 压过 Vuetify 密度样式（同 min-height 覆盖惯例） */
 .mysql-grid__result-table :deep(th),
 .mysql-grid__result-table :deep(td) {
@@ -2596,6 +2597,18 @@ function onConnected(connLabel: string): void {
 .mysql-grid__result-table :deep(th .v-icon) {
   font-size: 1em;
   margin-inline-end: 0.5em !important;
+}
+
+/* 行高收紧（2026-09-21 用户指定"高度太大"）：① 去掉 tbody td 的 Vuetify 默认
+   border-bottom 行分隔线（与 result 容器外框构成"内外两个边框"），行分隔靠斑马纹
+   ② checkbox 高度 28px 撑高行，强制跟随字号压缩 */
+.mysql-grid__result-table :deep(tbody tr td) {
+  border-bottom: none !important;
+}
+
+.mysql-grid__result-table :deep(.v-selection-control) {
+  height: 1.75em !important;
+  min-height: 0 !important;
 }
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
