@@ -14,7 +14,7 @@ FyShell 是一款开源免费的跨平台 SSH / 数据库桌面客户端，界�
 
 ## 下载安装
 
-从 [GitHub Releases](https://github.com/yyfeng2/fyshell/releases) 下载：
+从 [GitHub Releases](https://github.com/yyfeng2/FyShell/releases) 下载：
 
 | 类型 | 文件 | 说明 |
 |---|---|---|
