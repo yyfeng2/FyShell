@@ -300,25 +300,40 @@ body {
   font-size: 14px;
 }
 
-/* Vuetify rem 字号类统一到 px 两档（根字号 14px 下 rem 计算会过小）：
-   标题类 16px（.text-subtitle-1/2 用于对话框标题、分区标题） */
+/* Vuetify rem 字号类统一到 px（根字号 14px 下 rem 计算会过小：
+   0.75rem→10.5px、0.875rem→12.25px 非整数档）。Vuetify 工具类自带 !important，
+   本覆盖必须同级强度才生效（此前无 !important 被击败成死代码，2026-09-21 修复）。
+   标题类 16px；正文 14px；描述/caption 12px（五档体系 11/12/13/14/16） */
 .v-application .text-subtitle-1,
-.v-application .text-subtitle-2,
-.v-overlay-container .text-subtitle-1,
-.v-overlay-container .text-subtitle-2 {
-  font-size: 16px;
+.v-overlay-container .text-subtitle-1 {
+  font-size: 16px !important;
 }
 
-/* 正文/辅助类 14px（.text-body-1/2、.text-caption、.text-overline） */
+/* text-h6（Vuetify 1.125rem=15.75px）统一到标题档 16px */
+.v-application .text-h6,
+.v-overlay-container .text-h6 {
+  font-size: 16px !important;
+}
+
+.v-application .text-subtitle-2,
+.v-overlay-container .text-subtitle-2 {
+  font-size: 12px !important;
+}
+
+/* 正文/辅助类 14px（.text-body-1/2） */
 .v-application .text-body-1,
 .v-application .text-body-2,
+.v-overlay-container .text-body-1,
+.v-overlay-container .text-body-2 {
+  font-size: 14px !important;
+}
+
+/* 描述/辅助提示 12px（.text-caption/.text-overline，原 10.5px 超出五档体系） */
 .v-application .text-caption,
 .v-application .text-overline,
-.v-overlay-container .text-body-1,
-.v-overlay-container .text-body-2,
 .v-overlay-container .text-caption,
 .v-overlay-container .text-overline {
-  font-size: 14px;
+  font-size: 12px !important;
 }
 
 /* 全局不加粗：标题/按钮/标签字重统一 400 */
