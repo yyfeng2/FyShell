@@ -2689,11 +2689,12 @@ th[title='单击选中整列'] {
 }
 
 /* 编辑态单元格：单框显示（2026-09-21 用户指定）——去掉 td 外层框线
-   （--selected/--edited outline），只保留 input 内层 border 单层框；
+   （--selected/--edited outline）与选中背景，只保留 input 内层 border 单层框；
    padding 0.1em 使编辑框紧贴单元格 */
 .mysql-grid__result-table :deep(td:has(> input.mysql-grid__cell-input)) {
   padding: 0.1em !important;
   outline: none !important;
+  background: none !important;
 }
 
 /* 右键菜单覆盖层与菜单本体（fixed 定位，跟随鼠标坐标） */
