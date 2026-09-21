@@ -34,6 +34,7 @@ export const SETTING_KEYS = {
   terminalScrollback: 'terminal_scrollback',
   terminalCursorBlink: 'terminal_cursor_blink',
   sftpDownloadDir: 'sftp_download_dir',
+  autoUpdateCheck: 'auto_update_check',
   mouseMiddleButton: 'mouse_middle_button',
   mouseRightButton: 'mouse_right_button',
   mouseCtrlClickMoveCursor: 'mouse_ctrl_click_move_cursor',
@@ -94,6 +95,8 @@ const DEFAULTS = {
   toolbar_visible: true,
   /** 默认关闭窗口即退出（用户指定：默认退出不到任务栏） */
   tray_close_to_tray: false,
+  /** 默认不自动检测更新（用户指定：默认不自动更新，仅菜单栏「检测更新」手动触发） */
+  auto_update_check: false,
   terminal_font_size: 14,
   /** 系统默认：xterm.js 官方默认等宽字体栈（Windows 命中 Consolas，跨平台降级 Menlo/monospace） */
   terminal_font_family: 'Consolas, "Liberation Mono", Menlo, Courier, monospace',
@@ -130,6 +133,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const toolbarVisible = ref(DEFAULTS.toolbar_visible)
   /** 托盘关闭行为（勾选=关闭窗口隐藏到托盘，默认关闭即退出） */
   const trayCloseToTray = ref(DEFAULTS.tray_close_to_tray)
+  /** 启动时自动检测更新（默认关闭：仅菜单栏「检测更新」手动触发） */
+  const autoUpdateCheck = ref(DEFAULTS.auto_update_check)
   /** 终端默认字体大小（px） */
   const terminalFontSize = ref(DEFAULTS.terminal_font_size)
   /** 终端字体家族（xterm fontFamily CSS 列表） */
@@ -214,6 +219,10 @@ export const useSettingsStore = defineStore('settings', () => {
         const trayCloseSaved = map[SETTING_KEYS.trayCloseToTray]
         if (trayCloseSaved !== undefined) {
           trayCloseToTray.value = trayCloseSaved === 'true'
+        }
+        const autoUpdateSaved = map[SETTING_KEYS.autoUpdateCheck]
+        if (autoUpdateSaved !== undefined) {
+          autoUpdateCheck.value = autoUpdateSaved === 'true'
         }
         const fontSize = Number(map[SETTING_KEYS.terminalFontSize])
         if (Number.isFinite(fontSize) && fontSize > 0) {
@@ -342,6 +351,12 @@ export const useSettingsStore = defineStore('settings', () => {
     void traySetCloseToTray(enabled).catch(() => {
       /* 运行时同步失败不影响 UI */
     })
+  }
+
+  /** 启动时自动检测更新开关，立即生效并持久化 */
+  function setAutoUpdateCheck(enabled: boolean): void {
+    autoUpdateCheck.value = enabled
+    persist(SETTING_KEYS.autoUpdateCheck, enabled ? 'true' : 'false')
   }
 
   // ---------------- 通用写回 ----------------
@@ -490,6 +505,7 @@ export const useSettingsStore = defineStore('settings', () => {
     toolbarMode,
     toolbarVisible,
     trayCloseToTray,
+    autoUpdateCheck,
     terminalFontSize,
     terminalFontFamily,
     terminalFontStyle,
@@ -525,6 +541,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setToolbarMode,
     setToolbarVisible,
     setTrayCloseToTray,
+    setAutoUpdateCheck,
     setTerminalFontSize,
     setTerminalFontFamily,
     setTerminalFontStyle,

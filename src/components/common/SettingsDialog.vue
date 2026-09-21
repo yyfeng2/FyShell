@@ -417,6 +417,22 @@
                 </div>
               </div>
             </div>
+            <!-- 更新：默认不自动检测，勾选后启动时自动检测（检测到新版本仍需确认才下载安装） -->
+            <div class="settings-dialog__row">
+              <div>
+                <div class="settings-dialog__row-title">启动时自动检测更新</div>
+                <div class="settings-dialog__row-desc">
+                  默认关闭，仅通过菜单栏「帮助 → 检测更新」手动检测；勾选后每次启动自动检测，检测到新版本仍需确认后才下载安装。
+                </div>
+              </div>
+              <v-checkbox
+                :model-value="settings.autoUpdateCheck"
+                color="primary"
+                density="compact"
+                hide-details
+                @update:model-value="(v: unknown) => settings.setAutoUpdateCheck(!!v)"
+              />
+            </div>
           </template>
         </div>
       </div>

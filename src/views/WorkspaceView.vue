@@ -2457,15 +2457,16 @@ watch(
 
 // ---------------- 更新检测 ----------------
 
-/** 检测更新：无更新提示最新版本；有更新确认后下载安装并重启；网络错误 toast 提示 */
-async function runCheckUpdate(): Promise<void> {
+/** 检测更新：无更新提示最新版本；有更新确认后下载安装并重启；网络错误 toast 提示。
+ *  silent（启动自动检测）时仅在有更新时弹确认，无更新/网络错误静默不提示 */
+async function runCheckUpdate(silent = false): Promise<void> {
   const r = await check_update()
   if (!r.ok) {
-    ui.toast(`检测更新失败：${r.error ?? '未知错误'}`, 'error')
+    if (!silent) ui.toast(`检测更新失败：${r.error ?? '未知错误'}`, 'error')
     return
   }
   if (!r.update) {
-    ui.toast('已是最新版本', 'success')
+    if (!silent) ui.toast('已是最新版本', 'success')
     return
   }
   const v = r.update.version
@@ -2581,6 +2582,11 @@ onMounted(async () => {
     useRedisStore().loadSavedConnections(),
     loadTransferSnapshot(),
   ])
+
+  // 启动自动检测更新（设置「启动时自动检测更新」开启时，默认关闭）：等待设置加载后按开关决定
+  void settings.ensureLoaded().then(() => {
+    if (settings.autoUpdateCheck) void runCheckUpdate(true)
+  })
 
   // 标签拖出新窗口（P1）：新窗口 URL 带 ?session=<id>，启动后自动打开对应会话终端
   const urlSessionId = new URLSearchParams(window.location.search).get('session')
