@@ -2584,13 +2584,13 @@ function onConnected(connLabel: string): void {
   font-size: 12px;
 }
 
-/* 行距 0.5em（单元格上下 padding，文字与边框 0.5 个字符，2026-09-21 用户指定）；
+/* 行距 0.45em（2026-09-21 用户指定行高调低 1 个字符：0.5em→0.45em，36px→35px）；
    th/td 的 v-table 默认字号 0.875rem 需显式覆盖为 1em；
    padding-block !important 压过 Vuetify 密度样式（同 min-height 覆盖惯例） */
 .mysql-grid__result-table :deep(th),
 .mysql-grid__result-table :deep(td) {
   font-size: 1em;
-  padding-block: 0.5em !important;
+  padding-block: 0.45em !important;
 }
 
 /* 表头主键/排序图标：1em 跟随 + 与文字间距 0.5em（mr-1 带 !important 须同级强度覆盖） */
@@ -2604,6 +2604,19 @@ function onConnected(connLabel: string): void {
 .mysql-grid__result-table :deep(.v-selection-control) {
   height: 1.75em !important;
   min-height: 0 !important;
+}
+
+/* checkbox wrapper/input 同步压到 1.75em=21px（Vuetify 默认 28px 溢出 control，
+   溢出部分计入 table-cell 高度计算撑高行至 36px） */
+.mysql-grid__result-table :deep(.v-selection-control__wrapper),
+.mysql-grid__result-table :deep(.v-selection-control__input) {
+  height: 1.75em !important;
+}
+
+/* 行高 35px（2026-09-21 用户指定调低 1 个字符：36px→35px；
+   table-cell height 为 min-height 性质，配合 checkbox 高度压缩生效） */
+.mysql-grid__result-table :deep(tbody td) {
+  height: 35px;
 }
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
