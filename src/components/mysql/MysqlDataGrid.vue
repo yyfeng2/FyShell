@@ -2630,6 +2630,9 @@ function onConnected(connLabel: string): void {
 .mysql-grid__result-table :deep(td) {
   border-right: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 列锁定：sticky 冻结（不透明底色防止下方内容透出；表头层级高于单元格） */
