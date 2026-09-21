@@ -3438,4 +3438,9 @@ onUnmounted(() => {
   font-size: 14px;
   color: rgb(var(--v-theme-on-surface) / 0.55);
 }
+
+/* rem 换算非整数档修复：text-subtitle-2（标签页标题）12.25px → 12px 整数档 */
+.text-subtitle-2 {
+  font-size: 12px !important;
+}
 </style>

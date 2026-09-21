@@ -177,4 +177,11 @@ const blobSnippet = computed(() => {
   word-break: break-all;
   white-space: pre-wrap;
 }
+
+/* rem 换算非整数档修复：text-caption/body-2 10.5/12.25px → 12px 整数档 */
+.text-caption,
+.text-subtitle-2,
+.text-body-2 {
+  font-size: 12px !important;
+}
 </style>
