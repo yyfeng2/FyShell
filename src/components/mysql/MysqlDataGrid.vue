@@ -2717,6 +2717,13 @@ th[title='单击选中整列'] {
   outline: none;
 }
 
+/* 编辑态单元格：td 外层框线（--selected/--edited outline）与 input 内层框线之间
+   收紧为 0.1em（2026-09-21 用户指定"双层框将内外框线之间设 0.1 个字符"；
+   :has 匹配正在编辑的 td，WebView2 Chromium 支持），压过 padding-block 0.5em */
+.mysql-grid__result-table :deep(td:has(> input.mysql-grid__cell-input)) {
+  padding: 0.1em !important;
+}
+
 /* 右键菜单覆盖层与菜单本体（fixed 定位，跟随鼠标坐标） */
 .mysql-grid__ctx-overlay {
   position: fixed;
