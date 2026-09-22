@@ -51,3 +51,11 @@ function normalize(err: unknown): string {
 function truncate(s: string): string {
   return s.length > RAW_DETAIL_MAX ? `${s.slice(0, RAW_DETAIL_MAX)}…` : s
 }
+
+/** 拆分 friendlyError 结果的"中文结论（原文）"：summary=括号前主文案，detail=括号内原文（无括号返回 null）。
+    供 toast 的 summary/detail 折叠展示用（GlobalDialog 渲染"查看详情"） */
+export function splitFriendlyError(text: string): { summary: string; detail: string | null } {
+  const m = /^(.*?)[（(](.+)[)）]$/.exec(text.trim())
+  if (!m || !m[1]?.trim()) return { summary: text, detail: null }
+  return { summary: m[1].trim(), detail: m[2] }
+}

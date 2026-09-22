@@ -12,6 +12,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import FlexTabs, { type FlexTabItem } from '@/components/common/FlexTabs.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import StatusBar from '@/components/common/StatusBar.vue'
 import GlobalDialog from '@/components/common/GlobalDialog.vue'
 import MenuBar from '@/components/common/MenuBar.vue'
@@ -2804,18 +2805,17 @@ onUnmounted(() => {
               />
             </div>
           </template>
-          <!-- 空态：搜索无结果/树为空（轻量版，批3 统一 EmptyState 组件替换）。
-               判定用"无任何会话行"（flatNodes 全为分区头/分隔线也算空；搜索无结果时分区头仍存在） -->
-          <div
+          <!-- 空态：搜索无结果/树为空（EmptyState 组件）。判定用"无任何会话行"
+               （flatNodes 全为分区头/分隔线也算空；搜索无结果时分区头仍存在） -->
+          <EmptyState
             v-if="!flatNodes.some((n) => !n.isSection && !n.isSeparator)"
+            icon="mdi-database-search"
+            :title="keyword ? '无匹配会话' : '暂无会话'"
+            :desc="keyword ? '换个关键词，或清除筛选查看全部会话' : '从「会话」菜单新建连接开始'"
+            :action-text="keyword ? '清除筛选' : undefined"
             class="workspace__tree-empty"
-          >
-            <v-icon icon="mdi-database-search" size="22" class="mb-1" />
-            <span>{{ keyword ? '无匹配会话' : '暂无会话' }}</span>
-            <v-btn v-if="keyword" size="x-small" variant="text" density="compact" class="mt-1" @click="clearSearch">
-              清除筛选
-            </v-btn>
-          </div>
+            @action="clearSearch"
+          />
         </div>
       </aside>
 
@@ -2993,6 +2993,30 @@ onUnmounted(() => {
           @duplicate-session="onDuplicateSession"
         />
         <div class="workspace__content">
+          <!-- 无 Tab 欢迎页（批3）：空窗引导，附快捷动作 → 新建会话 / 打开设置 -->
+          <EmptyState
+            v-if="tabs.length === 0"
+            class="workspace__welcome"
+            icon="mdi-sitemap"
+            title="欢迎使用 FyShell"
+            desc="连接会话开始工作：SSH 终端、SFTP 传输、MySQL / Redis 数据库管理"
+          >
+            <div class="d-flex ga-2 mt-2 justify-center">
+              <v-btn
+                size="small"
+                variant="tonal"
+                density="compact"
+                color="primary"
+                prepend-icon="mdi-plus"
+                @click="openSessionForm"
+              >
+                新建会话
+              </v-btn>
+              <v-btn size="small" variant="text" density="compact" prepend-icon="mdi-cog-outline" @click="showSettings = true">
+                打开设置
+              </v-btn>
+            </div>
+          </EmptyState>
           <!-- v-show 保持终端 Tab 存活，切换不销毁会话状态 -->
           <div
             v-for="tab in tabs"
@@ -3447,15 +3471,17 @@ onUnmounted(() => {
   color: rgba(var(--v-theme-on-surface), 0.75);
 }
 
-/* 树空态：居中布局 + 充足留白（批2 轻量增强，批3 由统一 EmptyState 组件替换） */
-.workspace__tree-empty {
+/* 工作台无 Tab 欢迎页：整区居中于空内容区（EmptyState 垂直居中，动作按钮在其下方） */
+.workspace__welcome {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 28px 16px;
-  font-size: 14px;
-  color: rgba(var(--v-theme-on-surface), 0.45);
+  justify-content: center;
+  height: 100%;
+}
+
+/* 树空态容器：在窄树内压缩 EmptyState 内边距（16px 上下的紧凑留白即可） */
+.workspace__tree-empty :deep(.fy-empty) {
+  padding: 20px 8px;
 }
 
 /* 右侧多 Tab 工作区 */

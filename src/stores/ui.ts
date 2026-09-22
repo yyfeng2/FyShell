@@ -30,6 +30,14 @@ export interface ToastItem {
   message: string
   color?: string
   timeout: number
+  /** 原文细节（friendlyError 括号内原文）；存在时 GlobalDialog 渲染可展开的"查看详情" */
+  detail?: string
+}
+
+/** toast 扩展选项（批3）：timeout 原第三参取整；detail 提供可展开原文 */
+export interface ToastOptions {
+  timeout?: number
+  detail?: string
 }
 
 /** 快捷键处理函数 */
@@ -85,9 +93,13 @@ export const useUiStore = defineStore('ui', () => {
 
   const toasts = ref<ToastItem[]>([])
 
-  /** 全局 toast 提示；color 可传 'success' | 'error' | 'warning' 等 */
-  function toast(message: string, color?: string, timeout = 3000): void {
-    const item: ToastItem = { id: genId(), message, color, timeout }
+  /** 全局 toast 提示；color 可传 'success' | 'error' | 'warning' 等。
+     第三参兼容两种形态：数字（超时 ms 旧签名）/ ToastOptions（批3：timeout + detail 展开原文） */
+  function toast(message: string, color?: string, timeoutOrOpts?: number | ToastOptions): void {
+    const opts: ToastOptions =
+      typeof timeoutOrOpts === 'number' ? { timeout: timeoutOrOpts } : (timeoutOrOpts ?? {})
+    const timeout = opts.timeout ?? 3000
+    const item: ToastItem = { id: genId(), message, color, timeout, detail: opts.detail }
     toasts.value.push(item)
     if (timeout > 0) {
       window.setTimeout(() => dismissToast(item.id), timeout)
