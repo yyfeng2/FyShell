@@ -575,6 +575,19 @@ function onDragEnd(e: DragEvent): void {
   border-right: 1px solid transparent;
   border-top: 2px solid transparent;
   white-space: nowrap;
+  /* 批2：激活/悬停底色与顶边沿色过渡使用统一动效令牌（克制、非跳变） */
+  transition:
+    background var(--fy-dur-fast) var(--fy-ease),
+    border-top-color var(--fy-dur-fast) var(--fy-ease);
+  /* 新增标签入场：透明 + 微缩放（Vue v-for key 复用 DOM，仅插入节点触发，重渲染不重播） */
+  animation: flex-tabs-in 130ms var(--fy-ease);
+}
+
+@keyframes flex-tabs-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
 }
 
 .flex-tabs__tab:hover {
@@ -605,7 +618,9 @@ function onDragEnd(e: DragEvent): void {
   margin-left: 2px;
   border-radius: 4px;
   opacity: 0.4; /* 普通态弱化显示（可发现、触屏可达），hover/焦点时强调 */
-  transition: opacity 0.12s;
+  transition:
+    opacity var(--fy-dur-fast) var(--fy-ease),
+    background var(--fy-dur-fast) var(--fy-ease);
   flex: 0 0 auto;
 }
 
@@ -630,10 +645,20 @@ function onDragEnd(e: DragEvent): void {
 .flex-tabs__scroll {
   flex: 0 0 auto;
   opacity: 0.6;
+  transition:
+    opacity var(--fy-dur-fast) var(--fy-ease),
+    background var(--fy-dur-fast) var(--fy-ease);
 }
 
 .flex-tabs__scroll:hover {
   opacity: 1;
+  background: var(--fy-hover-bg);
+}
+
+/* 按下（pressed）反馈：微缩 + 完全显形（批2 补滚动箭头按压态） */
+.flex-tabs__scroll:active {
+  opacity: 1;
+  transform: scale(0.92);
 }
 
 .flex-tabs__new {

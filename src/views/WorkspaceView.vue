@@ -139,6 +139,8 @@ interface FlatNode {
   hasDbChildren?: boolean
   /** 历史库（断开连接后保留展示，灰色弱化） */
   grey?: boolean
+  /** 会话在线状态（SSH/sftp/byte-stream 会话：反查活动 Tab 连接状态；数据库/文件夹/分区头不填） */
+  status?: 'connecting' | 'connected' | 'offline'
 }
 
 // ---------------- 会话树 ----------------
@@ -343,6 +345,21 @@ function filterTree(list: SessionNode[], kw: string): SessionNode[] {
   return out
 }
 
+/** 会话在线状态（批2 树状态点）：SSH/sftp/byte-stream 会话的连接键为每个 Tab 的 connId（非节点 id），
+    反查工作台 Tab 匹配该会话来源后读 terminalStore 连接状态。connected 优先返回；任一连接中
+    （connecting/主机校验，后端校验 hostkey 期间也属连接中）→ connecting；否则 offline（断开/从未连接）。
+    数据库会话用图标语义色表达，不走此函数 */
+function sessionNodeStatus(sessionId: string): FlatNode['status'] {
+  let connecting = false
+  for (const t of tabs.value) {
+    if (t.sessionId !== sessionId || !t.connId) continue
+    const st = terminalStore.sessionStatus[t.connId]
+    if (st === 'connected') return 'connected'
+    if (st === 'connecting' || st === 'hostkey-verify') connecting = true
+  }
+  return connecting ? 'connecting' : 'offline'
+}
+
 /** 扁平化渲染列表：搜索时强制展开全部层级 */
 const flatNodes = computed<FlatNode[]>(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -384,6 +401,8 @@ const flatNodes = computed<FlatNode[]>(() => {
         isMysql: isDbSession,
         sessionType: n.config?.session_type ?? null,
         hasDbChildren,
+        // 会话在线状态点：数据库会话用图标语义色表达状态，不填（不显示点）
+        status: isDbSession ? undefined : sessionNodeStatus(n.id),
       })
       if (n.is_folder && (forceExpand || expanded.value.has(n.id))) {
         walk(n.children ?? [], depth + 1, section)
@@ -470,6 +489,8 @@ const flatNodes = computed<FlatNode[]>(() => {
     }
     for (const c of useMysqlStore().savedConnections) {
       if (sessionHosts.has(c.host)) continue
+      // 搜索结果过滤：常驻节点按 host/名称匹配 keyword（不匹配则整棵下钻（库列表）一并隐藏）
+      if (kw && !c.host.toLowerCase().includes(kw) && !c.name.toLowerCase().includes(kw)) continue
       const isActive = dbs?.savedId === c.id
       // 活动连接挂当前库；断开（灰色历史库）时按 host 匹配展示历史库
       const showDbs = !!dbs && (isActive || (!dbs.connected && dbs.host === c.host))
@@ -512,7 +533,14 @@ const flatNodes = computed<FlatNode[]>(() => {
     // 兜底：既无已保存连接匹配也无 session 树匹配时的独立节点（连接主机 + 库列表）；
     // 已存连接有同 host 常驻节点时不渲染（避免同一 host 两处展示）
     const standaloneTaken = useMysqlStore().savedConnections.some((c) => c.host === dbs?.host)
-    if (dbs && dbs.savedId === null && dbs.sessionId === null && !standaloneTaken) {
+    // 搜索结果过滤：兜底独立节点按 host 匹配 keyword
+    if (
+      dbs &&
+      dbs.savedId === null &&
+      dbs.sessionId === null &&
+      !standaloneTaken &&
+      (!kw || dbs.host.toLowerCase().includes(kw))
+    ) {
       const standaloneOpen = !collapsedDbHosts.value.has('db-standalone')
       out.push({
         id: 'db-standalone',
@@ -561,6 +589,8 @@ const flatNodes = computed<FlatNode[]>(() => {
     }
     for (const c of useRedisStore().savedConnections) {
       if (redisSessionHosts.has(c.host)) continue
+      // 搜索结果过滤：常驻节点按 host/名称匹配 keyword
+      if (kw && !c.host.toLowerCase().includes(kw) && !c.name.toLowerCase().includes(kw)) continue
       out.push({
         id: `redisconn-${c.id}`,
         name: c.host,
@@ -2759,9 +2789,33 @@ onUnmounted(() => {
               <div class="workspace__node-text">
                 <span class="workspace__node-name" :title="node.name">{{ node.name }}</span>
               </div>
+              <!-- 在线状态点：SSH/sftp/byte-stream 会话（数据库/文件夹/分区头用图标表达，v-if="node.status" 排除） -->
+              <span
+                v-if="node.status"
+                class="workspace__status-dot"
+                :class="`workspace__status-dot--${node.status}`"
+                :title="
+                  node.status === 'connected'
+                    ? '已连接'
+                    : node.status === 'connecting'
+                      ? '连接中'
+                      : '未连接'
+                "
+              />
             </div>
           </template>
-          <div v-if="flatNodes.length === 0" class="workspace__tree-empty">无匹配会话</div>
+          <!-- 空态：搜索无结果/树为空（轻量版，批3 统一 EmptyState 组件替换）。
+               判定用"无任何会话行"（flatNodes 全为分区头/分隔线也算空；搜索无结果时分区头仍存在） -->
+          <div
+            v-if="!flatNodes.some((n) => !n.isSection && !n.isSeparator)"
+            class="workspace__tree-empty"
+          >
+            <v-icon icon="mdi-database-search" size="22" class="mb-1" />
+            <span>{{ keyword ? '无匹配会话' : '暂无会话' }}</span>
+            <v-btn v-if="keyword" size="x-small" variant="text" density="compact" class="mt-1" @click="clearSearch">
+              清除筛选
+            </v-btn>
+          </div>
         </div>
       </aside>
 
@@ -3320,6 +3374,7 @@ onUnmounted(() => {
 .workspace__node-text {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto; /* 撑满剩余宽度，让右侧状态点贴右缘 */
   min-width: 0;
   line-height: 1.25;
 }
@@ -3356,6 +3411,29 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
+/* 会话在线状态点（批2）：6px 圆点，语义色表达连接状态，transition 淡入淡出随状态切换平滑变化。
+   颜色用主题语义色变量（success/warning/灰），深浅主题自动；连接中黄 / 已连接绿 / 未连接灰 */
+.workspace__status-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: rgba(var(--v-theme-on-surface), 0.25);
+  transition: background var(--fy-dur-fast) var(--fy-ease);
+}
+
+.workspace__status-dot--connected {
+  background: rgb(var(--v-theme-success));
+}
+
+.workspace__status-dot--connecting {
+  background: rgb(var(--v-theme-warning));
+}
+
+/* 未连接：default 灰（由基类定义），无额外覆盖 */
+
+
 /* 分区虚线分隔（SSH 服务 / 数据库服务） */
 .workspace__tree-sep {
   height: 0;
@@ -3369,10 +3447,15 @@ onUnmounted(() => {
   color: rgba(var(--v-theme-on-surface), 0.75);
 }
 
+/* 树空态：居中布局 + 充足留白（批2 轻量增强，批3 由统一 EmptyState 组件替换） */
 .workspace__tree-empty {
-  padding: 12px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 28px 16px;
   font-size: 14px;
-  color: rgba(var(--v-theme-on-surface), 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 /* 右侧多 Tab 工作区 */
