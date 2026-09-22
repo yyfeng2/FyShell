@@ -249,7 +249,7 @@ defineExpose({ openMenu })
 
 .menubar__shortcut {
   font-size: 13px;
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
   font-family: var(--fy-font);
 }
 
@@ -273,7 +273,7 @@ defineExpose({ openMenu })
 }
 
 .menubar__item:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .menubar__accel {

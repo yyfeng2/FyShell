@@ -3197,7 +3197,8 @@ onUnmounted(() => {
   cursor: col-resize;
 }
 
-/* 左导航树：宽度由 ui.navWidth 动态绑定（可拖拽调整），CSS 仅作兜底 */
+/* 左导航树：宽度由 ui.navWidth 动态绑定（可拖拽调整），CSS 仅作兜底。
+   二期：底色提一档用 --fy-surface-raised，与右侧内容白色面形成两级层次 */
 .workspace__nav {
   display: flex;
   flex-direction: column;
@@ -3206,7 +3207,7 @@ onUnmounted(() => {
   min-width: 0;
   padding: 6px 6px 0;
   border-right: 1px solid var(--fy-chrome-border);
-  background: var(--fy-chrome-bg);
+  background: var(--fy-surface-raised);
   overflow: hidden;
 }
 
@@ -3222,7 +3223,7 @@ onUnmounted(() => {
 }
 
 .workspace__nav-resize:hover {
-  background: rgb(var(--v-theme-primary) / 0.25);
+  background: rgba(var(--v-theme-primary), 0.25);
 }
 
 /* 自动隐藏模式：导航悬浮于内容之上（参考 Xshell） */
@@ -3232,7 +3233,7 @@ onUnmounted(() => {
   top: 0;
   bottom: 0;
   z-index: 10;
-  box-shadow: 2px 0 12px rgb(0 0 0 / 0.4);
+  box-shadow: var(--fy-shadow-pop), 2px 0 6px rgb(0 0 0 / 0.18);
 }
 
 .workspace__nav-header {
@@ -3253,7 +3254,7 @@ onUnmounted(() => {
   border: 1px solid var(--fy-chrome-border);
   border-radius: 4px;
   background: rgb(var(--v-theme-surface));
-  color: rgb(var(--v-theme-on-surface) / 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
 .workspace__search-input {
@@ -3276,7 +3277,7 @@ onUnmounted(() => {
 }
 
 .workspace__search-input::placeholder {
-  color: rgb(var(--v-theme-on-surface) / 0.4);
+  color: rgba(var(--v-theme-on-surface), 0.4);
 }
 
 .workspace__search-clear {
@@ -3301,6 +3302,8 @@ onUnmounted(() => {
   font-size: 14px;
   white-space: nowrap;
   user-select: none;
+  /* 二期：克制动效（hover 底色/选中底色渐变，transform/opacity 线不受影响） */
+  transition: background var(--fy-dur-fast) var(--fy-ease);
 }
 
 /* 历史库（断开连接后保留展示）：整行弱化 */
@@ -3324,24 +3327,28 @@ onUnmounted(() => {
 .workspace__node-host {
   font-family: var(--fy-font);
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* hover 反馈统一走 --fy-hover-bg 变量（二期收敛组件内散落灰度） */
 .workspace__tree-node:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.08);
+  background: var(--fy-hover-bg);
 }
 
-/* 键盘导航可见焦点环（treeitem 可聚焦后必须保留） */
+/* 键盘导航可见焦点环（treeitem 可聚焦后必须保留；fallback 清理到反馈变量） */
 .workspace__tree-node:focus-visible {
-  outline: 1px solid rgb(var(--v-theme-primary, 82 132 255));
+  outline: 1px solid var(--fy-focus-color);
   outline-offset: -1px;
 }
 
+/* 选中态：--fy-select-bg 底色 + 左侧主题色重点条（现代工具 DataGrip 惯例）。
+   box-shadow inset 实现左条，不改变流式布局；border-radius 与底色圆角一致 */
 .workspace__node--selected {
-  background: rgb(var(--v-theme-primary) / 0.15);
+  background: var(--fy-select-bg);
+  box-shadow: inset 2px 0 0 rgb(var(--v-theme-primary));
 }
 
 .workspace__node-name {
@@ -3359,13 +3366,13 @@ onUnmounted(() => {
 
 /* 分区头：浅色文字 + 紧凑行高，单击可收缩 */
 .workspace__tree-node--section {
-  color: rgb(var(--v-theme-on-surface) / 0.75);
+  color: rgba(var(--v-theme-on-surface), 0.75);
 }
 
 .workspace__tree-empty {
   padding: 12px 8px;
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
 }
 
 /* 右侧多 Tab 工作区 */
@@ -3401,7 +3408,7 @@ onUnmounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 /* 连接失败就地重试态（Xshell 惯例：失败后 Tab 保留）：主区中央图标 + 会话名 + 原因 + 操作 */
@@ -3414,7 +3421,7 @@ onUnmounted(() => {
   justify-content: center;
   gap: 4px;
   background-color: var(--fy-terminal-bg);
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 .workspace__conn-error-icon {
@@ -3443,7 +3450,7 @@ onUnmounted(() => {
 /* 空态提示文字：主区中央大字提示，14px 标题档 */
 .workspace__empty-hint {
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
 /* rem 换算非整数档修复：text-subtitle-2（标签页标题）12.25px → 12px 整数档 */

@@ -129,7 +129,7 @@ async function sendCommand(text: string): Promise<void> {
 
 .quick-bar__empty {
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   padding: 0 8px;
   white-space: nowrap;
 }

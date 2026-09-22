@@ -277,7 +277,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 4px 8px;
   border-radius: 4px;
-  background: rgb(var(--v-theme-on-surface) / 0.04);
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 /* payload 为用户任意输入的发送字符串，不收敛会把同行编辑/删除按钮挤出可视区 */
@@ -290,7 +290,7 @@ onBeforeUnmount(() => {
 
 .key-mapping-dialog__empty {
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   padding: 8px 0;
 }
 

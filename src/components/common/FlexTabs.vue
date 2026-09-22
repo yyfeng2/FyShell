@@ -617,7 +617,7 @@ function onDragEnd(e: DragEvent): void {
 
 .flex-tabs__close:hover {
   opacity: 1;
-  background: rgb(var(--v-theme-on-surface) / 0.12);
+  background: rgba(var(--v-theme-on-surface), 0.12);
 }
 
 /* 固定标识：图钉图标（固定后显示，关闭按钮隐藏） */

@@ -378,17 +378,17 @@ watch(dateContent, () => {
 }
 
 .log-viewer__date:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .log-viewer__date--active {
-  background: rgb(var(--v-theme-primary) / 0.15);
+  background: rgba(var(--v-theme-primary), 0.15);
 }
 
 .log-viewer__empty {
   padding: 12px 8px;
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   text-align: center;
 }
 
@@ -397,7 +397,7 @@ watch(dateContent, () => {
   flex: 1 1 auto;
   min-width: 0;
   overflow: auto;
-  background: rgb(var(--v-theme-surface-variant, 30 33 35) / 0.35);
+  background: rgba(var(--v-theme-surface-variant, 30 33 35), 0.35);
 }
 
 .log-viewer__text {
@@ -413,7 +413,7 @@ watch(dateContent, () => {
 /* 搜索命中高亮（深色主题友好） */
 .log-viewer__text :deep(.log-viewer__mark),
 .log-viewer__mark {
-  background: rgb(var(--v-theme-primary, 82 132 255) / 0.45);
+  background: rgba(var(--v-theme-primary, 82 132 255), 0.45);
   color: inherit;
   border-radius: 2px;
 }

@@ -175,7 +175,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   padding: 6px 10px 3px;
   font-size: 13px;
   font-weight: 400;
-  color: rgb(var(--v-theme-on-surface) / 0.85);
+  color: rgba(var(--v-theme-on-surface), 0.85);
   user-select: none;
 }
 
@@ -195,11 +195,11 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options__leaf:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.08);
 }
 
 .ssh-options__leaf--active {
-  background: rgb(var(--v-theme-primary) / 0.15);
+  background: rgba(var(--v-theme-primary), 0.15);
   color: rgb(var(--v-theme-primary));
 }
 
@@ -223,7 +223,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 .ssh-options .settings-dialog__hint {
   margin-top: 8px;
   font-size: 12px;
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 .ssh-options .settings-dialog__row {
@@ -245,7 +245,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options .settings-dialog__row-desc {
   font-size: 12px;
-  color: rgb(var(--v-theme-on-surface) / 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   margin-top: 2px;
 }
 

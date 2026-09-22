@@ -346,7 +346,7 @@ function onContextMenu(e: MouseEvent): void {
 
 /* 导航开关按下态：浅色背景高亮 */
 .toolbar :deep(.v-btn--active) {
-  background: rgb(var(--v-theme-on-surface) / 0.1);
+  background: rgba(var(--v-theme-on-surface), 0.1);
 }
 
 /* 图标+底部汉字的快捷按钮：覆盖 v-btn 默认 64px min-width 与固定行高 */
@@ -409,7 +409,7 @@ function onContextMenu(e: MouseEvent): void {
   font-size: 13px;
   width: 56px;
   flex-shrink: 0;
-  color: rgb(var(--v-theme-on-surface) / 0.75);
+  color: rgba(var(--v-theme-on-surface), 0.75);
 }
 
 .toolbar__fontpanel__select {

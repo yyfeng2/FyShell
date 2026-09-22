@@ -31,6 +31,23 @@
   /* 终端区背景（浅灰 chrome + 深色终端组合）：不随应用 light/dark 切换（始终深色）；
      与 useXterm.ts TERMINAL_BG 同值，改动需两处同步 */
   --fy-terminal-bg: #1e1e1e;
+
+  /* ---------- 二期：现代工具流令牌（2026-09-22，整站骨架与基调战区批 1） ----------
+     全部新增用 --fy-* 新令牌，不改既有组件色值；深色覆盖在 .v-application.v-theme--dark 块 */
+
+  /* 表面分层：面板/侧栏/树的独立底色，与纯背景 body、白色卡片拉出两级层次
+     （浅色 chrome 上再提一档的近白，避免整片同灰） */
+  --fy-surface-raised: #fafbfc;
+  /* 选中强化底色：树/列表选中态（现代工具惯例：浅蓝色调 + 左侧重点条）。
+     注意：必须用 rgba(逗号) 形式——本 WebView2 不支持 rgb(var(--v-theme-x) / a) 逗号+斜杠语法，
+     会解析为 transparent（2026-09-22 期二期批 1 探测确认；Vuetify 变量值是逗号分隔数字串） */
+  --fy-select-bg: rgba(var(--v-theme-primary), 0.08);
+  /* 弹出/悬浮层统一阴影（仅浮动层/弹出面板用，禁大面积硬阴影） */
+  --fy-shadow-pop: 0 2px 8px rgb(0 0 0 / 0.08);
+  /* 动效令牌：克制动效统一曲线与时长（一律 transform/opacity，禁布局动画） */
+  --fy-ease: cubic-bezier(0.2, 0.6, 0.25, 1);
+  --fy-dur-fast: 120ms;
+  --fy-dur-base: 180ms;
 }
 
 html,
@@ -494,6 +511,12 @@ body {
   /* 深色下边线整体提亮一档，维持面板分层感（浅色 0.08 hover 在深底上过弱） */
   --fy-hover-bg: rgba(var(--v-theme-on-surface), 0.1);
   color-scheme: dark;
+
+  /* 二期令牌深色覆盖：surface-raised 近黑灰（比 chrome 略深，与白色内容区分）；
+     选中底色加深一档（深底浅色文字需要更高饱和的选中反馈）；阴影加深以承托浮动层 */
+  --fy-surface-raised: #1b1e21;
+  --fy-select-bg: rgba(var(--v-theme-primary), 0.14);
+  --fy-shadow-pop: 0 2px 8px rgb(0 0 0 / 0.35);
 }
 
 /* 手动深色主题下的滚动条配色（系统偏深色已有上方 @media 覆盖，此处对齐手动切换） */

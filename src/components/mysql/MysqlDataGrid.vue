@@ -2707,7 +2707,7 @@ function onConnected(connLabel: string): void {
 
 /* 行号 gutter：弱化小字 + 等宽右对齐（Navicat 式行号锚点，随 checkbox 列 sticky 冻结） */
 .mysql-grid__row-num {
-  color: rgb(var(--v-theme-on-surface) / 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   font-size: 12px;
   font-family: var(--fy-mono);
   text-align: right;

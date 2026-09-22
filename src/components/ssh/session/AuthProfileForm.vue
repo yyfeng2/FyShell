@@ -356,7 +356,7 @@ async function remove(p: AuthProfile): Promise<void> {
 .auth-profile-form__empty {
   padding: 12px 8px;
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   text-align: center;
 }
 </style>

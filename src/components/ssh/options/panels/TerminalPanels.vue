@@ -224,7 +224,7 @@ async function removeMapping(id: string): Promise<void> {
   border-radius: 4px;
   font-size: 14px;
   margin-right: 8px;
-  background: rgb(var(--v-theme-on-surface) / 0.04);
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 /* payload 为任意发送字符串（可能为长路径/长命令），单行省略号收敛，避免撑破行宽挤出 append 按钮 */

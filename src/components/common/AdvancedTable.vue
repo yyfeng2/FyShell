@@ -283,7 +283,7 @@ function onRowContextmenu(event: MouseEvent, row: Record<string, unknown>, index
   display: grid;
   min-height: 28px;
   border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.15);
-  background: rgb(var(--v-theme-surface-variant, 32 33 35) / 0.25);
+  background: rgba(var(--v-theme-surface-variant, 32 33 35), 0.25);
   font-weight: 400;
   user-select: none;
   will-change: transform;
@@ -304,7 +304,7 @@ function onRowContextmenu(event: MouseEvent, row: Record<string, unknown>, index
 }
 
 .adv-table__th--sortable:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .adv-table__th--center {
@@ -352,7 +352,7 @@ function onRowContextmenu(event: MouseEvent, row: Record<string, unknown>, index
 }
 
 .adv-table__row:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .adv-table__row--selected {
@@ -377,7 +377,7 @@ function onRowContextmenu(event: MouseEvent, row: Record<string, unknown>, index
 .adv-table__empty {
   padding: 16px;
   text-align: center;
-  color: rgb(var(--v-theme-on-surface) / 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   grid-column: 1 / -1;
 }
 </style>

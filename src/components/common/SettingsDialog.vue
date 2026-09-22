@@ -794,7 +794,7 @@ onUnmounted(() => {
 }
 
 .settings-dialog__nav-item--active {
-  background: rgb(var(--v-theme-primary) / 0.15);
+  background: rgba(var(--v-theme-primary), 0.15);
   color: rgb(var(--v-theme-primary));
 }
 
@@ -823,7 +823,7 @@ onUnmounted(() => {
 .settings-dialog__hint {
   margin-top: 8px;
   font-size: 12px;
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 /* 数据/安全分区行：左侧标题说明 + 右侧操作按钮 */
@@ -846,7 +846,7 @@ onUnmounted(() => {
 
 .settings-dialog__row-desc {
   font-size: 12px;
-  color: rgb(var(--v-theme-on-surface) / 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   margin-top: 2px;
 }
 
@@ -867,7 +867,7 @@ onUnmounted(() => {
 
 .key-mouse__hint-line {
   font-size: 14px;
-  color: rgb(var(--v-theme-on-surface) / 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   margin-bottom: 8px;
 }
 
@@ -910,7 +910,7 @@ onUnmounted(() => {
 }
 
 .shortcuts__combo:hover {
-  border-color: rgb(var(--v-theme-on-surface) / 0.35);
+  border-color: rgba(var(--v-theme-on-surface), 0.35);
 }
 
 .shortcuts__combo--capturing {

@@ -142,7 +142,7 @@ function submit(): void {
 
 .addressbar__icon {
   flex: none;
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 /* 输入框：占满行内剩余宽度（Xshell 地址栏横跨全宽） */
@@ -165,7 +165,7 @@ function submit(): void {
 }
 
 .addressbar__input::placeholder {
-  color: rgb(var(--v-theme-on-surface) / 0.4);
+  color: rgba(var(--v-theme-on-surface), 0.4);
 }
 
 /* ▼ 下拉按钮：行右端 */
@@ -178,13 +178,13 @@ function submit(): void {
   height: 20px;
   border-radius: 4px;
   cursor: pointer;
-  color: rgb(var(--v-theme-on-surface) / 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
   background: transparent;
   border: none;
 }
 
 .addressbar__drop:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.08);
+  background: rgba(var(--v-theme-on-surface), 0.08);
 }
 
 /* 下拉会话列表：行距与 MenuBar 菜单一致（紧凑档） */
@@ -223,6 +223,6 @@ function submit(): void {
 }
 
 .addressbar__filter::placeholder {
-  color: rgb(var(--v-theme-on-surface) / 0.4);
+  color: rgba(var(--v-theme-on-surface), 0.4);
 }
 </style>

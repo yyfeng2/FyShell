@@ -319,7 +319,7 @@ function cancelEditing(): void {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  border-bottom: 1px solid rgb(var(--v-theme-on-surface) / 0.12);
+  border-bottom: 1px solid rgba(var(--v-theme-on-surface), 0.12);
 }
 
 .scheme-preview__line {
@@ -376,7 +376,7 @@ function cancelEditing(): void {
 }
 
 .scheme-list__row:hover {
-  background: rgb(var(--v-theme-on-surface) / 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .scheme-list__row--active {
@@ -416,7 +416,7 @@ function cancelEditing(): void {
 
 .scheme-actions {
   width: 116px;
-  border-left: 1px solid rgb(var(--v-theme-on-surface) / 0.12);
+  border-left: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   padding: 6px 8px;
   display: flex;
   flex-direction: column;
@@ -449,7 +449,7 @@ function cancelEditing(): void {
 
 .scheme-edit__group {
   font-size: 12px;
-  color: rgb(var(--v-theme-on-surface) / 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
   margin-bottom: 6px;
 }
 
@@ -485,7 +485,7 @@ function cancelEditing(): void {
   width: 32px;
   height: 22px;
   padding: 0;
-  border: 1px solid rgb(var(--v-theme-on-surface) / 0.24);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.24);
   border-radius: 3px;
   background: transparent;
   cursor: pointer;
@@ -494,7 +494,7 @@ function cancelEditing(): void {
 .scheme-edit__hex {
   font-size: 11px;
   font-family: var(--fy-mono);
-  color: rgb(var(--v-theme-on-surface) / 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
   width: 62px;
 }
 </style>
