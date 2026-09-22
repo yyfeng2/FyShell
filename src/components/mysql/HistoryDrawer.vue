@@ -68,10 +68,14 @@
               {{ formatTime(item.created_at) }} · {{ formatDuration(item.duration_ms) }}
             </v-list-item-subtitle>
           </v-list-item>
-          <v-list-item v-if="!loading && items.length === 0">
-            <v-list-item-title class="text-caption text-medium-emphasis">
-              {{ keyword.trim() ? '无匹配记录' : '暂无查询历史' }}
-            </v-list-item-title>
+          <v-list-item v-if="!loading && items.length === 0" class="px-0">
+            <!-- 历史空态：搜索无结果 / 无任何历史（升级：现代空态组件） -->
+            <EmptyState
+              size="compact"
+              :icon="keyword.trim() ? 'mdi-magnify' : 'mdi-history'"
+              :title="keyword.trim() ? '无匹配记录' : '暂无查询历史'"
+              :desc="keyword.trim() ? '换个关键词试试' : '执行过的 SQL 会自动记录在此'"
+            />
           </v-list-item>
         </v-list>
         <div v-if="error" class="history-drawer__error text-caption">{{ error }}</div>
@@ -114,10 +118,14 @@
             />
           </template>
         </v-list-item>
-        <v-list-item v-if="!savedLoading && savedItems.length === 0">
-          <v-list-item-title class="text-caption text-medium-emphasis">
-            暂无已保存查询
-          </v-list-item-title>
+        <v-list-item v-if="!savedLoading && savedItems.length === 0" class="px-0">
+          <!-- 已保存查询空态（升级：现代空态组件） -->
+          <EmptyState
+            size="compact"
+            icon="mdi-bookmark-outline"
+            title="暂无已保存查询"
+            desc="在查询 Tab 中点击「保存」即可命名保存当前 SQL"
+          />
         </v-list-item>
       </v-list>
       <div v-if="savedError" class="history-drawer__error text-caption">{{ savedError }}</div>
@@ -173,6 +181,7 @@ import {
 } from '@/api/mysqlConsole'
 import { useUiStore } from '@/stores/ui'
 import { friendlyError } from '@/utils/errors'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const props = defineProps<{
   /** 显隐（由父级 v-model 控制） */

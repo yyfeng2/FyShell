@@ -3,15 +3,23 @@
  * 统一空态组件（批3）：现代工具的"留白式空态"，替代零散布的单行灰字。
  * 视觉：32px 线性 icon（on-surface/0.35）+ 16px 标题 + 12px 说明，居中、充足内边距、max-width 约束。
  * 深浅主题自动（全部走主题变量，无硬编码色）。
+ *
+ * size="compact"（批1 引入）：窄容器（抽屉/网格空结果区等）收窄版——
+ * 24px icon、padding 24px 收紧、标题 14px，避免 360px 大版在 ~280px 容器内撑爆。
  */
-defineProps<{
-  /** 图标名（mdi 或 lucide 均可，透传给 v-icon） */
-  icon?: string
-  title: string
-  desc?: string
-  /** 可选主动作按钮文案；点击抛 action 事件 */
-  actionText?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** 图标名（mdi 或 lucide 均可，透传给 v-icon） */
+    icon?: string
+    title: string
+    desc?: string
+    /** 可选主动作按钮文案；点击抛 action 事件 */
+    actionText?: string
+    /** 尺寸：normal=常规居中大版（默认）；compact=窄容器收窄版 */
+    size?: 'normal' | 'compact'
+  }>(),
+  { size: 'normal' },
+)
 
 const emit = defineEmits<{
   (e: 'action'): void
@@ -19,8 +27,13 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="fy-empty">
-    <v-icon v-if="icon" :icon="icon" size="32" class="fy-empty__icon" />
+  <div class="fy-empty" :class="{ 'fy-empty--compact': props.size === 'compact' }">
+    <v-icon
+      v-if="icon"
+      :icon="icon"
+      :size="props.size === 'compact' ? 24 : 32"
+      class="fy-empty__icon"
+    />
     <div class="fy-empty__title">{{ title }}</div>
     <div v-if="desc" class="fy-empty__desc">{{ desc }}</div>
     <v-btn v-if="actionText" size="small" variant="tonal" density="compact" color="primary" class="mt-2" @click="emit('action')">
@@ -58,5 +71,17 @@ const emit = defineEmits<{
   font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.55);
   line-height: 1.6;
+}
+
+/* compact 窄容器版（抽屉/网格空结果区）：收紧内边距与字号，防撑爆小容器 */
+.fy-empty--compact {
+  padding: 24px 16px;
+  gap: 6px;
+}
+.fy-empty--compact .fy-empty__title {
+  font-size: 14px;
+}
+.fy-empty--compact .fy-empty__desc {
+  font-size: 11px;
 }
 </style>

@@ -355,17 +355,26 @@
                 </td>
               </tr>
               <tr v-if="!displayRows.length">
-                <!-- 表头含复选框列，共 columnCount + 1 列 -->
-                <td :colspan="columnCount + 1" class="text-caption text-medium-emphasis text-center py-2">
-                  空结果集
+                <!-- 表头含复选框列，共 columnCount + 1 列；空结果集用 compact 空态（查询成功但无数据） -->
+                <td :colspan="columnCount + 1" class="py-0">
+                  <EmptyState
+                    size="compact"
+                    icon="mdi-table-off"
+                    title="查询成功但无匹配行"
+                    desc="该查询未返回任何数据"
+                  />
                 </td>
               </tr>
             </tbody>
           </v-table>
         </div>
-        <div v-else class="mysql-grid__placeholder text-caption text-medium-emphasis">
-          在左侧选择表，或在上方输入 SQL 执行
-        </div>
+        <!-- 主空态：尚未浏览/查询任何数据（升级：现代空态组件，替代单行灰字） -->
+        <EmptyState
+          v-else
+          icon="mdi-table-search"
+          title="选择表或运行查询"
+          desc="在左侧选择表查看数据，或在上方输入 SQL 执行"
+        />
 
         <!-- 分页控件（服务端分页：page/pageSize 来自查询结果） -->
         <div v-if="store.lastResult" class="mysql-grid__pager">
@@ -869,6 +878,7 @@ import type { MySqlRowUpdate } from '@/api/mysqlEdit'
 import { mysqlSavedQueryList, mysqlSavedQuerySave } from '@/api/mysqlConsole'
 import MysqlConnectionForm from './MysqlConnectionForm.vue'
 import SqlEditor from './SqlEditor.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { splitSqlStatements } from './sql-format'
 import TableDesigner from '@/views/mysql/TableDesigner.vue'
 import HistoryDrawer from './HistoryDrawer.vue'
@@ -2843,14 +2853,6 @@ th[title='单击选中整列'] {
   font-size: 14px;
   word-break: break-all;
   white-space: pre-wrap;
-}
-
-.mysql-grid__placeholder {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 120px;
 }
 
 .mysql-grid__pager {

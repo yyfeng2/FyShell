@@ -116,9 +116,13 @@
           </table>
         </div>
       </div>
-      <div v-if="results.length === 0 && !error" class="query-tab__empty">
-        运行 SQL 后在此显示结果
-      </div>
+      <!-- 结果空态：尚未运行任何 SQL（升级：现代空态组件，引导快捷键） -->
+      <EmptyState
+        v-if="results.length === 0 && !error"
+        icon="mdi-sql-query"
+        title="运行 SQL 查看结果"
+        desc="输入语句后按 Ctrl+Enter 执行，多语句将逐条展示"
+      />
     </div>
 
     <!-- 解释（执行计划） -->
@@ -168,6 +172,7 @@
 import { computed, ref, watch } from 'vue'
 import SqlEditor from './SqlEditor.vue'
 import ExplainPanel from './ExplainPanel.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { formatSql, splitSqlStatements } from './sql-format'
 import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
@@ -501,12 +506,6 @@ void loadSavedQueries()
 .query-tab__grid th {
   background: rgba(var(--v-theme-on-surface), 0.04);
   font-weight: 500;
-}
-
-.query-tab__empty {
-  font-size: 12px;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  padding: 12px 0;
 }
 
 .query-tab__preview {

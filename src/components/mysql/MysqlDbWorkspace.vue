@@ -174,9 +174,13 @@
             </template>
           </v-list-item>
           <v-list-item v-else-if="store.savedConnections.length === 0">
-            <v-list-item-title class="text-caption text-medium-emphasis">
-              暂无已保存的连接
-            </v-list-item-title>
+            <!-- 连接空态（升级：现代空态组件，替代单行灰字） -->
+            <EmptyState
+              size="compact"
+              icon="mdi-database-off"
+              title="暂无可连接数据库"
+              desc="点击下方「新建连接」添加，连接后将自动保存于此"
+            />
           </v-list-item>
         </v-list>
         <v-btn color="primary" variant="tonal" prepend-icon="mdi-plus" class="mt-2" @click="showConnForm = true">
@@ -303,9 +307,14 @@
         <div class="mysql-ws__ddl">
           <div v-if="ddlLoading" class="text-caption text-medium-emphasis pa-2">加载 DDL 中…</div>
           <div v-else-if="ddl" class="mysql-ws__ddl-text">{{ ddl }}</div>
-          <div v-else class="mysql-ws__ddl-hint text-caption text-medium-emphasis">
-            在左侧选择{{ kindLabel }}查看 DDL
-          </div>
+          <!-- DDL 空窗（升级：现代空态组件，替代单行灰字） -->
+          <EmptyState
+            v-else
+            size="compact"
+            :icon="kindIcon"
+            :title="`在左侧选择${kindLabel}查看 DDL`"
+            desc="选中后在此显示其创建语句"
+          />
         </div>
       </div>
     </div>
@@ -409,13 +418,21 @@
             <div v-if="grants.length" class="mysql-ws__ddl-text">
               <div v-for="(g, i) in grants" :key="i" class="mysql-ws__grant-line">{{ g.grant_sql }}</div>
             </div>
-            <div v-else class="mysql-ws__ddl-hint text-caption text-medium-emphasis">
-              暂无权限记录（或无权限查看）
-            </div>
+            <EmptyState
+              v-else
+              size="compact"
+              icon="mdi-shield-off-outline"
+              title="暂无权限记录"
+              desc="该用户可能无任何授权，或当前账号无权限查看其授权"
+            />
           </template>
-          <div v-else class="mysql-ws__ddl-hint text-caption text-medium-emphasis">
-            在左侧选择用户查看权限
-          </div>
+          <EmptyState
+            v-else
+            size="compact"
+            icon="mdi-account-key-outline"
+            title="在左侧选择用户查看权限"
+            desc="选择用户后将显示其 SHOW GRANTS 授权列表"
+          />
         </div>
       </div>
     </div>
@@ -478,9 +495,17 @@
             </div>
           </v-card>
         </div>
-        <div v-else class="mysql-ws__ddl-hint text-caption text-medium-emphasis">
-          {{ modelLoading ? '解析外键关系中…' : '当前库没有表，或未解析到外键' }}
+        <div v-else-if="modelLoading" class="text-caption text-medium-emphasis pa-2">
+          解析外键关系中…
         </div>
+        <!-- ER 模型空态（升级：现代空态组件，替代单行灰字） -->
+        <EmptyState
+          v-else
+          size="compact"
+          icon="mdi-table-off"
+          title="当前库没有表"
+          desc="或未解析到任何外键关系"
+        />
       </div>
     </div>
 
@@ -714,6 +739,7 @@ import {
 } from '@/api/mysqlDb'
 import MysqlDataGrid from './MysqlDataGrid.vue'
 import MysqlConnectionForm from './MysqlConnectionForm.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import NewDatabaseDialog from './NewDatabaseDialog.vue'
 import BackupPanel from './BackupPanel.vue'
 import AutoRunPanel from './AutoRunPanel.vue'
@@ -1629,14 +1655,6 @@ onMounted(() => {
   white-space: pre-wrap;
   padding: 2px 0;
   border-bottom: 1px dashed rgba(var(--v-theme-on-surface), 0.12);
-}
-
-.mysql-ws__ddl-hint {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  min-height: 120px;
 }
 
 /* 模型画布：绝对定位卡片 + SVG 连线层 */
