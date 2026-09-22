@@ -3403,15 +3403,6 @@ onUnmounted(() => {
   line-height: 1.25;
 }
 
-.workspace__node-host {
-  font-family: var(--fy-font);
-  font-size: 14px;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* hover 反馈统一走 --fy-hover-bg 变量（二期收敛组件内散落灰度） */
 .workspace__tree-node:hover {
   background: var(--fy-hover-bg);
