@@ -80,6 +80,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { mysqlExplain, type MySqlExplainResult } from '@/api/mysqlConsole'
+import { friendlyError } from '@/utils/errors'
 
 const props = defineProps<{
   /** 显隐（由父级 v-model 控制） */
@@ -116,7 +117,7 @@ async function load(analyze: boolean): Promise<void> {
   try {
     result.value = await mysqlExplain(props.connId, text, analyze)
   } catch (err) {
-    error.value = `执行计划获取失败: ${String(err)}`
+    error.value = `执行计划获取失败: ${friendlyError(err)}`
   } finally {
     loading.value = false
   }

@@ -43,6 +43,7 @@ import { nextTick, onMounted, ref, watch } from 'vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { mysqlCliExec } from '@/api/mysql'
 import { mysqlDbSwitch } from '@/api/mysqlDb'
+import { friendlyError } from '@/utils/errors'
 
 const emit = defineEmits<{ (e: 'exit'): void }>()
 
@@ -206,7 +207,7 @@ async function runLine(raw: string): Promise<void> {
       push('info', `Query OK, ${result.total} row(s) affected (${elapsed} ms)`)
     }
   } catch (e) {
-    push('error', `ERROR ${String(e)}`)
+    push('error', friendlyError(e))
   } finally {
     running.value = false
     await scrollToBottom()

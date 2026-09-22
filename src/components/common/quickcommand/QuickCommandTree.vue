@@ -167,7 +167,7 @@
           @click="sendDialog.visible = false"
           />
         </v-card-title>
-        <v-card-text>
+        <v-card-text class="qc-tree__send-body">
           <div v-if="connectedSessions.length === 0" class="text-medium-emphasis">
             暂无已连接会话，请先连接目标服务器
           </div>
@@ -567,6 +567,12 @@ onMounted(() => {
   color: rgba(var(--v-theme-on-surface), 0.5);
   font-size: 14px;
   margin-left: 6px;
+}
+
+/* 会话以 checkbox 全量平铺，多会话时超高，限高后内部滚动 */
+.qc-tree__send-body {
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 /* 发送图标：普通态弱化显示（触屏可达），hover/焦点时强调 */

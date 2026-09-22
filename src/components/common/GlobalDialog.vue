@@ -55,7 +55,7 @@ watch(
         />
         {{ current.title }}
       </v-card-title>
-      <v-card-text class="text-body-2 text-medium-emphasis">{{ current.message }}</v-card-text>
+      <v-card-text class="global-dialog__message text-body-2 text-medium-emphasis">{{ current.message }}</v-card-text>
       <v-card-actions>
         <v-spacer />
         <v-btn size="small" variant="text" @click="ui.resolveDialog(current.id, false)">
@@ -111,5 +111,11 @@ watch(
 /* rem 换算非整数档修复：text-body-2 12.25px → 12px 整数档 */
 .text-body-2 {
   font-size: 12px !important;
+}
+
+/* 超长 message（如含长路径/堆栈的错误串）限高滚动，保证底部按钮可见 */
+.global-dialog__message {
+  max-height: 50vh;
+  overflow-y: auto;
 }
 </style>

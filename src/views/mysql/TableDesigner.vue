@@ -2,7 +2,7 @@
   <v-dialog
     :model-value="modelValue"
     persistent
-    width="960"
+    width="min(1100px, 96vw)"
     @update:model-value="(v: boolean) => { if (!v) emit('update:modelValue', false) }"
   >
     <v-card class="table-designer" flat>
@@ -365,6 +365,7 @@ import {
   type MySqlTableDesign,
 } from '@/api/mysqlDesign'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 const props = defineProps<{
   /** v-model：对话框显隐 */
@@ -521,8 +522,8 @@ async function doLoadDesign(): Promise<void> {
       on_update: fk.on_update,
     }))
   } catch (e) {
-    loadError.value = String(e)
-    ui.toast(`加载表结构失败：${String(e)}`, 'error')
+    loadError.value = friendlyError(e)
+    ui.toast(`加载表结构失败：${friendlyError(e)}`, 'error')
   } finally {
     loading.value = false
   }
@@ -809,7 +810,7 @@ async function save(): Promise<void> {
     ui.toast('表设计已保存', 'success')
     emit('saved')
   } catch (e) {
-    ui.toast(`保存表设计失败：${String(e)}`, 'error')
+    ui.toast(`保存表设计失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -854,6 +855,8 @@ function diffDropped(original: string[], current: string[]): string[] {
 .table-designer__scroll {
   flex: 1 1 auto;
   overflow-y: auto;
+  /* 字段区 8 列 grid 最小宽约 1090px，窗口窄于对话框时显式横向滚动（避免依赖 overflow-y 隐式派生） */
+  overflow-x: auto;
   min-height: 0;
   padding: 0 8px 8px;
 }

@@ -491,6 +491,7 @@ import { userDataClear } from '@/api/settings'
 import KeyMappingDialog from '@/components/common/KeyMappingDialog.vue'
 import { formatShortcutCombo, SETTING_KEYS, SHORTCUT_DEFAULTS, useSettingsStore, type ThemeMode, type MouseButtonAction } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 /** 设置分区 key（左侧导航） */
 type SettingsSection = 'appearance' | 'terminal' | 'keyboard-mouse' | 'shortcuts' | 'sftp' | 'data' | 'security' | 'about'
@@ -670,7 +671,7 @@ async function pickDownloadDir(): Promise<void> {
       settings.setSftpDownloadDir(selected)
     }
   } catch (e) {
-    ui.toast(`选择目录失败：${String(e)}`, 'error')
+    ui.toast(`选择目录失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -688,7 +689,7 @@ async function clearQueryHistory(): Promise<void> {
     await mysqlHistoryClear()
     ui.toast('查询历史已清除', 'success')
   } catch (e) {
-    ui.toast(`清除查询历史失败：${String(e)}`, 'error')
+    ui.toast(`清除查询历史失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -704,7 +705,7 @@ async function clearInvalidData(): Promise<void> {
     await transferClear()
     ui.toast('临时缓存已清空', 'success')
   } catch (e) {
-    ui.toast(`清除失败：${String(e)}`, 'error')
+    ui.toast(`清除失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -724,7 +725,7 @@ async function clearAllUserData(): Promise<void> {
     // 刷新 WebView：前端 Pinia 缓存（导航树/设置等）全部重置为空数据
     window.location.reload()
   } catch (e) {
-    ui.toast(`删除用户数据失败：${String(e)}`, 'error')
+    ui.toast(`删除用户数据失败：${friendlyError(e)}`, 'error')
   }
 }
 

@@ -118,6 +118,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { KeyMapping } from '@/api/keyMapping'
 import { useKeyMappingStore } from '@/stores/keyMapping'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
@@ -228,7 +229,7 @@ async function save(): Promise<void> {
     })
     resetForm()
   } catch (e) {
-    ui.toast(`保存键位映射失败：${String(e)}`, 'error')
+    ui.toast(`保存键位映射失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -242,7 +243,7 @@ async function remove(m: KeyMapping): Promise<void> {
   try {
     await store.remove(m.id)
   } catch (e) {
-    ui.toast(`删除键位映射失败：${String(e)}`, 'error')
+    ui.toast(`删除键位映射失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -277,6 +278,14 @@ onBeforeUnmount(() => {
   padding: 4px 8px;
   border-radius: 4px;
   background: rgb(var(--v-theme-on-surface) / 0.04);
+}
+
+/* payload 为用户任意输入的发送字符串，不收敛会把同行编辑/删除按钮挤出可视区 */
+.key-mapping-dialog__desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .key-mapping-dialog__empty {

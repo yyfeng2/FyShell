@@ -83,6 +83,7 @@ import { ref, watch } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { mysqlDbCreate } from '@/api/mysqlDb'
 import { mysqlQuery } from '@/api/mysql'
+import { friendlyError as errText } from '@/utils/errors'
 
 const props = defineProps<{
   modelValue: boolean
@@ -95,10 +96,6 @@ const emit = defineEmits<{
 }>()
 
 const ui = useUiStore()
-
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 /** SQL 字符串字面量（单引号翻倍转义） */
 function sqlStr(value: string): string {

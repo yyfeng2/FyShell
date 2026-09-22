@@ -47,6 +47,7 @@
             <span class="fy-field-row__label">查询 SQL</span>
             <v-textarea
               v-model="exportSql"
+              class="io-wizard__sql"
               density="compact"
               rows="3"
               auto-grow
@@ -440,6 +441,12 @@ function onDialogToggle(v: boolean): void {
 </script>
 
 <style scoped>
+/* 导出 SQL auto-grow 无上限，长 SQL 时限高内部滚动 */
+.io-wizard__sql :deep(textarea) {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
 .io-wizard__steps {
   display: flex;
   align-items: center;

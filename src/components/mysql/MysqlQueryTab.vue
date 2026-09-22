@@ -173,6 +173,7 @@ import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
 import { mysqlQuery, mysqlExecute } from '@/api/mysql'
 import { mysqlSavedQueryList, mysqlSavedQuerySave, type MySqlSavedQueryItem } from '@/api/mysqlConsole'
+import { friendlyError as errText } from '@/utils/errors'
 
 const props = defineProps<{
   /** 打开时预填的 SQL（当前查询 Tab 为空） */
@@ -181,11 +182,6 @@ const props = defineProps<{
 
 const store = useMysqlStore()
 const ui = useUiStore()
-
-/** 错误归一化：Rust 侧 AppError 以字符串形式 reject */
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 /** 只读 SELECT 路由到 mysqlQuery（分页），其余语句走 mysqlExecute（写操作） */
 const SELECT_RE = /^\s*SELECT\b/i

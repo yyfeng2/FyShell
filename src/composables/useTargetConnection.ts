@@ -11,10 +11,10 @@ import { mysqlConnect, mysqlDisconnect } from '@/api/mysql'
 import { mysqlDbList } from '@/api/mysqlDb'
 import { useMysqlStore } from '@/stores/mysql'
 
-/** 错误归一化（Rust 侧 AppError 以字符串 reject） */
-export function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
+import { friendlyError as errText } from '@/utils/errors'
+
+/** 错误归一化：Rust 侧 AppError 以字符串 reject，转发共享友好化工具（errText 别名） */
+export { errText }
 
 /** 目标连接下拉选中值：'__current__' = 当前连接，否则为已保存连接 id */
 export const TARGET_CURRENT = '__current__'

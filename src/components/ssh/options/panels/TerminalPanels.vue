@@ -139,6 +139,7 @@ import type { KeyMapping, KeyMappingActionType } from '@/api/keyMapping'
 import { useKeyMappingStore } from '@/stores/keyMapping'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 /** 展示页（keyboard | vt-mode | term-advanced） */
 defineProps<{ page: string }>()
@@ -197,7 +198,7 @@ async function saveMapping(): Promise<void> {
     })
     formVisible.value = false
   } catch (e) {
-    ui.toast(`保存失败：${String(e)}`, 'error')
+    ui.toast(`保存失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -205,7 +206,7 @@ async function removeMapping(id: string): Promise<void> {
   try {
     await keyMappingStore.remove(id)
   } catch (e) {
-    ui.toast(`删除失败：${String(e)}`, 'error')
+    ui.toast(`删除失败：${friendlyError(e)}`, 'error')
   }
 }
 </script>
@@ -226,7 +227,13 @@ async function removeMapping(id: string): Promise<void> {
   background: rgb(var(--v-theme-on-surface) / 0.04);
 }
 
+/* payload 为任意发送字符串（可能为长路径/长命令），单行省略号收敛，避免撑破行宽挤出 append 按钮 */
 .mapping-action {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 14px;
 }
 

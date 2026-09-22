@@ -9,6 +9,7 @@
 import { computed, onMounted } from 'vue'
 import { useQuickCommandStore } from '@/stores/quickCommand'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 import { useTerminalStore } from '@/stores/terminal'
 
 const props = withDefaults(
@@ -42,7 +43,7 @@ async function sendCommand(text: string): Promise<void> {
   try {
     await terminalStore.writeToSession(id, payload)
   } catch (e) {
-    ui.toast(`发送失败：${String(e)}`, 'error')
+    ui.toast(`发送失败：${friendlyError(e)}`, 'error')
   }
 }
 </script>

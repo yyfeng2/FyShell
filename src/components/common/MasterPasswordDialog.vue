@@ -96,6 +96,7 @@ import {
   masterPasswordVerify,
 } from '@/api/masterPassword'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
@@ -128,7 +129,7 @@ watch(
     try {
       hasMaster.value = await masterPasswordStatus()
     } catch (e) {
-      ui.toast(`查询主密码状态失败：${String(e)}`, 'error')
+      ui.toast(`查询主密码状态失败：${friendlyError(e)}`, 'error')
       emit('update:modelValue', false)
     }
   },
@@ -142,7 +143,7 @@ async function verifyOld(): Promise<void> {
     oldVerified.value = ok
     ui.toast(ok ? '旧密码校验通过' : '旧密码不正确', ok ? 'success' : 'error')
   } catch (e) {
-    ui.toast(`校验失败：${String(e)}`, 'error')
+    ui.toast(`校验失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -167,7 +168,7 @@ async function submit(): Promise<void> {
     ui.toast(isModifyMode.value ? '主密码已更新' : '主密码已设置', 'success')
     emit('update:modelValue', false)
   } catch (e) {
-    ui.toast(`设置主密码失败：${String(e)}`, 'error')
+    ui.toast(`设置主密码失败：${friendlyError(e)}`, 'error')
   } finally {
     submitting.value = false
   }

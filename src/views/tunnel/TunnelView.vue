@@ -210,6 +210,7 @@ import { sessionList } from '@/api/session'
 import { tunnelStartAll } from '@/api/tunnel'
 import { useTunnelStore, type TunnelKind, type TunnelRule, type TunnelStatus } from '@/stores/tunnel'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 const store = useTunnelStore()
 const ui = useUiStore()
@@ -235,7 +236,7 @@ async function startAll(): Promise<void> {
       ui.toast(`启动完成：成功 ${report.started} 个，失败 ${report.failed} 个`, 'warning')
     }
   } catch (e) {
-    ui.toast(`一键启动失败：${String(e)}`, 'error')
+    ui.toast(`一键启动失败：${friendlyError(e)}`, 'error')
   } finally {
     // 快照兜底：无论成败都拉取最新状态
     try {
@@ -288,7 +289,7 @@ async function loadSessions(): Promise<void> {
     collectSessions(Array.isArray(list) ? list : [], out)
     sessionOptions.value = out
   } catch (e) {
-    ui.toast(`加载会话列表失败：${String(e)}`, 'error')
+    ui.toast(`加载会话列表失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -353,7 +354,7 @@ async function toggle(rule: TunnelRule, on: boolean): Promise<void> {
       await store.stop(rule.id)
     }
   } catch (e) {
-    ui.toast(`隧道操作失败：${String(e)}`, 'error')
+    ui.toast(`隧道操作失败：${friendlyError(e)}`, 'error')
     // 操作失败后拉快照，让后端记录的 error 状态反映到列表
     try {
       await store.refresh()
@@ -376,7 +377,7 @@ async function remove(rule: TunnelRule): Promise<void> {
     await store.remove(rule.id)
     ui.toast('隧道规则已删除', 'success')
   } catch (e) {
-    ui.toast(`删除失败：${String(e)}`, 'error')
+    ui.toast(`删除失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -384,7 +385,7 @@ function refresh(): void {
   void loadSessions()
   void store
     .refresh()
-    .catch((e) => ui.toast(`加载隧道规则失败：${String(e)}`, 'error'))
+    .catch((e) => ui.toast(`加载隧道规则失败：${friendlyError(e)}`, 'error'))
 }
 
 // ---------------- 新建 / 编辑表单 ----------------
@@ -475,7 +476,7 @@ async function submit(): Promise<void> {
     showForm.value = false
     ui.toast(editingId.value ? '隧道规则已更新' : '隧道规则已创建', 'success')
   } catch (e) {
-    ui.toast(`保存隧道规则失败：${String(e)}`, 'error')
+    ui.toast(`保存隧道规则失败：${friendlyError(e)}`, 'error')
   }
 }
 

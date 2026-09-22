@@ -21,13 +21,13 @@
       <v-card-text class="mysql-conn-form__body">
         <v-form ref="formRef" @submit.prevent="submit">
           <v-row dense>
-            <v-col cols="8">
+            <v-col cols="7">
               <div class="fy-field-row">
                 <span class="fy-field-row__label">主机</span>
                 <v-text-field v-model="host" density="compact" :rules="[rules.required]" />
               </div>
             </v-col>
-            <v-col cols="4">
+            <v-col cols="5">
               <div class="fy-field-row">
                 <span class="fy-field-row__label">端口</span>
                 <v-text-field
@@ -169,5 +169,7 @@ async function submit(): Promise<void> {
 .mysql-conn-form__body {
   max-height: 60vh;
   overflow-y: auto;
+  /* v-row dense 负 margin 有亚像素溢出，1px 即触发横向滚动条，直接隐藏 */
+  overflow-x: hidden;
 }
 </style>

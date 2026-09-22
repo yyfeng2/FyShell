@@ -114,13 +114,10 @@ import { useRedisStore } from '@/stores/redis'
 import { useUiStore } from '@/stores/ui'
 import type { RedisExecResult } from '@/api/types'
 import RedisResultView from './RedisResultView.vue'
+import { friendlyError as errText } from '@/utils/errors'
 
 const store = useRedisStore()
 const ui = useUiStore()
-
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 /** pattern 双向绑定：直接读写 store.pattern（契约 state），loadKeys 以它过滤 */
 const pattern = computed({

@@ -660,7 +660,7 @@
           <v-alert type="warning" variant="tonal" density="compact" class="mb-2">
             该语句可能删除数据或修改表结构，请确认是否执行。
           </v-alert>
-          <div class="mysql-ws__ddl-text">{{ store.pendingConfirm?.sql }}</div>
+          <div class="mysql-ws__ddl-text mysql-ws__confirm-sql">{{ store.pendingConfirm?.sql }}</div>
         </v-card-text>
         <v-divider />
         <v-card-actions>
@@ -719,14 +719,10 @@ import BackupPanel from './BackupPanel.vue'
 import AutoRunPanel from './AutoRunPanel.vue'
 import VaultUnlockDialog from '@/components/common/VaultUnlockDialog.vue'
 import type { SavedMysqlConnection } from '@/stores/mysql'
+import { friendlyError as errText } from '@/utils/errors'
 
 const store = useMysqlStore()
 const ui = useUiStore()
-
-/** 错误归一化：Rust 侧 AppError 以字符串形式 reject */
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 // ---------- 顶部对象工具条（仿 Navicat） ----------
 type WorkspaceTab = 'table' | 'view' | 'function' | 'user' | 'other' | 'model'
@@ -1612,6 +1608,18 @@ onMounted(() => {
 .mysql-ws__ddl-input {
   font-family: var(--fy-mono);
   font-size: 14px;
+}
+
+/* auto-grow textarea 无限增高会让对话框超出视口，限高后内部滚动 */
+.mysql-ws__ddl-input :deep(textarea) {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* 危险 SQL 确认框：超长语句折成大量行时限高滚动，保证按钮可见 */
+.mysql-ws__confirm-sql {
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 .mysql-ws__grant-line {

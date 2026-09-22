@@ -172,6 +172,7 @@ import {
   type MySqlQueryHistoryItem,
 } from '@/api/mysqlConsole'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 const props = defineProps<{
   /** 显隐（由父级 v-model 控制） */
@@ -221,7 +222,7 @@ async function doSearch(): Promise<void> {
       items.value = await mysqlHistoryList(DEFAULT_LIMIT)
     }
   } catch (err) {
-    error.value = `加载历史失败: ${String(err)}`
+    error.value = `加载历史失败: ${friendlyError(err)}`
   } finally {
     loading.value = false
   }
@@ -257,7 +258,7 @@ async function loadSaved(): Promise<void> {
   try {
     savedItems.value = await mysqlSavedQueryList()
   } catch (err) {
-    savedError.value = `加载已保存查询失败: ${String(err)}`
+    savedError.value = `加载已保存查询失败: ${friendlyError(err)}`
   } finally {
     savedLoading.value = false
   }
@@ -281,7 +282,7 @@ async function confirmRename(): Promise<void> {
     await loadSaved()
   } catch (err) {
     console.error('[history-drawer] 重命名失败:', err)
-    uiStore.toast(String(err), 'error')
+    uiStore.toast(friendlyError(err), 'error')
   }
 }
 

@@ -157,6 +157,7 @@ import {
 import type { MySqlBackupProfile, MySqlBackupProfileInput } from '@/api/mysqlBackup'
 import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 const props = defineProps<{
   /** v-model：对话框显隐 */
@@ -185,7 +186,7 @@ async function loadProfiles(): Promise<void> {
   try {
     profiles.value = await mysqlBackupProfileList()
   } catch (err) {
-    const msg = typeof err === 'string' ? err : String(err)
+    const msg = friendlyError(err)
     ui.toast(`加载备份任务失败：${msg}`, 'error')
   } finally {
     loading.value = false
@@ -243,7 +244,7 @@ async function saveProfile(): Promise<void> {
     editing.value = false
     await loadProfiles()
   } catch (err) {
-    const msg = typeof err === 'string' ? err : String(err)
+    const msg = friendlyError(err)
     ui.toast(`保存失败：${msg}`, 'error')
   }
 }
@@ -271,7 +272,7 @@ async function runNow(profile: MySqlBackupProfile): Promise<void> {
     ui.toast(`任务「${profile.name}」执行成功，共 ${result.rows_total} 行`, 'success')
     emit('run-completed', profile, result.rows_total)
   } catch (err) {
-    const msg = typeof err === 'string' ? err : String(err)
+    const msg = friendlyError(err)
     ui.toast(`任务「${profile.name}」执行失败：${msg}`, 'error')
   }
 }
@@ -293,7 +294,7 @@ async function removeProfile(profile: MySqlBackupProfile): Promise<void> {
     ui.toast(`任务「${profile.name}」已删除`, 'success')
     await loadProfiles()
   } catch (err) {
-    const msg = typeof err === 'string' ? err : String(err)
+    const msg = friendlyError(err)
     ui.toast(`删除失败：${msg}`, 'error')
   }
 }

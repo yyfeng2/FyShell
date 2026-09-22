@@ -86,6 +86,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError } from '@/utils/errors'
 
 /** 展示页（ssh-security | ssh-tunnel | ssh-sftp） */
 defineProps<{ page: string }>()
@@ -109,7 +110,7 @@ async function pickDownloadDir(): Promise<void> {
       settings.setSftpDownloadDir(selected)
     }
   } catch (e) {
-    ui.toast(`选择目录失败：${String(e)}`, 'error')
+    ui.toast(`选择目录失败：${friendlyError(e)}`, 'error')
   }
 }
 </script>

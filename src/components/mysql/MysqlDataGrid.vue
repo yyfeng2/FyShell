@@ -264,7 +264,12 @@
 
         <!-- 结果网格：NULL 显示为灰色斜体；双击编辑，右键打开套件菜单；
              单击选中单元格（Shift+单击扩展矩形选区），列头单击选中整列 -->
-        <div v-if="store.lastResult" ref="resultHost" class="mysql-grid__result">
+        <div
+          v-if="store.lastResult"
+          ref="resultHost"
+          class="mysql-grid__result"
+          @click="onGridBlankClick"
+        >
           <v-table density="compact" fixed-header class="mysql-grid__result-table">
             <thead>
               <tr>
@@ -331,9 +336,10 @@
                 >
                   <input
                     v-if="editingCell && editingCell.ri === row.originalIndex && editingCell.ci === ci"
-                    v-model="editingValue"
+                    :ref="setEditInputEl"
+                    :value="editingValue"
                     class="mysql-grid__cell-input"
-                    autofocus
+                    @input="onEditInput"
                     @keyup.enter="finalizeEdit"
                     @keyup.esc="cancelEdit"
                     @blur="finalizeEdit"
@@ -550,7 +556,7 @@
       />
       <v-card
         class="mysql-grid__ctx-menu mysql-grid__ctx-menu--table"
-        :style="{ top: `${tableCtx.y}px`, left: `${tableCtx.x}px` }"
+        :style="{ top: `${tableCtx.y}px`, left: `${tableCtx.x}px`, maxHeight: `${tableCtx.maxHeight}px` }"
       >
         <v-list density="compact" nav>
           <v-list-item prepend-icon="mdi-table-arrow-right" @click="withCtxTable(openTable)">打开表</v-list-item>
@@ -713,7 +719,7 @@
         />
         </v-card-title>
         <v-divider />
-        <v-card-text>
+        <v-card-text class="mysql-grid__preview-body">
           <div v-for="(item, i) in previewItems" :key="i" class="mysql-grid__sql-preview mb-2">
             <div class="mysql-grid__sql-preview-sql">{{ item.sql }}</div>
             <div class="text-caption text-medium-emphasis">估算影响行数：{{ item.estimate }}</div>
@@ -850,6 +856,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { mysqlQuery } from '@/api/mysql'
 import type { MySqlQueryResult } from '@/api/types'
+import { friendlyError as errText } from '@/utils/errors'
 import { useUiStore } from '@/stores/ui'
 import {
   mysqlDeleteRow,
@@ -871,11 +878,6 @@ import ErModelDialog from './ErModelDialog.vue'
 
 const store = useMysqlStore()
 const ui = useUiStore()
-
-/** 错误归一化：Rust 侧 AppError 以字符串形式 reject */
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 /** 只读 SELECT 路由到 mysqlQuery（分页），其余语句走 mysqlExecute（写操作） */
 const SELECT_RE = /^\s*SELECT\b/i
@@ -1018,14 +1020,17 @@ function startSideResize(e: MouseEvent): void {
 
 // ---------- 表右键菜单（Navicat 表对象菜单） ----------
 
-/** 表右键菜单状态：屏幕坐标 + 目标表名 */
-const tableCtx = ref<{ x: number; y: number; name: string } | null>(null)
+/** 表右键菜单状态：屏幕坐标 + 限高（打开点以下的可视空间）+ 目标表名 */
+const tableCtx = ref<{ x: number; y: number; maxHeight: number; name: string } | null>(null)
 
-/** 打开表右键菜单（坐标钳制到视口内；菜单含多组子菜单，预留足够高度） */
+/** 打开表右键菜单：坐标钳制到视口内，限高到打开点以下的可视空间——
+   行高 24px 后菜单内容约 576px+，静态预留不足时底部会溢出视口，动态限高后超出部分内部滚动 */
 function openTableCtx(e: MouseEvent, name: string): void {
+  const y = Math.min(e.clientY, window.innerHeight - 460)
   tableCtx.value = {
     x: Math.min(e.clientX, window.innerWidth - 220),
-    y: Math.min(e.clientY, window.innerHeight - 460),
+    y,
+    maxHeight: window.innerHeight - y - 8,
     name,
   }
 }
@@ -1324,6 +1329,42 @@ const editingCell = ref<{ ri: number; ci: number } | null>(null)
 /** 编辑中的临时值 */
 const editingValue = ref('')
 
+/**
+ * 当前编辑文本（非响应式普通变量）：输入过程仅同步到这里，
+ * 不触发任何响应式副作用，避免每键全表重渲染；仅在落定时读取
+ */
+let editingText = ''
+
+/** 输入事件：仅同步非响应式变量 */
+function onEditInput(e: Event): void {
+  editingText = (e.target as HTMLInputElement).value
+}
+
+/**
+ * 编辑输入框引用（函数 ref）：v-for 内的字符串模板 ref 会被 Vue 自动收集
+ * 成数组，.focus() 调不到；函数 ref 逐元素回调，直接拿到元素本身
+ */
+let editInputEl: HTMLInputElement | null = null
+
+function setEditInputEl(el: unknown): void {
+  editInputEl = (el as HTMLInputElement | null) ?? null
+}
+
+// 进入编辑态后等输入框插入完成再聚焦，保证打字/落定事件接通
+watch(editingCell, (cell) => {
+  if (!cell) return
+  void nextTick(() => {
+    if (editingCell.value) editInputEl?.focus()
+  })
+})
+
+/** 点击网格空白区（单元格外）时兜底落定编辑：输入框失焦即 blur 落定，此处防焦点意外丢失 */
+function onGridBlankClick(e: MouseEvent): void {
+  if (editingCell.value && !(e.target as HTMLElement).closest('.mysql-grid__cell')) {
+    finalizeEdit()
+  }
+}
+
 /** 行选择集：key = 当页行索引 */
 const selectedRows = ref(new Set<number>())
 
@@ -1399,6 +1440,7 @@ function startEdit(ri: number, ci: number): void {
   editingCell.value = { ri, ci }
   const cell = displayCell(ri, ci)
   editingValue.value = cell === null ? '' : String(cell)
+  editingText = editingValue.value
 }
 
 /** 落定编辑：值有变化才加入待提交集（不直接写库） */
@@ -1410,11 +1452,11 @@ function finalizeEdit(): void {
   if (!col) return
   const original = store.lastResult?.rows[cell.ri]?.[cell.ci] ?? null
   // 边界：原值为 NULL 时留空 = 不变（保持 NULL）；NULL -> 空串请用右键"清除 NULL"
-  if (editingValue.value === (original ?? '')) return
+  if (editingText === (original ?? '')) return
   pendingEdits.value = new Map(pendingEdits.value).set(`${cell.ri}:${col}`, {
     rowIndex: cell.ri,
     column: col,
-    value: editingValue.value,
+    value: editingText,
     isNull: false,
   })
 }
@@ -2734,6 +2776,9 @@ th[title='单击选中整列'] {
   position: fixed;
   z-index: 2001;
   min-width: 180px;
+  /* 菜单项+子菜单展开后可能超出视口，限高后内部滚动 */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
 /* 表右键菜单（Navicat 表对象菜单）紧凑化：字体 12px（2026-09-21 用户指定改回 12px），
@@ -2752,7 +2797,8 @@ th[title='单击选中整列'] {
 /* 标题/图标/spacer 由 v-list-item 内部渲染（无 data-v 属性），必须 :deep 穿透，
    否则组激活项（复制表/转储 SQL 文件/维护）回退全局 14px */
 .mysql-grid__ctx-menu--table .v-list :deep(.v-list-item) {
-  min-height: 0 !important;
+  min-height: 24px !important;
+  height: 24px;
   padding-block: 0 !important;
 }
 
@@ -2769,11 +2815,27 @@ th[title='单击选中整列'] {
   width: 0.5em;
 }
 
+/* 无图标项（设置权限/数据生成等禁用项 + 组子项）文字对齐有图标项的文字位：
+   padding 8px + 图标区 18px = 26px，替代 Vuetify 组子项默认 64px 深缩进 */
+.mysql-grid__ctx-menu--table .v-list :deep(.v-list-item:not(:has(.v-list-item__prepend))) {
+  padding-inline-start: 26px !important;
+}
+
 /* 编辑预览对话框中的 SQL 片段（与危险确认框共用类名） */
 .mysql-grid__sql-preview {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 4px;
   padding: 6px 8px;
+  /* 长无空格 token 显式断行 + 超长 SQL 限高滚动 */
+  word-break: break-all;
+  max-height: 30vh;
+  overflow-y: auto;
+}
+
+/* 编辑/删除/插入预览多条 SQL 堆叠时限高滚动，保证底部按钮可见 */
+.mysql-grid__preview-body {
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .mysql-grid__sql-preview-sql {

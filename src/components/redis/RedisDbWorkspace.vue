@@ -158,13 +158,10 @@ import RedisKeysPanel from './RedisKeysPanel.vue'
 import RedisCommandBar from './RedisCommandBar.vue'
 import VaultUnlockDialog from '@/components/common/VaultUnlockDialog.vue'
 import type { SavedRedisConnection } from '@/stores/redis'
+import { friendlyError as errText } from '@/utils/errors'
 
 const store = useRedisStore()
 const ui = useUiStore()
-
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 /** Redis 默认 16 个逻辑库（0-15），固定列出全部 */
 const dbItems = Array.from({ length: 16 }, (_, i) => i)

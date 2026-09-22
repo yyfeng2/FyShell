@@ -2,7 +2,6 @@
   <v-dialog
     :model-value="modelValue"
     width="860"
-    scrollable
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <v-card class="find-db">
@@ -98,6 +97,7 @@
 import { ref } from 'vue'
 import { mysqlDbFind } from '@/api/mysql'
 import type { MySqlDbFindHit } from '@/api/types'
+import { friendlyError as errText } from '@/utils/errors'
 
 const props = defineProps<{
   modelValue: boolean
@@ -108,10 +108,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
 }>()
-
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 const maxPerTable = 20
 const keyword = ref<string>('')
@@ -160,6 +156,9 @@ async function doFind(): Promise<void> {
 
 .find-db__body {
   min-height: 240px;
+  /* 结果区在卡片内滚动：scrollable 属性只对 v-card 直接子级 v-card-text 生效，
+     body 是自定义 div，须自带 overflow 才能横向/竖向都可达（否则长值列被裁且不可滚） */
+  overflow: auto;
 }
 
 .find-db__group {
@@ -185,6 +184,8 @@ async function doFind(): Promise<void> {
   border: 1px solid rgba(var(--v-theme-on-surface), 0.08);
   padding: 3px 8px;
   text-align: left;
+  /* 数据库原始值可能为长 URL/JSON 等无空格串，断行防止表格撑宽数千 px */
+  word-break: break-all;
 }
 
 .find-db__grid th {

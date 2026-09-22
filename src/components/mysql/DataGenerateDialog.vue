@@ -16,7 +16,7 @@
       </v-card-title>
       <v-divider />
 
-      <v-card-text class="pb-2 pt-3">
+      <v-card-text class="data-generate__body pb-2 pt-3">
         <!-- 目标区：当前连接当前库 + 表下拉 -->
         <div class="fy-field-row">
           <span class="fy-field-row__label">目标表</span>
@@ -487,6 +487,12 @@ function onToggle(v: boolean): void {
 </script>
 
 <style scoped>
+/* 内容整体限高：多字段表时累计高度可达 750px+，避免顶到视口上限 */
+.data-generate__body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
 /* 列规则行：限高可滚动 */
 .generate__columns {
   max-height: 240px;

@@ -16,7 +16,7 @@
       </v-card-title>
       <v-divider />
 
-      <v-card-text class="pb-2 pt-3">
+      <v-card-text class="data-sync__body pb-2 pt-3">
         <!-- 源区：当前连接 + 源表（连接当前库） -->
         <div class="fy-field-row">
           <span class="fy-field-row__label">源表</span>
@@ -401,6 +401,12 @@ function onToggle(v: boolean): void {
 </script>
 
 <style scoped>
+/* 内容整体限高：多区块累计高度可达 750px+，避免顶到视口上限 */
+.data-sync__body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
 /* 三组计数卡片 */
 .sync__counts {
   gap: 8px;

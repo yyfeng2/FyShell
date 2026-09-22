@@ -318,6 +318,7 @@ import {
   type PaneSide,
 } from './file-utils'
 import type { SftpFavorite } from '@/api/types'
+import { friendlyError } from '@/utils/errors'
 
 const props = withDefaults(
   defineProps<{
@@ -389,7 +390,7 @@ async function load(): Promise<void> {
     }
   } catch (e) {
     entries.value = []
-    errorMsg.value = e instanceof Error ? e.message : String(e)
+    errorMsg.value = friendlyError(e)
     snackbar.value = true
   } finally {
     loading.value = false
@@ -515,7 +516,7 @@ async function actionLocateTerminal(): Promise<void> {
     await terminalStore.writeToSession(props.sessionId, payload)
     notify(`已将终端定位到 ${currentPath.value}`)
   } catch (e) {
-    notify(e instanceof Error ? e.message : String(e))
+    notify(friendlyError(e))
   }
 }
 
@@ -548,7 +549,7 @@ async function actionFavorite(): Promise<void> {
     await loadFavorites()
     notify(`已收藏路径 ${currentPath.value}`)
   } catch (e) {
-    notify(e instanceof Error ? e.message : String(e))
+    notify(friendlyError(e))
   }
 }
 
@@ -560,7 +561,7 @@ async function actionUnfavorite(): Promise<void> {
     await loadFavorites()
     notify(`已取消收藏 ${currentPath.value}`)
   } catch (e) {
-    notify(e instanceof Error ? e.message : String(e))
+    notify(friendlyError(e))
   }
 }
 
@@ -582,7 +583,7 @@ async function removeFavorite(fav: SftpFavorite): Promise<void> {
     await sftpFavoriteRemove(props.side, fav.path)
     await loadFavorites()
   } catch (e) {
-    notify(e instanceof Error ? e.message : String(e))
+    notify(friendlyError(e))
   }
 }
 
@@ -748,7 +749,7 @@ async function confirmDialog(): Promise<void> {
     menu.entry = null
     await load()
   } catch (e) {
-    errorMsg.value = e instanceof Error ? e.message : String(e)
+    errorMsg.value = friendlyError(e)
     snackbar.value = true
   } finally {
     busy.value = false

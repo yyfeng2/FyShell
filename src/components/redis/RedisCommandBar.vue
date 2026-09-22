@@ -78,12 +78,9 @@ import { ref } from 'vue'
 import { useRedisStore } from '@/stores/redis'
 import type { RedisExecResult } from '@/api/types'
 import RedisResultView from './RedisResultView.vue'
+import { friendlyError as errText } from '@/utils/errors'
 
 const store = useRedisStore()
-
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}
 
 const HISTORY_LIMIT = 30
 

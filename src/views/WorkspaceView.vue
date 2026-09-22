@@ -48,6 +48,7 @@ import MysqlQueryTab from '@/components/mysql/MysqlQueryTab.vue'
 import RedisDbWorkspace from '@/components/redis/RedisDbWorkspace.vue'
 import SessionListDialog from '@/components/ssh/session/SessionListDialog.vue'
 import { useMysqlStore } from '@/stores/mysql'
+import { friendlyError } from '@/utils/errors'
 import { useRedisStore } from '@/stores/redis'
 import { mysqlDbList, mysqlDbSwitch, mysqlDbDrop } from '@/api/mysqlDb'
 import { mysqlListTables, mysqlQuery } from '@/api/mysql'
@@ -254,7 +255,7 @@ async function loadTree(): Promise<void> {
     const mysqlStore = useMysqlStore()
     if (mysqlStore.connId) void refreshMysqlTreeDbs()
   } catch (e) {
-    ui.toast(`加载会话列表失败：${String(e)}`, 'error')
+    ui.toast(`加载会话列表失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -1060,7 +1061,7 @@ async function menuDelete(): Promise<void> {
         ui.toast(`已删除连接「${node.name}」，但保存列表落盘失败，重启后可能恢复`, 'warning')
       }
     } catch (e) {
-      ui.toast(`删除失败：${String(e)}`, 'error')
+      ui.toast(`删除失败：${friendlyError(e)}`, 'error')
     }
     return
   }
@@ -1078,7 +1079,7 @@ async function menuDelete(): Promise<void> {
     await loadTree()
     ui.toast(`已删除${label}`, 'success')
   } catch (e) {
-    ui.toast(`删除失败：${String(e)}`, 'error')
+    ui.toast(`删除失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -1155,7 +1156,7 @@ async function menuDeleteSection(): Promise<void> {
       }
     } catch (e) {
       // 单条删除失败不中断整批：记录后继续删剩余项，最后统一汇总
-      failed.push(`${t.name}（${String(e)}）`)
+      failed.push(`${t.name}（${friendlyError(e)}）`)
     }
   }
   await loadTree()
@@ -1196,7 +1197,7 @@ async function menuCloneConnection(): Promise<void> {
     presetHost.value = ''
     showSessionForm.value = true
   } catch (e) {
-    ui.toast(`复制连接失败：${String(e)}`, 'error')
+    ui.toast(`复制连接失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -1251,7 +1252,7 @@ async function switchMysqlDb(name: string): Promise<void> {
     st.queryError = ''
     ui.toast(`已切换到数据库「${name}」`, 'success')
   } catch (e) {
-    ui.toast(String(e), 'error')
+    ui.toast(friendlyError(e), 'error')
   }
 }
 
@@ -1345,7 +1346,7 @@ function menuPrintDb(): void {
       ])
       printHtml(buildStructureReport(dbName, tables, colResult))
     } catch (e) {
-      ui.toast(`打印数据库失败：${String(e)}`, 'error')
+      ui.toast(`打印数据库失败：${friendlyError(e)}`, 'error')
     }
   })()
 }
@@ -1406,7 +1407,7 @@ async function menuDropDb(): Promise<void> {
     ui.toast(`数据库「${node.dbName}」已删除`, 'success')
     await refreshMysqlTreeDbs()
   } catch (e) {
-    ui.toast(`删除数据库失败：${String(e)}`, 'error')
+    ui.toast(`删除数据库失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -1721,7 +1722,7 @@ function runConnect(tab: WorkTab, action: string): void {
   const connect = retryHandlers.get(tab.id)
   if (!connect) return
   void connect().catch((e) => {
-    const reason = e instanceof Error ? e.message : String(e)
+    const reason = friendlyError(e)
     failedConns.value.set(tab.id, reason)
     ui.toast(`${action}失败：${reason}`, 'error')
   })
@@ -1735,7 +1736,7 @@ function retryConnection(tab: WorkTab): void {
   failedConns.value.delete(tab.id)
   void connect()
     .catch((e) => {
-      failedConns.value.set(tab.id, e instanceof Error ? e.message : String(e))
+      failedConns.value.set(tab.id, friendlyError(e))
     })
     .finally(() => {
       retryingConns.value.delete(tab.id)
@@ -1836,7 +1837,7 @@ async function openSftpSession(node: { id: string; name: string; color?: string 
     if (activeId.value === tab.id) {
       activeId.value = tabs.value.at(-1)?.id ?? null
     }
-    ui.toast(`连接「${node.name}」失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    ui.toast(`连接「${node.name}」失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -2167,7 +2168,7 @@ async function deleteFromList(node: { id: string; name: string } | null): Promis
     ui.toast(`已删除会话「${node.name}」`, 'success')
     await loadTree()
   } catch (e) {
-    ui.toast(`删除失败：${String(e)}`, 'error')
+    ui.toast(`删除失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -2180,7 +2181,7 @@ async function createFolder(): Promise<void> {
     showFolderDialog.value = false
     await loadTree()
   } catch (e) {
-    ui.toast(`新建文件夹失败：${String(e)}`, 'error')
+    ui.toast(`新建文件夹失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -2481,7 +2482,7 @@ async function runCheckUpdate(silent = false): Promise<void> {
     // 已落盘安装，新版本在下次启动时生效（重启依赖 plugin-process，暂提示用户手动重启）
     ui.toast('更新安装完成，重启应用后生效', 'success')
   } catch (e) {
-    ui.toast(`安装更新失败：${e instanceof Error ? e.message : String(e)}`, 'error')
+    ui.toast(`安装更新失败：${friendlyError(e)}`, 'error')
   }
 }
 

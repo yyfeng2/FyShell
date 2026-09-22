@@ -16,7 +16,7 @@
       </v-card-title>
       <v-divider />
 
-      <v-card-text class="pb-2 pt-3">
+      <v-card-text class="data-transfer__body pb-2 pt-3">
         <!-- 源区：当前连接 + 源库下拉 -->
         <div class="fy-field-row">
           <span class="fy-field-row__label">源数据库</span>
@@ -308,6 +308,12 @@ function onToggle(v: boolean): void {
 </script>
 
 <style scoped>
+/* 内容整体限高：多表多结果时累计高度可达 750px+，避免顶到视口上限 */
+.data-transfer__body {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
 /* 表复选列表：限高可滚动（表较多时不撑开整页） */
 .transfer__tables {
   max-height: 200px;

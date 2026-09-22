@@ -31,6 +31,7 @@ import { settingsGet, settingsSet } from '@/api/settings'
 import { vaultDecrypt, vaultEncrypt, vaultStatus, vaultUnlock } from '@/api/vault'
 import { useUiStore } from './ui'
 import type { MySqlConnection, MySqlQueryResult, MySqlTableInfo } from '@/api/types'
+import { friendlyError as errText } from '@/utils/errors'
 
 /** 对外复用契约类型（单一事实来源在 @/api/types） */
 export type { MySqlConnection, MySqlQueryResult, MySqlTableInfo }
@@ -445,8 +446,3 @@ export const useMysqlStore = defineStore('mysql', {
     },
   },
 })
-
-/** 错误归一化：Rust 侧 AppError 以字符串形式 reject */
-function errText(err: unknown): string {
-  return typeof err === 'string' ? err : String(err)
-}

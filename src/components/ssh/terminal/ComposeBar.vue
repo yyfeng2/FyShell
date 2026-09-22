@@ -1,3 +1,46 @@
+<script lang="ts">
+/**
+ * 撰写栏输入历史（模块级）：所有终端 Tab 的 ComposeBar 实例共享（对齐 Xshell 撰写栏行为），
+ * localStorage 持久化（上限 100 条，连续重复折叠），重启后可继续上下键回溯。
+ */
+const COMPOSE_HISTORY_KEY = 'fy-compose-history'
+const COMPOSE_HISTORY_MAX = 100
+
+const composeHistory = ref<string[]>([])
+let composeHistoryLoaded = false
+
+/** 惰性加载持久化的历史（localStorage 不可用/内容损坏时静默降级为空） */
+function loadComposeHistory(): void {
+  if (composeHistoryLoaded) return
+  composeHistoryLoaded = true
+  try {
+    const raw = localStorage.getItem(COMPOSE_HISTORY_KEY)
+    const parsed: unknown = raw ? JSON.parse(raw) : null
+    if (Array.isArray(parsed)) {
+      composeHistory.value = parsed.filter((v): v is string => typeof v === 'string')
+    }
+  } catch {
+    // 存储不可用或内容损坏：历史仅内存保留
+  }
+}
+
+/** 记录一条历史：连续重复折叠，超上限截断并落盘 */
+function recordComposeHistory(text: string): void {
+  loadComposeHistory()
+  if (composeHistory.value[composeHistory.value.length - 1] !== text) {
+    composeHistory.value.push(text)
+    if (composeHistory.value.length > COMPOSE_HISTORY_MAX) {
+      composeHistory.value = composeHistory.value.slice(-COMPOSE_HISTORY_MAX)
+    }
+  }
+  try {
+    localStorage.setItem(COMPOSE_HISTORY_KEY, JSON.stringify(composeHistory.value))
+  } catch {
+    // 存储写入失败忽略
+  }
+}
+</script>
+
 <script setup lang="ts">
 /**
  * ComposeBar —— 撰写栏（Xshell 风格，SSH 终端底部）
@@ -27,6 +70,8 @@ const ui = useUiStore()
 const draft = ref('')
 const sending = ref(false)
 const target = ref<ComposeTarget>('current')
+/** 历史回溯游标：-1 = 不在回溯中，否则指向 composeHistory 下标 */
+const historyIndex = ref(-1)
 
 /** 发送目标（Xshell 撰写栏菜单风格，带加速字母） */
 const TARGETS: { value: ComposeTarget; title: string; accel: string }[] = [
@@ -51,11 +96,35 @@ function targetSessionIds(): string[] {
   return openSessionIds().filter((id) => terminalStore.isConnected(id))
 }
 
+/** 上键回溯历史：首次上翻到最新一条，已到最早一条则不再翻 */
+function onHistoryUp(): void {
+  loadComposeHistory()
+  const history = composeHistory.value
+  if (history.length === 0 || historyIndex.value === 0) return
+  historyIndex.value = historyIndex.value < 0 ? history.length - 1 : historyIndex.value - 1
+  draft.value = history[historyIndex.value] ?? ''
+}
+
+/** 下键回溯历史：越过最新一条则清空输入并退出回溯 */
+function onHistoryDown(): void {
+  if (historyIndex.value < 0) return
+  const next = historyIndex.value + 1
+  if (next >= composeHistory.value.length) {
+    historyIndex.value = -1
+    draft.value = ''
+    return
+  }
+  historyIndex.value = next
+  draft.value = composeHistory.value[next] ?? ''
+}
+
 /** 发送：逐会话写入（末尾自动补 \n 直接执行），成功后清空输入 */
 async function send(): Promise<void> {
   const ids = targetSessionIds()
   const text = draft.value
   if (!text.trim() || ids.length === 0) return
+  recordComposeHistory(text)
+  historyIndex.value = -1
   sending.value = true
   try {
     const payload = new TextEncoder().encode(text.endsWith('\n') ? text : `${text}\n`)
@@ -102,6 +171,8 @@ async function send(): Promise<void> {
       spellcheck="false"
       aria-label="撰写栏命令输入"
       @keydown.enter="send"
+      @keydown.up.prevent="onHistoryUp"
+      @keydown.down.prevent="onHistoryDown"
     />
 
     <v-btn
