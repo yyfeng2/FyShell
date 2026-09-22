@@ -99,6 +99,7 @@
       </v-alert>
       <div v-for="(res, i) in results" :key="i" class="query-tab__result">
         <div class="query-tab__result-label">
+          <v-icon :icon="noteKind(res.note).icon" :color="noteKind(res.note).color" size="x-small" class="mr-1" />
           {{ res.note }}
         </div>
         <div v-if="res.columns.length > 0" class="query-tab__grid">
@@ -209,6 +210,13 @@ interface ResultItem {
   columns: string[]
   rows: (string | null)[][]
   note: string
+}
+
+/** 结果 note 语义分类（仅影响视觉，text 不变）：SELECT=primary、写操作=success、已取消=warning */
+function noteKind(note: string): { icon: string; color: string } {
+  if (note.startsWith('Query OK')) return { icon: 'mdi-check-circle', color: 'success' }
+  if (note === '已取消') return { icon: 'mdi-minus-circle', color: 'warning' }
+  return { icon: 'mdi-play-circle-outline', color: 'primary' }
 }
 
 const sql = ref(props.initialSql ?? '')
@@ -336,6 +344,10 @@ function insertSnippet(text: string): void {
 
 // ---------- 运行 ----------
 function runAll(): void {
+  if (!sql.value.trim()) {
+    ui.toast('请输入 SQL 后再运行', 'warning')
+    return
+  }
   void run(sql.value)
 }
 
