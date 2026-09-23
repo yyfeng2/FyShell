@@ -263,12 +263,13 @@
         </div>
 
         <!-- 结果网格：NULL 显示为灰色斜体；单击直接编辑，右键打开套件菜单；
-             Shift+单击扩展矩形选区，列头单击选中整列 -->
+             Shift+单击扩展矩形选区，列头单击选中整列；双击空白处复位全部列宽与行高 -->
         <div
           v-if="store.lastResult"
           ref="resultHost"
           class="mysql-grid__result"
           @click="onGridBlankClick"
+          @dblclick="onGridBlankDblClick"
         >
           <v-table density="compact" fixed-header class="mysql-grid__result-table" :style="rowHeightStyle()">
             <thead>
@@ -296,19 +297,17 @@
                     :icon="sortState.dir === 'asc' ? 'mdi-sort-ascending' : 'mdi-sort-descending'"
                   />
                   {{ col }}
-                  <!-- 列宽拖拽手柄：左右边缘 7px 竖条（所有边框线均可拖），拖拽调整列宽，双击复位 -->
+                  <!-- 列宽拖拽手柄：左右边缘 7px 竖条（所有边框线均可拖），拖拽调整列宽，双击空白处复位 -->
                   <span
                     class="mysql-grid__col-resize mysql-grid__col-resize--right"
-                    title="拖拽调整列宽，双击复位"
+                    title="拖拽调整列宽"
                     @mousedown="onColResizeStart($event, ci)"
-                    @dblclick="onColResizeReset(ci)"
                     @click.stop
                   />
                   <span
                     class="mysql-grid__col-resize mysql-grid__col-resize--left"
-                    title="拖拽调整列宽，双击复位"
+                    title="拖拽调整列宽"
                     @mousedown="onColResizeStart($event, ci)"
-                    @dblclick="onColResizeReset(ci)"
                     @click.stop
                   />
                 </th>
@@ -328,23 +327,21 @@
                     hide-details
                     @update:model-value="(v: unknown) => toggleRow(row.originalIndex, v)"
                   />
-                  <!-- 行高拖拽手柄：下缘 7px 横条（所有列下缘均可拖），双击复位 -->
+                  <!-- 行高拖拽手柄：下缘 7px 横条（所有列下缘均可拖），双击空白处复位 -->
                   <span
                     class="mysql-grid__row-resize"
-                    title="拖拽调整行高，双击复位"
+                    title="拖拽调整行高"
                     @mousedown="onRowResizeStart($event)"
-                    @dblclick="onRowResizeReset"
                   />
                 </td>
                 <td class="mysql-grid__cell--locked mysql-grid__row-num" style="left: 36px">
                   <!-- 全局行号（Navicat 式 gutter）：服务端分页下 = (page-1)*pageSize + 页内索引 + 1 -->
                   {{ (page - 1) * pageSize + row.originalIndex + 1 }}
-                  <!-- 行高拖拽手柄：gutter 下缘 5px 横条，拖拽全局调整行高，双击复位 -->
+                  <!-- 行高拖拽手柄：gutter 下缘 5px 横条，拖拽全局调整行高，双击空白处复位 -->
                   <span
                     class="mysql-grid__row-resize"
-                    title="拖拽调整行高，双击复位"
+                    title="拖拽调整行高"
                     @mousedown="onRowResizeStart($event)"
-                    @dblclick="onRowResizeReset"
                   />
                 </td>
                 <td
@@ -380,26 +377,23 @@
                     >NULL</span>
                     <template v-else>{{ cell }}</template>
                   </template>
-                  <!-- 行高拖拽手柄：下缘 7px 横条（所有列下缘均可拖），双击复位 -->
+                  <!-- 行高拖拽手柄：下缘 7px 横条（所有列下缘均可拖），双击空白处复位 -->
                   <span
                     class="mysql-grid__row-resize"
-                    title="拖拽调整行高，双击复位"
+                    title="拖拽调整行高"
                     @mousedown="onRowResizeStart($event)"
-                    @dblclick="onRowResizeReset"
                   />
-                  <!-- 列宽拖拽手柄：左右缘 7px 竖条（所有行左右边框线均可拖），双击复位 -->
+                  <!-- 列宽拖拽手柄：左右缘 7px 竖条（所有行左右边框线均可拖），双击空白处复位 -->
                   <span
                     class="mysql-grid__col-resize mysql-grid__col-resize--right"
-                    title="拖拽调整列宽，双击复位"
+                    title="拖拽调整列宽"
                     @mousedown="onColResizeStart($event, ci)"
-                    @dblclick="onColResizeReset(ci)"
                     @click.stop
                   />
                   <span
                     class="mysql-grid__col-resize mysql-grid__col-resize--left"
-                    title="拖拽调整列宽，双击复位"
+                    title="拖拽调整列宽"
                     @mousedown="onColResizeStart($event, ci)"
-                    @dblclick="onColResizeReset(ci)"
                     @click.stop
                   />
                 </td>
@@ -1438,6 +1432,13 @@ function onGridBlankClick(e: MouseEvent): void {
   }
 }
 
+/** 双击空白处（非单元格/表头/手柄/输入框）复位全部自定义列宽与行高 */
+function onGridBlankDblClick(e: MouseEvent): void {
+  if ((e.target as HTMLElement).closest('th, td, .mysql-grid__col-resize, .mysql-grid__row-resize, input')) return
+  onColResizeResetAll()
+  onRowResizeReset()
+}
+
 /** 单元格悬停提示：长值（超 20 字符会被列宽 ellipsis 裁剪）显示完整内容，短值保持操作提示 */
 function cellTitle(cell: string | null): string {
   if (cell === null) return '单击编辑；右键打开操作菜单'
@@ -1961,6 +1962,12 @@ function onColResizeReset(ci: number): void {
   const next = { ...customColWidths.value }
   delete next[ci]
   customColWidths.value = next
+  void nextTick().then(measureColumns)
+}
+
+/** 复位全部自定义列宽（空白处双击用） */
+function onColResizeResetAll(): void {
+  customColWidths.value = {}
   void nextTick().then(measureColumns)
 }
 
