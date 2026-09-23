@@ -1798,6 +1798,13 @@ function openLocalTerminal(): void {
   runConnect(tab, '打开本地终端')
 }
 
+/** 双击首页/导航页空白处：打开本地终端（点在树节点/按钮/输入框等交互元素上不触发） */
+function onBlankDblclick(e: MouseEvent): void {
+  const t = e.target as HTMLElement
+  if (t.closest('button, input, a, .workspace__tree-node, .workspace__search, .workspace__nav-header')) return
+  openLocalTerminal()
+}
+
 /** 连接失败处理（Xshell 惯例：失败后终端 Tab 保留可改参数重连）：
  * 失败原因记入 failedConns（终端区就地展示「重试」入口），toast 提示 */
 function runConnect(tab: WorkTab, action: string): void {
@@ -2801,6 +2808,7 @@ onUnmounted(() => {
         :class="{ 'workspace__nav--floating': ui.navAutoHide }"
         :style="{ width: `${ui.navWidth}px`, flexBasis: `${ui.navWidth}px` }"
         @mouseleave="navHover = false"
+        @dblclick="onBlankDblclick"
       >
         <div class="workspace__nav-header">
           <span class="text-subtitle-2">会话</span>
@@ -3090,6 +3098,7 @@ onUnmounted(() => {
             icon="mdi-sitemap"
             title="欢迎使用 FyShell"
             desc="连接会话开始工作：SSH 终端、SFTP 传输、MySQL / Redis 数据库管理"
+            @dblclick="onBlankDblclick"
           >
             <div class="d-flex ga-2 mt-2 justify-center">
               <v-btn
