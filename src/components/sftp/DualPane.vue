@@ -43,6 +43,7 @@ import { homeDir } from '@tauri-apps/api/path'
 import FilePane from './FilePane.vue'
 import { joinPath, type FileEntry, type PaneSide } from './file-utils'
 import { onSessionTransfersDone, useTransferStore } from '@/stores/transfer'
+import { friendlyError as errText } from '@/utils/errors'
 
 const props = withDefaults(
   defineProps<{
@@ -168,7 +169,7 @@ async function handleTransfer(entries: FileEntry[], from: PaneSide): Promise<voi
     }
     notify(`已入队 ${entries.length} 个${to === 'remote' ? '上传' : '下载'}任务，可在传输队列查看进度`)
   } catch (e) {
-    notify(e instanceof Error ? e.message : String(e))
+    notify(errText(e))
   }
 }
 

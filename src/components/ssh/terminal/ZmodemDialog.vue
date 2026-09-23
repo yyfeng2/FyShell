@@ -7,6 +7,16 @@
   >
     <v-card>
       <v-card-title class="text-h6">ZMODEM 传输</v-card-title>
+      <v-divider />
+      <!-- 会话级错误（如选择器打开失败）：对话框内可见提示 -->
+      <v-alert
+        v-if="dialogError"
+        type="error"
+        variant="tonal"
+        density="compact"
+        class="mx-4 mt-3"
+        >{{ dialogError }}</v-alert
+      >
 
       <!-- 选择器打开中：系统选择器未出现/被错过时的可见反馈 -->
       <template v-if="mode === 'picking'">
@@ -87,6 +97,7 @@ import {
   listenZmodemStart,
   zmodemRespond,
 } from '@/api/ssh'
+import { friendlyError as errText } from '@/utils/errors'
 
 /** zmodem-start 事件 payload（与后端契约同名同构） */
 interface ZmodemStartPayload {
@@ -120,6 +131,8 @@ const active = ref<ZmodemProgressPayload | null>(null)
 /** 上一次失败的信息 */
 const ended = ref<ZmodemEndPayload | null>(null)
 const mode = ref<DialogMode>('idle')
+/** 对话框内展示的会话级错误（如选择器打开失败） */
+const dialogError = ref('')
 
 /** picking 期间对话框保持可见：选择器被错过/未出现时终端无任何输出的 60s
  * 等待窗内，这是用户唯一能看到的反馈（并可立即取消） */
@@ -164,12 +177,13 @@ async function pickRecvFile(): Promise<void> {
   const key = current.value?.key
   if (!key) return
   mode.value = 'picking'
+  dialogError.value = ''
   let dir: string | string[] | null
   try {
     dir = await open({ directory: true, multiple: false, title: '选择保存目录' })
   } catch (e) {
-    // 选择器异常：回退三选手选
-    console.warn('[zmodem] 目录选择器打开失败:', e)
+    // 选择器异常（会话级错误）：对话框内提示并回退三选手选
+    dialogError.value = errText(e)
     mode.value = 'choose'
     return
   }
@@ -185,12 +199,13 @@ async function pickSendFile(): Promise<void> {
   const key = current.value?.key
   if (!key) return
   mode.value = 'picking'
+  dialogError.value = ''
   let file: string | string[] | null
   try {
     file = await open({ multiple: false, title: '选择要上传的文件' })
   } catch (e) {
-    // 选择器异常：回退三选手选
-    console.warn('[zmodem] 文件选择器打开失败:', e)
+    // 选择器异常（会话级错误）：对话框内提示并回退三选手选
+    dialogError.value = errText(e)
     mode.value = 'choose'
     return
   }
@@ -318,7 +333,7 @@ onBeforeUnmount(() => {
 
 .zmodem-size {
   margin-top: 8px;
-  color: var(--fy-text-secondary, #888);
+  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
 .zmodem-error {

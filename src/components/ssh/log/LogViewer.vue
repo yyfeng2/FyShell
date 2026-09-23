@@ -22,13 +22,16 @@
         prepend-inner-icon="mdi-magnify"
         class="log-viewer__search"
       />
-      <v-btn icon="mdi-refresh" size="18" variant="text" density="comfortable" title="刷新日志列表" @click="refresh" />
+      <v-btn icon="mdi-refresh" size="18" variant="text" density="comfortable" title="刷新日志列表" :loading="loadingDates" @click="refresh" />
     </div>
     <v-divider />
 
     <v-alert v-if="error" type="error" variant="tonal" density="compact" class="ma-2" closable @click:close="error = null">
       {{ error }}
     </v-alert>
+
+    <!-- 内容加载顶部细条（inactive 时高度塌陷为 0，不占布局） -->
+    <v-progress-linear :active="loadingContent" :indeterminate="loadingContent" height="2" color="primary" />
 
     <!-- 主体：左日期列表 + 右日志内容 -->
     <div class="log-viewer__body">
@@ -43,13 +46,13 @@
           <v-icon size="12" class="mr-1">mdi-calendar-blank-outline</v-icon>
           {{ d }}
         </div>
-        <div v-if="dates.length === 0" class="log-viewer__empty">暂无日志</div>
+        <EmptyState v-if="dates.length === 0" size="compact" icon="mdi-history" title="暂无日志" desc="连接会话后日志将在此记录" />
       </div>
 
       <div ref="contentRef" class="log-viewer__content" @scroll="onContentScroll">
         <!-- 等宽字体 pre 块，ANSI SGR 转为带颜色的 HTML -->
         <pre class="log-viewer__text" v-html="highlightedHtml" />
-        <div v-if="dateContent === '' && dates.length > 0" class="log-viewer__empty">该日期暂无内容</div>
+        <EmptyState v-if="dateContent === '' && dates.length > 0" size="compact" icon="mdi-calendar-blank" title="该日期暂无内容" desc="所选日期没有匹配的日志记录" />
       </div>
     </div>
   </div>
@@ -71,6 +74,8 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useTheme } from 'vuetify'
 import { useLogStore } from '@/stores/log'
 import { useUiStore } from '@/stores/ui'
+import EmptyState from '@/components/common/EmptyState.vue'
+import { friendlyError as errText } from '@/utils/errors'
 
 const props = defineProps<{
   /** 会话 ID（对应 logs/<session_id>/日期.log） */
@@ -84,6 +89,10 @@ const ui = useUiStore()
 const dates = computed(() => logStore.cachedDates(props.sessionId))
 const activeDate = ref<string | null>(null)
 const error = ref<string | null>(null)
+/** 日期列表加载中 */
+const loadingDates = ref(false)
+/** 日志内容加载中 */
+const loadingContent = ref(false)
 /** 当前展示日期的日志内容（ANSI 转义前原文） */
 const dateContent = ref('')
 
@@ -108,24 +117,30 @@ function scrollToBottomIfNeeded(): void {
 async function loadDates(): Promise<void> {
   activeDate.value = null
   dateContent.value = ''
+  loadingDates.value = true
   try {
     const list = await logStore.loadDates(props.sessionId)
     // 默认选中最近一天（列表按日期正序返回）
     if (dates.value.length > 0) {
       await selectDate(dates.value[dates.value.length - 1])
     }
-  } catch (err) {
-    error.value = `加载日志日期列表失败：${typeof err === 'string' ? err : String(err)}`
+  } catch (e) {
+    error.value = `加载日志日期列表失败：${errText(e)}`
+  } finally {
+    loadingDates.value = false
   }
 }
 
 async function selectDate(date: string): Promise<void> {
   activeDate.value = date
+  loadingContent.value = true
   try {
     dateContent.value = await logStore.read(props.sessionId, date)
-  } catch (err) {
+  } catch (e) {
     dateContent.value = ''
-    error.value = `读取日志失败：${typeof err === 'string' ? err : String(err)}`
+    error.value = `读取日志失败：${errText(e)}`
+  } finally {
+    loadingContent.value = false
   }
 }
 
@@ -140,8 +155,8 @@ async function toggle(enabled: boolean | null): Promise<void> {
   try {
     await logStore.toggle(props.sessionId, value)
     ui.toast(value ? '已开启会话日志记录' : '已关闭会话日志记录', 'info')
-  } catch (err) {
-    ui.toast(`切换日志记录失败：${typeof err === 'string' ? err : String(err)}`, 'error')
+  } catch (e) {
+    ui.toast(`切换日志记录失败：${errText(e)}`, 'error')
   }
 }
 
@@ -385,19 +400,12 @@ watch(dateContent, () => {
   background: rgba(var(--v-theme-primary), 0.15);
 }
 
-.log-viewer__empty {
-  padding: 12px 8px;
-  font-size: 14px;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  text-align: center;
-}
-
 /* 右侧日志内容：等宽字体，深色背景 */
 .log-viewer__content {
   flex: 1 1 auto;
   min-width: 0;
   overflow: auto;
-  background: rgba(var(--v-theme-surface-variant, 30 33 35), 0.35);
+  background: rgba(var(--v-theme-surface-variant), 0.35);
 }
 
 .log-viewer__text {
@@ -413,7 +421,7 @@ watch(dateContent, () => {
 /* 搜索命中高亮（深色主题友好） */
 .log-viewer__text :deep(.log-viewer__mark),
 .log-viewer__mark {
-  background: rgba(var(--v-theme-primary, 82 132 255), 0.45);
+  background: rgba(var(--v-theme-primary), 0.45);
   color: inherit;
   border-radius: 2px;
 }

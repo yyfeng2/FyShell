@@ -7,6 +7,7 @@
   >
     <v-card>
       <v-card-title class="text-h6">主机密钥确认</v-card-title>
+      <v-divider />
       <v-card-text>
         <div class="hostkey-row">
           <span class="hostkey-label">主机：</span>
@@ -38,6 +39,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { sshHostkeyAccept, listenHostkeyPrompt } from '@/api/ssh'
+import { useUiStore } from '@/stores/ui'
+import { friendlyError as errText } from '@/utils/errors'
 
 /** hostkey-prompt 事件 payload（与后端契约同名同构） */
 interface HostkeyPromptPayload {
@@ -51,6 +54,8 @@ const prompts = ref<HostkeyPromptPayload[]>([])
 /** 是否正在处理（防止重复提交） */
 const submitting = ref(false)
 
+const ui = useUiStore()
+
 const show = computed(() => prompts.value.length > 0)
 const current = computed(() => prompts.value[0] ?? null)
 
@@ -62,7 +67,7 @@ async function answer(accept: boolean): Promise<void> {
   try {
     await sshHostkeyAccept(prompt.id, accept)
   } catch (e) {
-    console.warn('[hostkey] ssh_hostkey_accept 失败:', e)
+    ui.toast(`主机密钥验证失败：${errText(e)}`, 'error')
   } finally {
     submitting.value = false
     prompts.value = prompts.value.filter((p) => p.id !== prompt.id)

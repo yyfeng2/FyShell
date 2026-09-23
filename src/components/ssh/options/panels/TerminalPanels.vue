@@ -37,10 +37,14 @@
           />
         </template>
       </v-list-item>
-      <v-list-item v-if="mappings.length === 0">
-        <span class="text-caption text-medium-emphasis">暂无键位映射</span>
-      </v-list-item>
     </v-list>
+    <EmptyState
+      v-if="mappings.length === 0"
+      size="compact"
+      icon="mdi-keyboard-outline"
+      title="暂无键位映射"
+      desc="点击下方按钮添加键位映射"
+    />
 
     <!-- 新增/编辑对话框 -->
     <v-dialog :model-value="formVisible" width="420">
@@ -55,6 +59,7 @@
           @click="formVisible = false"
           />
         </v-card-title>
+        <v-divider />
         <v-card-text>
           <div class="fy-field-row">
             <span class="fy-field-row__label">键位组合</span>
@@ -140,6 +145,7 @@ import { useKeyMappingStore } from '@/stores/keyMapping'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useUiStore } from '@/stores/ui'
 import { friendlyError } from '@/utils/errors'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 /** 展示页（keyboard | vt-mode | term-advanced） */
 defineProps<{ page: string }>()
@@ -235,12 +241,5 @@ async function removeMapping(id: string): Promise<void> {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
-}
-
-/* rem 换算非整数档修复：text-caption 10.5px → 12px 整数档 */
-.text-caption,
-.text-subtitle-2,
-.text-body-2 {
-  font-size: 12px !important;
 }
 </style>

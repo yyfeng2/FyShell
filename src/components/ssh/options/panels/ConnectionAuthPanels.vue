@@ -87,11 +87,13 @@
 import { computed, onMounted, ref } from 'vue'
 import { authProfileList } from '@/api/authProfile'
 import { useSshOptionsStore } from '@/stores/sshOptions'
+import { useUiStore } from '@/stores/ui'
 
 /** 展示页（auth | login-prompt） */
 defineProps<{ page: string }>()
 
 const opts = useSshOptionsStore()
+const ui = useUiStore()
 
 const AUTH_OPTIONS: { value: string; title: string }[] = [
   { value: 'password', title: '密码' },
@@ -113,6 +115,7 @@ onMounted(async () => {
     profiles.value = await authProfileList()
   } catch {
     profiles.value = []
+    ui.toast('配置文件加载失败', 'warning')
   }
 })
 

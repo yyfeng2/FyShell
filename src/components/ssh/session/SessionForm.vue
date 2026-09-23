@@ -311,6 +311,7 @@ import type { AuthProfile } from '@/api/types'
 import AuthProfileForm from '@/components/ssh/session/AuthProfileForm.vue'
 import { useSessionStore, ENCODINGS, type SessionConfig, type AuthType } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
+import { friendlyError as errText } from '@/utils/errors'
 
 type AuthTypeKind = AuthType extends { type: infer T } ? T : never
 
@@ -647,8 +648,8 @@ async function runTest(): Promise<void> {
       })
       await mysqlDisconnect(connId)
       setTestResult({ ok: true, message: '连接成功' })
-    } catch (err) {
-      setTestResult({ ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` })
+    } catch (e) {
+      setTestResult({ ok: false, message: `连接失败：${errText(e)}` })
     } finally {
       testing.value = false
     }
@@ -669,8 +670,8 @@ async function runTest(): Promise<void> {
         db: 0,
       })
       setTestResult({ ok: true, message: '连接成功' })
-    } catch (err) {
-      setTestResult({ ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` })
+    } catch (e) {
+      setTestResult({ ok: false, message: `连接失败：${errText(e)}` })
     } finally {
       testing.value = false
     }
@@ -692,8 +693,8 @@ async function runTest(): Promise<void> {
         await telnetDisconnect(id)
       }
       setTestResult({ ok: true, message: '连接成功' })
-    } catch (err) {
-      setTestResult({ ok: false, message: `连接失败：${typeof err === 'string' ? err : String(err)}` })
+    } catch (e) {
+      setTestResult({ ok: false, message: `连接失败：${errText(e)}` })
     } finally {
       testing.value = false
     }
@@ -703,8 +704,8 @@ async function runTest(): Promise<void> {
   testResult.value = null
   try {
     setTestResult(await sessionTest(buildConfig()))
-  } catch (err) {
-    setTestResult({ ok: false, message: `测试失败：${typeof err === 'string' ? err : String(err)}` })
+  } catch (e) {
+    setTestResult({ ok: false, message: `测试失败：${errText(e)}` })
   } finally {
     testing.value = false
   }
@@ -721,8 +722,8 @@ async function submit(): Promise<void> {
     emit('saved', saved)
     // 保存成功后自动关闭对话框
     emit('update:modelValue', false)
-  } catch (err) {
-    testResult.value = { ok: false, message: `保存失败：${typeof err === 'string' ? err : String(err)}` }
+  } catch (e) {
+    testResult.value = { ok: false, message: `保存失败：${errText(e)}` }
   } finally {
     saving.value = false
   }

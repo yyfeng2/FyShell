@@ -48,9 +48,7 @@
               <v-btn icon="mdi-delete" size="16" variant="text" title="删除" @click="remove(p)" />
             </template>
           </v-list-item>
-          <div v-if="profiles.length === 0" class="auth-profile-form__empty">
-            暂无配置文件，点击下方"新建"添加
-          </div>
+          <EmptyState v-if="profiles.length === 0" size="compact" icon="mdi-file-outline" title="暂无配置文件" desc="点击下方「新建」添加认证配置" />
         </v-list>
       </v-card-text>
 
@@ -168,6 +166,8 @@ import { ref, watch } from 'vue'
 import { authProfileList, authProfileSave, authProfileDelete } from '@/api/authProfile'
 import type { AuthProfile, AuthType } from '@/api/types'
 import { useUiStore } from '@/stores/ui'
+import EmptyState from '@/components/common/EmptyState.vue'
+import { friendlyError as errText } from '@/utils/errors'
 
 type AuthTypeKind = AuthType extends { type: infer T } ? T : never
 
@@ -215,9 +215,9 @@ async function loadProfiles(): Promise<void> {
   formError.value = null
   try {
     profiles.value = await authProfileList()
-  } catch (err) {
+  } catch (e) {
     profiles.value = []
-    listError.value = `加载配置文件失败：${typeof err === 'string' ? err : String(err)}`
+    listError.value = `加载配置文件失败：${errText(e)}`
   }
 }
 
@@ -319,8 +319,8 @@ async function submit(): Promise<void> {
     formError.value = null
     await loadProfiles()
     emit('changed')
-  } catch (err) {
-    formError.value = `保存失败：${typeof err === 'string' ? err : String(err)}`
+  } catch (e) {
+    formError.value = `保存失败：${errText(e)}`
   } finally {
     saving.value = false
   }
@@ -337,8 +337,8 @@ async function remove(p: AuthProfile): Promise<void> {
     await authProfileDelete(p.id)
     await loadProfiles()
     emit('changed')
-  } catch (err) {
-    listError.value = `删除失败：${typeof err === 'string' ? err : String(err)}`
+  } catch (e) {
+    listError.value = `删除失败：${errText(e)}`
   }
 }
 </script>
@@ -351,12 +351,5 @@ async function remove(p: AuthProfile): Promise<void> {
 
 .auth-profile-form__list {
   background: transparent;
-}
-
-.auth-profile-form__empty {
-  padding: 12px 8px;
-  font-size: 14px;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  text-align: center;
 }
 </style>

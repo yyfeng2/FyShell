@@ -150,9 +150,21 @@
         </template>
       </v-virtual-scroll>
 
-      <div v-else-if="disabled" class="file-pane__hint">请先选择活动会话</div>
+      <EmptyState
+        v-else-if="disabled"
+        size="compact"
+        icon="mdi-console"
+        title="请先选择活动会话"
+        desc="在顶部会话标签中选择一个 SSH 会话"
+      />
       <div v-else-if="loading" class="file-pane__hint">加载中…</div>
-      <div v-else class="file-pane__hint">目录为空</div>
+      <EmptyState
+        v-else
+        size="compact"
+        icon="mdi-folder-open-outline"
+        title="目录为空"
+        desc="此目录下没有文件"
+      />
     </div>
 
     <!-- 错误提示 -->
@@ -319,6 +331,7 @@ import {
 } from './file-utils'
 import type { SftpFavorite } from '@/api/types'
 import { friendlyError } from '@/utils/errors'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const props = withDefaults(
   defineProps<{
