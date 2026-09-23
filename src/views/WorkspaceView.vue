@@ -1048,13 +1048,35 @@ function menuSessionSettings(): void {
   openSessionSettingsFor({ sessionId: node.id, title: node.name })
 }
 
-/** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框） */
+/** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框；已存连接按保存配置预填） */
 function menuRename(): void {
   treeMenu.visible = false
   const node = treeMenu.node
   if (!node) return
   if (node.isFolder) {
     showFolderDialog.value = true
+    return
+  }
+  // 已存连接常驻节点：树中无 SessionConfig，从对应 store 取保存配置预填（保存走 saveHandler 覆盖链路）
+  if (node.isSavedConn) {
+    const store = node.isMysql ? useMysqlStore() : useRedisStore()
+    const saved = store.savedConnections.find((c) => c.id === (node.savedConnId ?? ''))
+    if (!saved) return
+    editingSavedConn.value = { mysql: !!node.isMysql, id: saved.id }
+    editingSession.value = {
+      id: '',
+      name: saved.name,
+      session_type: node.isMysql ? 'mysql' : 'redis',
+      host: saved.host,
+      port: saved.port,
+      username: saved.username ?? '',
+      encoding: null,
+      color: null,
+      keepalive_interval: 30,
+      auth_type: { type: 'password', password: saved.password ?? '' },
+    } as unknown as SessionConfig
+    presetHost.value = ''
+    showSessionForm.value = true
     return
   }
   const target = findNode(nodes.value, node.id)
@@ -1464,6 +1486,25 @@ const showErModelDialog = ref(false)
 const erDbName = ref('')
 const showFindDialog = ref(false)
 const findDbName = ref('')
+
+/** 全库查找结果「打开表」：切到查找的库并在网格中打开该表（数据可编辑，与树中切库同款语义） */
+async function openFoundTable(table: string): Promise<void> {
+  showFindDialog.value = false
+  const mysqlStore = useMysqlStore()
+  const connId = mysqlStore.connId
+  if (!connId || !findDbName.value) return
+  openMysqlTab()
+  try {
+    // 后端重建连接池并返回新 conn_id，须替换 store.connId（表名按当前库解析，切库保证命中）
+    const newId = await mysqlDbSwitch(connId, findDbName.value)
+    mysqlStore.connId = newId
+    mysqlStore.tables = []
+    await mysqlStore.loadTables()
+    mysqlStore.pendingOpenTable = table
+  } catch (e) {
+    ui.toast(`切换数据库失败：${friendlyError(e)}`, 'error')
+  }
+}
 
 // ---------------- 工具栏数据库工具 4 项（数据传输/数据生成/数据同步/结构同步） ----------------
 
@@ -2122,9 +2163,12 @@ async function loadTransferSnapshot(): Promise<void> {
 const showSessionForm = ref(false)
 const editingSession = ref<SessionConfig | null>(null)
 const presetHost = ref('')
+/** 编辑已保存连接标记（menuRename 已存连接分支设置）：保存走 saveHandler 覆盖链路而非 session_save */
+const editingSavedConn = ref<{ mysql: boolean; id: string } | null>(null)
 
 function openSessionForm(): void {
   editingSession.value = null
+  editingSavedConn.value = null
   presetHost.value = ''
   showSessionForm.value = true
 }
@@ -2132,12 +2176,19 @@ function openSessionForm(): void {
 /** 快速连接：打开会话表单并预填主机（Xshell 快速连接流程） */
 function quickConnect(host: string): void {
   editingSession.value = null
+  editingSavedConn.value = null
   presetHost.value = host
   showSessionForm.value = true
 }
 
 /** 会话保存成功（新建/编辑/快速连接）：刷新树并按类型打开（sftp 会话开独立 SFTP 双栏 Tab） */
 async function onSessionSaved(config: SessionConfig): Promise<void> {
+  // 编辑已保存连接：树已在 saveHandler 链路刷新，仅提示（config.id 非会话 id，不走打开流程）
+  if (editingSavedConn.value) {
+    editingSavedConn.value = null
+    ui.toast('连接已更新', 'success')
+    return
+  }
   await loadTree()
   const node = findNode(nodes.value, config.id)
   if (node && !node.is_folder) {
@@ -2145,6 +2196,35 @@ async function onSessionSaved(config: SessionConfig): Promise<void> {
     return
   }
   openTerminal({ id: config.id, name: config.name, color: config.color })
+}
+
+/** 编辑已保存连接的保存入口（SessionForm saveHandler 覆盖）：原地更新保存列表（按 id）并刷新树 */
+async function saveSavedConn(cfg: SessionConfig): Promise<SessionConfig> {
+  const marker = editingSavedConn.value
+  if (!marker) return cfg
+  const auth = cfg.auth_type
+  const password =
+    auth && (auth.type === 'password' || auth.type === 'interactive') ? (auth.password ?? '') : ''
+  if (marker.mysql) {
+    await useMysqlStore().updateConnection(marker.id, {
+      name: cfg.name,
+      host: cfg.host,
+      port: cfg.port,
+      username: cfg.username,
+      password,
+    })
+  } else {
+    await useRedisStore().updateConnection(marker.id, {
+      name: cfg.name,
+      host: cfg.host,
+      port: cfg.port,
+      // Redis 空串归一化为 null（与 connectSaved 建连语义一致）
+      username: cfg.username?.trim() ? cfg.username.trim() : null,
+      password: password || null,
+    })
+  }
+  await loadTree()
+  return cfg
 }
 
 /** 新建文件夹（P0：新建在根级） */
@@ -3106,6 +3186,7 @@ onUnmounted(() => {
       v-model="showSessionForm"
       :session="editingSession"
       :preset-host="presetHost"
+      :save-handler="editingSavedConn ? saveSavedConn : undefined"
       @saved="onSessionSaved"
     />
 
@@ -3171,6 +3252,7 @@ onUnmounted(() => {
       v-model="showFindDialog"
       :conn-id="mysqlConnId"
       :db-name="findDbName"
+      @open-table="openFoundTable"
     />
 
     <!-- 工具栏数据库工具 4 项对话框（connId 挂当前活动 MySQL 连接） -->

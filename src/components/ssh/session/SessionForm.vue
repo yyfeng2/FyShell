@@ -330,6 +330,8 @@ const props = defineProps<{
   folderId?: string | null
   /** 新建会话时预设的主机（快速连接地址栏预填） */
   presetHost?: string
+  /** 保存入口覆盖（编辑已保存连接等非会话场景）：提供时替代 session store 落盘 */
+  saveHandler?: (cfg: SessionConfigWithProfile) => Promise<SessionConfig>
 }>()
 
 const emit = defineEmits<{
@@ -710,7 +712,6 @@ async function runTest(): Promise<void> {
     testing.value = false
   }
 }
-
 async function submit(): Promise<void> {
   if (formRef.value) {
     const { valid } = await formRef.value.validate()
@@ -718,7 +719,8 @@ async function submit(): Promise<void> {
   }
   saving.value = true
   try {
-    const saved = await store.save(buildConfig())
+    // saveHandler 覆盖时走调用方保存链路（编辑已保存连接等非会话场景），否则落 session store
+    const saved = props.saveHandler ? await props.saveHandler(buildConfig()) : await store.save(buildConfig())
     emit('saved', saved)
     // 保存成功后自动关闭对话框
     emit('update:modelValue', false)

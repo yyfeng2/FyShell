@@ -275,6 +275,25 @@ export const useRedisStore = defineStore('redis', {
     },
 
     /**
+     * 原地更新已保存连接（编辑连接入口：按 id 覆盖提供的字段，db 等未提供项保留）。
+     * 返回是否命中 id（false = 无此条目）
+     */
+    async updateConnection(
+      id: string,
+      config: Partial<Omit<SavedRedisConnection, 'id'>>,
+    ): Promise<boolean> {
+      const existing = this.savedConnections.find((c) => c.id === id)
+      if (!existing) return false
+      if (config.name !== undefined) existing.name = config.name
+      if (config.host !== undefined) existing.host = config.host
+      if (config.port !== undefined) existing.port = config.port
+      if (config.username !== undefined) existing.username = config.username
+      if (config.password !== undefined) existing.password = config.password
+      if (config.db !== undefined) existing.db = config.db
+      return this.persistSavedConnections()
+    },
+
+    /**
      * 以主密码解锁保险库后加载已存连接（解锁对话框调用）。
      * 密码错误由后端返回，向上抛出供对话框提示。
      */

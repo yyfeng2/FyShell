@@ -1009,6 +1009,19 @@ function selectTable(name: string): void {
   if (isDblClick) void runQuery(1, pageSize.value, sql.value)
 }
 
+/** 其他入口（全库查找结果等）请求打开指定表：选中并立即执行查询（网格内可编辑） */
+watch(
+  () => store.pendingOpenTable,
+  (name) => {
+    const table = name
+    store.pendingOpenTable = ''
+    if (!table || !store.isConnected) return
+    selectTable(table)
+    void runQuery(1, pageSize.value, sql.value)
+  },
+  { immediate: true },
+)
+
 /** 侧栏宽度可拖拽（Navicat 风格：拖手柄调宽，双击恢复默认 240px） */
 const sidebarWidth = ref(240)
 

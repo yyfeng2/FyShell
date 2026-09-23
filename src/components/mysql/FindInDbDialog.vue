@@ -52,7 +52,17 @@
           <div v-for="hit in hits" :key="hit.table" class="find-db__group">
             <div class="find-db__table">
               <v-icon size="x-small" color="primary" class="mr-1">mdi-table</v-icon>
-              <span class="text-body-2">{{ hit.table }}</span>
+              <v-btn
+                size="x-small"
+                variant="text"
+                color="primary"
+                density="compact"
+                prepend-icon="mdi-table-arrow-right"
+                title="打开表（可编辑数据）"
+                @click="emit('open-table', hit.table)"
+              >
+                {{ hit.table }}
+              </v-btn>
               <span class="text-caption text-medium-emphasis ml-2">{{ hit.rows.length }} 行</span>
             </div>
             <table class="find-db__grid">
@@ -107,6 +117,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
+  (e: 'open-table', table: string): void
 }>()
 
 const maxPerTable = 20

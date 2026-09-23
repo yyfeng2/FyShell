@@ -140,6 +140,9 @@ export const useMysqlStore = defineStore('mysql', {
     tables: [] as MySqlTableInfo[],
     tablesLoading: false,
 
+    /** 待打开的表（全库查找结果等入口请求）：非空时 MysqlDataGrid watch 选中并立即执行查询 */
+    pendingOpenTable: '' as string,
+
     /** 最近一次 SELECT 的查询结果（含分页信息） */
     lastResult: null as MySqlQueryResult | null,
     queryLoading: false,
@@ -314,6 +317,25 @@ export const useMysqlStore = defineStore('mysql', {
     async removeConnection(id: string): Promise<boolean> {
       this.savedConnections = this.savedConnections.filter((c) => c.id !== id)
       if (this.activeSavedId === id) this.activeSavedId = null
+      return this.persistSavedConnections()
+    },
+
+    /**
+     * 原地更新已保存连接（编辑连接入口：按 id 覆盖提供的字段，schema 等未提供项保留）。
+     * 返回是否命中 id（false = 无此条目）
+     */
+    async updateConnection(
+      id: string,
+      config: Partial<Omit<SavedMysqlConnection, 'id'>>,
+    ): Promise<boolean> {
+      const existing = this.savedConnections.find((c) => c.id === id)
+      if (!existing) return false
+      if (config.name !== undefined) existing.name = config.name
+      if (config.host !== undefined) existing.host = config.host
+      if (config.port !== undefined) existing.port = config.port
+      if (config.username !== undefined) existing.username = config.username
+      if (config.password !== undefined) existing.password = config.password
+      if (config.schema !== undefined) existing.schema = config.schema
       return this.persistSavedConnections()
     },
 
