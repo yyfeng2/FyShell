@@ -109,6 +109,9 @@ async function removeScheme(): Promise<void> {
   if (ok) store.remove(name)
 }
 
+/** 导入 IO 中（系统对话框期间不置，读写过程防重复点击） */
+const importing = ref(false)
+
 /** 导入：系统对话框选文件 → Rust 读 → parseScheme 校验 → upsert */
 async function importScheme(): Promise<void> {
   const path = await open({
@@ -116,6 +119,7 @@ async function importScheme(): Promise<void> {
     filters: [{ name: '配色方案', extensions: ['json'] }],
   })
   if (typeof path !== 'string') return
+  importing.value = true
   try {
     const raw = await commands.schemeReadFile(path)
     const scheme = parseScheme(JSON.parse(raw))
@@ -128,8 +132,13 @@ async function importScheme(): Promise<void> {
     ui.toast(`已导入配色方案「${named.name}」`)
   } catch (e) {
     ui.toast(`导入失败：${errText(e)}`, 'error')
+  } finally {
+    importing.value = false
   }
 }
+
+/** 导出 IO 中（系统对话框期间不置，读写过程防重复点击） */
+const exporting = ref(false)
 
 /** 导出：系统对话框选路径 → Rust 写（JSON 序列化当前方案） */
 async function exportScheme(): Promise<void> {
@@ -140,11 +149,14 @@ async function exportScheme(): Promise<void> {
     filters: [{ name: '配色方案', extensions: ['json'] }],
   })
   if (typeof path !== 'string') return
+  exporting.value = true
   try {
     await commands.schemeWriteFile(path, JSON.stringify(src, null, 2))
     ui.toast(`已导出到 ${path}`)
   } catch (e) {
     ui.toast(`导出失败：${errText(e)}`, 'error')
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -255,10 +267,10 @@ function cancelEditing(): void {
             <v-btn size="small" variant="text" block class="scheme-actions__btn" @click="removeScheme">
               删除<span class="scheme-actions__key">(D)</span>
             </v-btn>
-            <v-btn size="small" variant="text" block class="scheme-actions__btn" @click="importScheme">
+            <v-btn size="small" variant="text" block class="scheme-actions__btn" :loading="importing" @click="importScheme">
               导入<span class="scheme-actions__key">(I)</span>...
             </v-btn>
-            <v-btn size="small" variant="text" block class="scheme-actions__btn" @click="exportScheme">
+            <v-btn size="small" variant="text" block class="scheme-actions__btn" :loading="exporting" @click="exportScheme">
               导出<span class="scheme-actions__key">(X)</span>...
             </v-btn>
           </div>
