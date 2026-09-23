@@ -590,3 +590,14 @@ body {
 .v-overlay-container .v-selection-control--dirty .v-selection-control__input .v-icon {
   color: rgb(var(--v-theme-primary));
 }
+
+/* ---------- 选择控件图标尺寸 ---------- */
+
+/* 根因：全局 12px 图标覆盖（.v-icon--size-default 等）把 radio/checkbox 勾选框图标
+   也压到 12px，mdi-radiobox-marked（圆环+圆点）缩成一个小点，无法辨认选中项
+   （用户反馈「蓝色只是一个点 更难缺点」）。恢复 Vuetify 默认 1.5rem（rem 基准 14px
+   下 = 21px），需双前缀覆盖对话框内控件。 */
+.v-application .v-selection-control__input .v-icon,
+.v-overlay-container .v-selection-control__input .v-icon {
+  font-size: 1.5rem;
+}

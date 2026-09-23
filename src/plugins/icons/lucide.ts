@@ -373,7 +373,7 @@ export const aliases: Partial<IconAliases> = {
   menu: Menu,
   subgroup: ChevronDown,
   dropdown: ChevronDown,
-  radioOn: Dot,
+  radioOn: CircleDot,
   radioOff: Circle,
   edit: Pencil,
   ratingEmpty: Star,
