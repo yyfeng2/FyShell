@@ -296,9 +296,16 @@
                     :icon="sortState.dir === 'asc' ? 'mdi-sort-ascending' : 'mdi-sort-descending'"
                   />
                   {{ col }}
-                  <!-- 列宽拖拽手柄：右缘 5px 竖条（Excel 式），拖拽调整列宽，双击复位 -->
+                  <!-- 列宽拖拽手柄：左右边缘 7px 竖条（所有边框线均可拖），拖拽调整列宽，双击复位 -->
                   <span
-                    class="mysql-grid__col-resize"
+                    class="mysql-grid__col-resize mysql-grid__col-resize--right"
+                    title="拖拽调整列宽，双击复位"
+                    @mousedown="onColResizeStart($event, ci)"
+                    @dblclick="onColResizeReset(ci)"
+                    @click.stop
+                  />
+                  <span
+                    class="mysql-grid__col-resize mysql-grid__col-resize--left"
                     title="拖拽调整列宽，双击复位"
                     @mousedown="onColResizeStart($event, ci)"
                     @dblclick="onColResizeReset(ci)"
@@ -320,6 +327,13 @@
                     density="compact"
                     hide-details
                     @update:model-value="(v: unknown) => toggleRow(row.originalIndex, v)"
+                  />
+                  <!-- 行高拖拽手柄：下缘 7px 横条（所有列下缘均可拖），双击复位 -->
+                  <span
+                    class="mysql-grid__row-resize"
+                    title="拖拽调整行高，双击复位"
+                    @mousedown="onRowResizeStart($event)"
+                    @dblclick="onRowResizeReset"
                   />
                 </td>
                 <td class="mysql-grid__cell--locked mysql-grid__row-num" style="left: 36px">
@@ -366,6 +380,13 @@
                     >NULL</span>
                     <template v-else>{{ cell }}</template>
                   </template>
+                  <!-- 行高拖拽手柄：下缘 7px 横条（所有列下缘均可拖），双击复位 -->
+                  <span
+                    class="mysql-grid__row-resize"
+                    title="拖拽调整行高，双击复位"
+                    @mousedown="onRowResizeStart($event)"
+                    @dblclick="onRowResizeReset"
+                  />
                 </td>
               </tr>
               <tr v-if="!displayRows.length">
@@ -2846,22 +2867,29 @@ function onConnected(connLabel: string): void {
   padding: 2px 6px 2px 0;
 }
 
-/* 列宽拖拽手柄：列头右缘 7px 竖条（Excel 式），hover 主色提示命中区 */
+/* 列宽拖拽手柄：列头左右边缘 7px 竖条（Excel 式），hover 主色提示命中区 */
 .mysql-grid__col-resize {
   position: absolute;
   top: 0;
   bottom: 0;
-  right: 0;
   width: 7px;
   cursor: col-resize;
   user-select: none;
+}
+
+.mysql-grid__col-resize--right {
+  right: 0;
+}
+
+.mysql-grid__col-resize--left {
+  left: 0;
 }
 
 .mysql-grid__col-resize:hover {
   background: rgba(var(--v-theme-primary), 0.3);
 }
 
-/* 行高拖拽手柄：行号 gutter 下缘 7px 横条，hover 主色提示命中区 */
+/* 行高拖拽手柄：单元格下缘 7px 横条（所有列下缘均可拖），hover 主色提示命中区 */
 .mysql-grid__row-resize {
   position: absolute;
   left: 0;
@@ -2874,6 +2902,11 @@ function onConnected(connLabel: string): void {
 
 .mysql-grid__row-resize:hover {
   background: rgba(var(--v-theme-primary), 0.3);
+}
+
+/* 未锁定数据单元格：relative 作 abspos 行高手柄的定位基准（锁定列走 sticky 不受影响） */
+.mysql-grid__result-table :deep(td.mysql-grid__cell:not(.mysql-grid__cell--locked)) {
+  position: relative;
 }
 
 /* 锁定列在选中/编辑状态下的底色与行高亮保持一致 */
