@@ -3066,10 +3066,6 @@ onUnmounted(() => {
             <MysqlQueryTab v-else-if="tab.type === 'query'" />
             <RedisDbWorkspace v-else-if="tab.type === 'redis'" />
           </div>
-          <div v-if="tabs.length === 0" class="workspace__empty">
-            <v-icon icon="mdi-console" size="48" class="mb-2" />
-            <div class="workspace__empty-hint">双击左侧会话打开终端，Ctrl+T 新建标签</div>
-          </div>
         </div>
       </main>
     </div>
@@ -3500,17 +3496,6 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 空态 */
-.workspace__empty {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  color: rgba(var(--v-theme-on-surface), 0.45);
-}
-
 /* 连接失败就地重试态（Xshell 惯例：失败后 Tab 保留）：主区中央图标 + 会话名 + 原因 + 操作 */
 .workspace__conn-error {
   position: absolute;
@@ -3545,12 +3530,6 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   margin-top: 8px;
-}
-
-/* 空态提示文字：主区中央大字提示，14px 标题档 */
-.workspace__empty-hint {
-  font-size: 14px;
-  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
 </style>
