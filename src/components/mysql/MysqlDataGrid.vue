@@ -262,8 +262,8 @@
           </v-btn>
         </div>
 
-        <!-- 结果网格：NULL 显示为灰色斜体；双击编辑，右键打开套件菜单；
-             单击选中单元格（Shift+单击扩展矩形选区），列头单击选中整列 -->
+        <!-- 结果网格：NULL 显示为灰色斜体；单击直接编辑，右键打开套件菜单；
+             Shift+单击扩展矩形选区，列头单击选中整列 -->
         <div
           v-if="store.lastResult"
           ref="resultHost"
@@ -331,7 +331,6 @@
                   :style="lockedStyle(ci)"
                   :title="cellTitle(cell)"
                   @click="onCellClick($event, row.originalIndex, ci)"
-                  @dblclick="startEdit(row.originalIndex, ci)"
                   @contextmenu.prevent="openCtxMenu($event, row.originalIndex, ci)"
                 >
                   <input
@@ -1390,9 +1389,9 @@ function onGridBlankClick(e: MouseEvent): void {
 
 /** 单元格悬停提示：长值（超 20 字符会被列宽 ellipsis 裁剪）显示完整内容，短值保持操作提示 */
 function cellTitle(cell: string | null): string {
-  if (cell === null) return '双击编辑；右键打开操作菜单'
+  if (cell === null) return '单击编辑；右键打开操作菜单'
   const s = String(cell)
-  if (s.length <= 20) return '双击编辑；右键打开操作菜单'
+  if (s.length <= 20) return '单击编辑；右键打开操作菜单'
   return s.length > 500 ? `${s.slice(0, 500)}…` : s
 }
 
@@ -1531,7 +1530,8 @@ function isCellSelected(ri: number, ci: number): boolean {
   )
 }
 
-/** 单击单元格：设为锚点；Shift+单击扩展矩形选区 */
+/** 单击单元格：设为锚点 + 直接进入编辑（2026-09-23 用户指定"单击编辑"消除双击延迟感）；
+    Shift+单击扩展矩形选区（不进入编辑） */
 /** 当前点击单元格位置（状态条"行 X · 列 Y"展示；查询变化时随选区清除） */
 const lastCellPos = ref<{ ri: number; ci: number } | null>(null)
 
@@ -1547,6 +1547,10 @@ function onCellClick(e: MouseEvent, ri: number, ci: number): void {
   } else {
     selAnchor.value = { ri, ci }
     cellSelection.value = { r1: ri, c1: ci, r2: ri, c2: ci }
+    // 已在该格编辑中（点击输入框定位光标会冒泡到 td）：不重置编辑值
+    if (!(editingCell.value?.ri === ri && editingCell.value.ci === ci)) {
+      startEdit(ri, ci)
+    }
   }
   lastCellPos.value = { ri, ci }
 }
@@ -2686,10 +2690,10 @@ function onConnected(connLabel: string): void {
   height: 1.75em !important;
 }
 
-/* 行高 35px（2026-09-21 用户指定调低 1 个字符：36px→35px；
+/* 行高 33px（2026-09-23 用户指定收紧 2 个字符：35px→33px；
    table-cell height 为 min-height 性质，配合 checkbox 高度压缩生效） */
 .mysql-grid__result-table :deep(tbody td) {
-  height: 35px;
+  height: 33px;
 }
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
