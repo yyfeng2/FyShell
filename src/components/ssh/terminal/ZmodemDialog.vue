@@ -322,7 +322,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .zmodem-file {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: bold;
   margin-bottom: 8px;
   word-break: break-all;

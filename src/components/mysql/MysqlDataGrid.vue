@@ -2850,7 +2850,7 @@ th[title='单击选中整列'] {
 
 .mysql-grid__sql-preview-sql {
   font-family: var(--fy-font);
-  font-size: 14px;
+  font-size: 13px;
   word-break: break-all;
   white-space: pre-wrap;
 }

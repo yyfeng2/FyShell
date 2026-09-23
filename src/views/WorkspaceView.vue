@@ -3339,7 +3339,7 @@ onUnmounted(() => {
   outline: none;
   background: transparent;
   color: rgb(var(--v-theme-on-surface));
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .workspace__search-input:focus-visible {
@@ -3373,7 +3373,7 @@ onUnmounted(() => {
   padding-right: 6px;
   cursor: pointer;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 13px;
   white-space: nowrap;
   user-select: none;
   /* 二期：克制动效（hover 底色/选中底色渐变，transform/opacity 线不受影响） */
@@ -3515,7 +3515,7 @@ onUnmounted(() => {
 }
 
 .workspace__conn-error-title {
-  font-size: 14px;
+  font-size: 13px;
   color: rgb(var(--v-theme-on-surface));
 }
 

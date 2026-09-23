@@ -106,7 +106,7 @@ async function sendCommand(text: string): Promise<void> {
   max-width: 160px;
   height: 26px;
   padding: 0 12px;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 24px;
   color: rgb(var(--v-theme-primary, 46 111 219));
   background: rgba(var(--v-theme-primary), 0.08);
@@ -128,7 +128,7 @@ async function sendCommand(text: string): Promise<void> {
 }
 
 .quick-bar__empty {
-  font-size: 14px;
+  font-size: 13px;
   color: rgba(var(--v-theme-on-surface), 0.55);
   padding: 0 8px;
   white-space: nowrap;

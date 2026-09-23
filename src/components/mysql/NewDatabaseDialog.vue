@@ -206,7 +206,7 @@ watch(
 }
 
 .new-db__title {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .new-db__body {

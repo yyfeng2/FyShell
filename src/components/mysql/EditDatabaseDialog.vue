@@ -199,7 +199,7 @@ watch(
 }
 
 .edit-db__title {
-  font-size: 16px;
+  font-size: 14px;
   min-width: 0;
   /* 长库名插值（如超长数据库名）不收敛会撑破 520px 卡片宽 */
   overflow-wrap: anywhere;

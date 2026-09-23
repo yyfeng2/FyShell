@@ -228,7 +228,7 @@ async function removeMapping(id: string): Promise<void> {
   padding: 1px 8px;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.15);
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 13px;
   margin-right: 8px;
   background: rgba(var(--v-theme-on-surface), 0.04);
 }
@@ -240,6 +240,6 @@ async function removeMapping(id: string): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font-size: 13px;
 }
 </style>

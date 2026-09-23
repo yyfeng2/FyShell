@@ -149,13 +149,13 @@ const sqlPreview = computed<string>(() => {
 
 .explain-panel__title {
   font-weight: 400;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .explain-panel__sql {
   padding: 0 12px 8px;
   font-family: var(--fy-font);
-  font-size: 14px;
+  font-size: 13px;
   color: rgba(var(--v-theme-on-surface), 0.7);
   word-break: break-all;
 }
@@ -174,7 +174,7 @@ const sqlPreview = computed<string>(() => {
 .explain-panel__null {
   font-style: italic;
   opacity: 0.55;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 /* 等宽文本树（EXPLAIN FORMAT=TREE 输出） */
@@ -182,7 +182,7 @@ const sqlPreview = computed<string>(() => {
   margin: 0;
   padding: 8px;
   font-family: var(--fy-font);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.6;
   white-space: pre;
   overflow-x: auto;

@@ -262,7 +262,7 @@ defineExpose({ openMenu })
 }
 
 .menubar__item {
-  font-size: 14px;
+  font-size: 13px;
   padding: 0 10px;
   border-radius: 4px;
   cursor: pointer;

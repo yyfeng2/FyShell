@@ -193,7 +193,7 @@ watch(
 }
 
 .er-model__title {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .er-model__body {
@@ -220,7 +220,7 @@ watch(
 
 /* 标题栏按钮继承标题 16px，统一压回主体档 14px */
 .er-model__header :deep(.v-btn) {
-  font-size: 14px;
+  font-size: 13px;
 }
 
 </style>

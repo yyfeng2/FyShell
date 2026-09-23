@@ -211,7 +211,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 <!-- 面板共享样式：非 scoped（panels 内的 settings-dialog__* 类名与 SettingsDialog 同名同值，注入一次即可） -->
 <style>
 .ssh-options .settings-dialog__section-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   margin-bottom: 8px;
 }
@@ -239,7 +239,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options .settings-dialog__row-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
 }
 

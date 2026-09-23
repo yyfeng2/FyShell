@@ -270,7 +270,7 @@ async function send(): Promise<void> {
   color: rgb(var(--v-theme-on-surface));
   padding: 8px 10px;
   font-family: var(--fy-font);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
   outline: none;
 }
@@ -306,7 +306,7 @@ async function send(): Promise<void> {
 
 .compose-pane__hint {
   color: rgba(var(--v-theme-on-surface), 0.5);
-  font-size: 14px;
+  font-size: 13px;
   white-space: nowrap;
 }
 </style>

@@ -1625,7 +1625,7 @@ onMounted(() => {
 
 .mysql-ws__ddl-text {
   font-family: var(--fy-mono);
-  font-size: 14px;
+  font-size: 13px;
   white-space: pre-wrap;
   word-break: break-all;
   padding: 6px 8px;
@@ -1633,7 +1633,7 @@ onMounted(() => {
 
 .mysql-ws__ddl-input {
   font-family: var(--fy-mono);
-  font-size: 14px;
+  font-size: 13px;
 }
 
 /* auto-grow textarea 无限增高会让对话框超出视口，限高后内部滚动 */
@@ -1650,7 +1650,7 @@ onMounted(() => {
 
 .mysql-ws__grant-line {
   font-family: var(--fy-mono);
-  font-size: 14px;
+  font-size: 13px;
   word-break: break-all;
   white-space: pre-wrap;
   padding: 2px 0;
@@ -1708,7 +1708,7 @@ onMounted(() => {
 }
 
 .mysql-ws__model-card-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
   display: flex;
   align-items: center;

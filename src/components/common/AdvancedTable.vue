@@ -271,7 +271,7 @@ function onRowContextmenu(event: MouseEvent, row: Record<string, unknown>, index
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .adv-table__progress {

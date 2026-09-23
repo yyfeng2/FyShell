@@ -132,7 +132,7 @@ const blobSnippet = computed(() => {
 
 .redis-result__code {
   font-family: var(--fy-mono);
-  font-size: 14px;
+  font-size: 13px;
   white-space: pre-wrap;
   word-break: break-all;
   padding: 4px 8px;
