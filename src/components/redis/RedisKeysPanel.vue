@@ -42,8 +42,14 @@
           </template>
           <v-list-item-title class="text-body-2 redis-keys__mono">{{ k }}</v-list-item-title>
         </v-list-item>
-        <v-list-item v-if="!store.keysLoading && store.keys.length === 0">
-          <v-list-item-title class="text-caption text-medium-emphasis">没有匹配的 key</v-list-item-title>
+        <v-list-item v-if="!store.keysLoading && store.keys.length === 0" class="px-0">
+          <!-- 列表空态（升级：现代空态组件） -->
+          <EmptyState
+            size="compact"
+            icon="mdi-magnify"
+            title="没有匹配的 key"
+            desc="调整过滤模式或过滤词后重试"
+          />
         </v-list-item>
       </v-list>
     </div>
@@ -92,9 +98,14 @@
         </div>
       </div>
     </div>
-    <div v-else class="redis-keys__detail-hint text-caption text-medium-emphasis">
-      在左侧选择 key 查看 TYPE / TTL / 值
-    </div>
+    <!-- 详情区未选中：空态组件（居中留白式） -->
+    <EmptyState
+      v-else
+      size="compact"
+      icon="mdi-key-outline"
+      title="在左侧选择 key"
+      desc="选择 key 后查看 TYPE / TTL 与值"
+    />
   </div>
 </template>
 
@@ -114,6 +125,7 @@ import { useRedisStore } from '@/stores/redis'
 import { useUiStore } from '@/stores/ui'
 import type { RedisExecResult } from '@/api/types'
 import RedisResultView from './RedisResultView.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { friendlyError as errText } from '@/utils/errors'
 
 const store = useRedisStore()
@@ -173,14 +185,22 @@ watch(
   },
 )
 
-/** 过滤/回车：store.loadKeys()（内部以 pattern || '*' 调 redisKeys） */
+/** 过滤/回车：store.loadKeys()（内部以 pattern || '*' 调 redisKeys）；失败 toast（store 抛原始错误） */
 async function loadKeys(): Promise<void> {
-  await store.loadKeys()
+  try {
+    await store.loadKeys()
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+  }
 }
 
-/** 刷新按钮：store.refreshKeys() */
+/** 刷新按钮：store.refreshKeys()；失败 toast（store 抛原始错误） */
 async function refreshKeys(): Promise<void> {
-  await store.refreshKeys()
+  try {
+    await store.refreshKeys()
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+  }
 }
 
 let detailSeq = 0
@@ -309,12 +329,6 @@ async function deleteKey(): Promise<void> {
   overflow-y: auto;
   min-height: 0;
   padding: 4px 12px 8px;
-}
-
-.redis-keys__detail-hint {
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  text-align: center;
 }
 
 /* rem 换算非整数档修复：text-caption/body-2 10.5/12.25px → 12px、x-small chip 8.75px → 11px */

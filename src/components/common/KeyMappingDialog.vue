@@ -40,7 +40,7 @@
             />
           </div>
         </div>
-        <div v-else class="key-mapping-dialog__empty">暂无键位映射，点击下方按钮添加。</div>
+        <EmptyState v-else size="compact" icon="mdi-keyboard-outline" title="暂无键位映射" desc="点击下方按钮添加键位映射" />
 
         <!-- 新增/编辑表单 -->
         <v-divider class="my-3" />
@@ -119,6 +119,7 @@ import type { KeyMapping } from '@/api/keyMapping'
 import { useKeyMappingStore } from '@/stores/keyMapping'
 import { useUiStore } from '@/stores/ui'
 import { friendlyError } from '@/utils/errors'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
@@ -286,12 +287,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.key-mapping-dialog__empty {
-  font-size: 14px;
-  color: rgba(var(--v-theme-on-surface), 0.5);
-  padding: 8px 0;
 }
 
 .key-mapping-dialog__field-row {

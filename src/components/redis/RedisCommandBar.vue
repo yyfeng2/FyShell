@@ -37,9 +37,14 @@
     </div>
     <v-divider />
     <div class="redis-cmdbar__body">
-      <div v-if="history.length === 0" class="text-caption text-medium-emphasis pa-2">
-        执行结果将显示在这里（Enter 执行）
-      </div>
+      <!-- 结果空态：尚未执行任何命令（升级：现代空态组件） -->
+      <EmptyState
+        v-if="history.length === 0"
+        size="compact"
+        icon="mdi-chevron-right"
+        title="执行结果将显示在这里"
+        desc="输入 Redis 命令后按 Enter 执行"
+      />
       <div v-for="h in history" :key="h.id" class="redis-cmdbar__item">
         <div class="redis-cmdbar__cmd">
           <span class="text-caption text-medium-emphasis mr-1">›</span>
@@ -78,6 +83,7 @@ import { ref } from 'vue'
 import { useRedisStore } from '@/stores/redis'
 import type { RedisExecResult } from '@/api/types'
 import RedisResultView from './RedisResultView.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { friendlyError as errText } from '@/utils/errors'
 
 const store = useRedisStore()

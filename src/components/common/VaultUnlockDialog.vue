@@ -17,6 +17,7 @@
         @click="emit('update:modelValue', false)"
       />
       </v-card-title>
+      <v-divider />
       <v-card-text>
         <p class="text-body-2 mb-3">
           已存连接密码受主密码保护，输入主密码解锁后方可查看与保存连接。
@@ -55,6 +56,7 @@
 import { ref } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { useMysqlStore } from '@/stores/mysql'
+import { friendlyError as errText } from '@/utils/errors'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
@@ -79,7 +81,7 @@ async function submit(): Promise<void> {
     password.value = ''
     emit('update:modelValue', false)
   } catch (e) {
-    errorText.value = typeof e === 'string' ? e : String(e)
+    errorText.value = errText(e)
   } finally {
     submitting.value = false
   }

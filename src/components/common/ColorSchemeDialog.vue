@@ -12,6 +12,7 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { useColorSchemeStore } from '@/stores/colorScheme'
 import { useUiStore } from '@/stores/ui'
 import { commands } from '@/bindings'
+import { friendlyError as errText } from '@/utils/errors'
 import { ANSI_KEYS, BUILTIN_SCHEMES, PREVIEW_STYLES, parseScheme, type ColorScheme } from '@/data/colorSchemes'
 
 const props = defineProps<{ modelValue: boolean }>()
@@ -125,8 +126,8 @@ async function importScheme(): Promise<void> {
     const named: ColorScheme = { ...scheme, name: store.uniqueName(scheme.name) }
     store.upsert(named)
     ui.toast(`已导入配色方案「${named.name}」`)
-  } catch {
-    ui.toast('导入失败：读取文件出错', 'error')
+  } catch (e) {
+    ui.toast(`导入失败：${errText(e)}`, 'error')
   }
 }
 
@@ -142,8 +143,8 @@ async function exportScheme(): Promise<void> {
   try {
     await commands.schemeWriteFile(path, JSON.stringify(src, null, 2))
     ui.toast(`已导出到 ${path}`)
-  } catch {
-    ui.toast('导出失败：写入文件出错', 'error')
+  } catch (e) {
+    ui.toast(`导出失败：${errText(e)}`, 'error')
   }
 }
 

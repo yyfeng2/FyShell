@@ -74,9 +74,13 @@
             </template>
           </v-list-item>
           <v-list-item v-else-if="store.savedConnections.length === 0">
-            <v-list-item-title class="text-caption text-medium-emphasis">
-              暂无已保存的连接
-            </v-list-item-title>
+            <!-- 连接空态（与 MysqlDbWorkspace 同款：现代空态组件） -->
+            <EmptyState
+              size="compact"
+              icon="mdi-database-off"
+              title="暂无可连接数据库"
+              desc="在连接对话框新建或连接已保存的数据库"
+            />
           </v-list-item>
         </v-list>
         <v-btn
@@ -157,6 +161,7 @@ import RedisConnectionForm from './RedisConnectionForm.vue'
 import RedisKeysPanel from './RedisKeysPanel.vue'
 import RedisCommandBar from './RedisCommandBar.vue'
 import VaultUnlockDialog from '@/components/common/VaultUnlockDialog.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import type { SavedRedisConnection } from '@/stores/redis'
 import { friendlyError as errText } from '@/utils/errors'
 
@@ -185,8 +190,13 @@ async function onSelectDb(n: number | null): Promise<void> {
   }
 }
 
+/** 刷新 Keys：失败 toast（store 抛原始错误） */
 async function refreshKeys(): Promise<void> {
-  await store.refreshKeys()
+  try {
+    await store.refreshKeys()
+  } catch (err) {
+    ui.toast(errText(err), 'error')
+  }
 }
 
 /** 连接指定已保存连接（已连接时 store 内部先断开再连）；失败信息已写入 store.connError */

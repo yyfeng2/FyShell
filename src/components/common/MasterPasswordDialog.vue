@@ -17,6 +17,7 @@
         @click="emit('update:modelValue', false)"
       />
       </v-card-title>
+      <v-divider />
       <v-card-text>
         <p class="text-body-2 mb-3">
           主密码用于保护本地存储的敏感凭据。首次设置后请牢记口令，遗忘将无法找回。
