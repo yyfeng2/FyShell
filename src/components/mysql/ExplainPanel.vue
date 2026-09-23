@@ -26,6 +26,13 @@
             </v-btn>
           </template>
         </v-tooltip>
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="emit('update:modelValue', false)"
+        />
       </div>
       <v-divider />
 

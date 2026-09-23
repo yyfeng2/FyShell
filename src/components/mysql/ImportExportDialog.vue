@@ -14,6 +14,13 @@
         <v-chip size="x-small" variant="tonal" color="primary" class="mr-1">
           {{ mode === 'export' ? '导出' : '导入' }}
         </v-chip>
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="emit('update:modelValue', false)"
+        />
       </v-card-title>
       <v-divider />
       <!-- 步骤指示器（自定义简易步骤条） -->

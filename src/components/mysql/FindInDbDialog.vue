@@ -5,10 +5,18 @@
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <v-card class="find-db">
-      <!-- 顶部：标题 -->
+      <!-- 顶部：标题 + 关闭 -->
       <div class="find-db__header">
         <v-icon size="small" class="mr-1">mdi-magnify</v-icon>
         <span class="find-db__title">在数据库中查找（{{ dbName }}）</span>
+        <v-spacer />
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="emit('update:modelValue', false)"
+        />
       </div>
       <v-divider />
 

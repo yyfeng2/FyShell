@@ -5,10 +5,18 @@
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <v-card class="new-db">
-      <!-- 顶部：标题 -->
+      <!-- 顶部：标题 + 关闭 -->
       <div class="new-db__header">
         <v-icon size="small" class="mr-1">mdi-database-plus-outline</v-icon>
         <span class="new-db__title">新建数据库</span>
+        <v-spacer />
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="emit('update:modelValue', false)"
+        />
       </div>
       <v-divider />
 

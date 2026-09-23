@@ -20,6 +20,13 @@
         >
           重新生成
         </v-btn>
+        <v-btn
+          icon="mdi-close"
+          size="x-small"
+          variant="text"
+          title="关闭"
+          @click="emit('update:modelValue', false)"
+        />
       </div>
       <v-divider />
 
