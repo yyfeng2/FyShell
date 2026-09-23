@@ -177,8 +177,4 @@ async function submit(): Promise<void> {
 </script>
 
 <style scoped>
-/* rem 换算非整数档修复：text-body-2 12.25px → 12px 整数档 */
-.text-body-2 {
-  font-size: 12px !important;
-}
 </style>

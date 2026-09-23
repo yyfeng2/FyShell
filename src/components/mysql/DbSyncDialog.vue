@@ -462,12 +462,6 @@ function onToggle(v: boolean): void {
   font-family: monospace;
 }
 
-/* rem 换算非整数档修复：html 基准 14px × Vuetify rem 系数产生 10.5/12.25px，统一整数档 */
-.text-caption,
-.text-subtitle-2,
-.text-body-2 {
-  font-size: 12px !important;
-}
 
 /* x-small chip 统一 11px（工具栏按钮档） */
 :deep(.v-chip--size-x-small .v-chip__content) {

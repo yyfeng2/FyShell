@@ -182,10 +182,4 @@ async function submitCmd(): Promise<void> {
   font-family: var(--fy-mono);
 }
 
-/* rem 换算非整数档修复：text-caption 10.5px → 12px 整数档 */
-.text-caption,
-.text-subtitle-2,
-.text-body-2 {
-  font-size: 12px !important;
-}
 </style>

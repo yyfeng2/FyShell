@@ -175,10 +175,6 @@ watch(
   pointer-events: auto;
 }
 
-/* rem 换算非整数档修复：text-body-2 12.25px → 12px 整数档 */
-.text-body-2 {
-  font-size: 12px !important;
-}
 
 /* 超长 message（如含长路径/堆栈的错误串）限高滚动，保证底部按钮可见 */
 .global-dialog__message {

@@ -331,12 +331,6 @@ async function deleteKey(): Promise<void> {
   padding: 4px 12px 8px;
 }
 
-/* rem 换算非整数档修复：text-caption/body-2 10.5/12.25px → 12px、x-small chip 8.75px → 11px */
-.text-caption,
-.text-subtitle-2,
-.text-body-2 {
-  font-size: 12px !important;
-}
 
 :deep(.v-chip--size-x-small .v-chip__content) {
   font-size: 11px !important;
