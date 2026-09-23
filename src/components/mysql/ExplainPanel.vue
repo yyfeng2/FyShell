@@ -69,9 +69,7 @@
         <!-- 树模式：format="tree" 或 tree 字段非空时渲染等宽文本树 -->
         <pre v-else-if="treeText" class="explain-panel__tree"><code>{{ treeText }}</code></pre>
 
-        <div v-else-if="!loading" class="explain-panel__empty text-caption text-medium-emphasis">
-          暂无执行计划数据
-        </div>
+        <EmptyState v-else-if="!loading" size="compact" icon="mdi-chart-line" title="暂无执行计划数据" desc="运行 EXPLAIN 后计划将在此展示" />
       </v-card-text>
     </v-card>
   </v-dialog>
@@ -81,6 +79,7 @@
 import { computed, ref, watch } from 'vue'
 import { mysqlExplain, type MySqlExplainResult } from '@/api/mysqlConsole'
 import { friendlyError } from '@/utils/errors'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 const props = defineProps<{
   /** 显隐（由父级 v-model 控制） */
@@ -189,13 +188,6 @@ const sqlPreview = computed<string>(() => {
   overflow-x: auto;
   border: 1px solid rgba(var(--v-theme-on-surface), 0.12);
   border-radius: 4px;
-}
-
-.explain-panel__empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 80px;
 }
 
 </style>

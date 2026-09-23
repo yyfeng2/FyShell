@@ -82,10 +82,7 @@
           <v-progress-circular indeterminate size="28" width="2" />
           <div class="text-body-2 text-medium-emphasis mt-2">正在加载任务列表…</div>
         </div>
-        <div v-else-if="profiles.length === 0" class="autorun-panel__empty">
-          <v-icon size="large" class="mb-1">mdi-robot-outline</v-icon>
-          <div class="text-body-2 text-medium-emphasis">暂无备份任务，点击下方按钮新建</div>
-        </div>
+        <EmptyState v-else-if="profiles.length === 0" size="compact" icon="mdi-robot-outline" title="暂无备份任务" desc="点击下方按钮新建" />
         <v-list v-else density="compact" class="autorun-panel__list">
           <v-list-item v-for="p in profiles" :key="String(p.id)" class="autorun-panel__item">
             <!-- 任务名 + 选项摘要 -->
@@ -157,6 +154,7 @@ import {
 import type { MySqlBackupProfile, MySqlBackupProfileInput } from '@/api/mysqlBackup'
 import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { friendlyError } from '@/utils/errors'
 
 const props = defineProps<{

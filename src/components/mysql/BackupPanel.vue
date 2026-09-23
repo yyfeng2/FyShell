@@ -167,10 +167,7 @@
               <v-progress-circular indeterminate size="28" width="2" />
               <div class="text-body-2 text-medium-emphasis mt-2">正在加载运行历史…</div>
             </div>
-            <div v-else-if="history.length === 0" class="backup-panel__empty">
-              <v-icon size="large" class="mb-1">mdi-clipboard-text-outline</v-icon>
-              <div class="text-body-2 text-medium-emphasis">暂无备份记录</div>
-            </div>
+            <EmptyState v-else-if="history.length === 0" size="compact" icon="mdi-clipboard-text-outline" title="暂无备份记录" desc="执行备份后记录将在此保留" />
             <v-list v-else density="compact" class="backup-panel__history">
               <v-list-item v-for="run in history" :key="run.id">
                 <template #title>
@@ -242,6 +239,7 @@ import {
 import type { MySqlBackupResult, MySqlBackupRun } from '@/api/mysqlBackup'
 import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
+import EmptyState from '@/components/common/EmptyState.vue'
 
 /** 标签页：backup = 备份；restore = 还原；history = 运行历史 */
 type BackupTab = 'backup' | 'restore' | 'history'
