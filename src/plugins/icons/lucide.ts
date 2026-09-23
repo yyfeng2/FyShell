@@ -71,7 +71,6 @@ import {
   Database,
   DatabaseBackup,
   Dices,
-  Dot,
   Download,
   Ellipsis,
   Eraser,
@@ -350,6 +349,32 @@ const mdiMap: Record<string, Component> = {
  * 值直接挂组件：VIcon 对非字符串 icon 走 VComponentIcon 渲染，绕过自建 set。
  * 键盘键帽（command/ctrl/space/shift/alt/enter/箭头/backspace）本项目未使用，省略。
  */
+/**
+ * 单选框选中态自定义图标：外圈圆环 + 中心实心圆点（12px 图标下中心点恰 6px）。
+ * Lucide Dot 是纯小圆点（无外圈）、CircleDot 中心点 12px 下仅 ~2.5px 偏小，均不满足
+ * （用户指定「橙色实心圆环+中心6px圆，未选12px空心圆」）。
+ */
+const RadioOnDot = defineComponent({
+  name: 'FyRadioOnDot',
+  setup() {
+    return () =>
+      h('svg', {
+        xmlns: 'http://www.w3.org/2000/svg',
+        width: '24',
+        height: '24',
+        viewBox: '0 0 24 24',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '2',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+      }, [
+        h('circle', { cx: '12', cy: '12', r: '10' }),
+        h('circle', { cx: '12', cy: '12', r: '6', fill: 'currentColor', stroke: 'none' }),
+      ])
+  },
+})
+
 export const aliases: Partial<IconAliases> = {
   collapse: ChevronUp,
   complete: Check,
@@ -373,7 +398,7 @@ export const aliases: Partial<IconAliases> = {
   menu: Menu,
   subgroup: ChevronDown,
   dropdown: ChevronDown,
-  radioOn: CircleDot,
+  radioOn: RadioOnDot,
   radioOff: Circle,
   edit: Pencil,
   ratingEmpty: Star,
