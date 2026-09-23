@@ -662,17 +662,20 @@ export function useXterm(options: UseXtermOptions = {}) {
     }, 150)
   }
 
-  /** 从剪贴板粘贴（term.paste 自动处理 bracketed paste 模式） */
+  /** 从剪贴板粘贴（term.paste 自动处理 bracketed paste 模式）；粘贴后回焦终端保证输入连续性 */
   async function pasteFromClipboard(): Promise<void> {
     try {
       const text = await navigator.clipboard.readText()
-      if (text) term?.paste(text)
+      if (text) {
+        term?.paste(text)
+        term?.focus()
+      }
     } catch {
       // 剪贴板读取失败静默
     }
   }
 
-  /** 菜单「编辑 → 复制」入口：立即复制当前选中内容（含复制后处理），返回是否复制成功 */
+  /** 菜单「编辑 → 复制」入口：立即复制当前选中内容（含复制后处理）并回焦终端，返回是否复制成功 */
   function copySelection(): boolean {
     if (!term) return false
     const selection = term.getSelection()
@@ -682,12 +685,14 @@ export function useXterm(options: UseXtermOptions = {}) {
     void navigator.clipboard.writeText(processed).catch(() => {
       // 剪贴板写入失败静默
     })
+    term.focus()
     return true
   }
 
-  /** 菜单「编辑 → 全选」入口：全选缓冲区文本 */
+  /** 菜单「编辑 → 全选」入口：全选缓冲区文本并回焦终端 */
   function selectAllText(): void {
     term?.selectAll()
+    term?.focus()
   }
 
   /** 计算鼠标事件对应的缓冲 cell 位置（0-based col/row，视口相对） */
@@ -740,10 +745,10 @@ export function useXterm(options: UseXtermOptions = {}) {
     }
   }
 
-  /** 容器右键：按设置为粘贴（无右键菜单实现，默认拦截默认行为） */
+  /** 容器右键：按设置为粘贴；始终拦截浏览器默认菜单（弹出系统菜单会抢走终端焦点） */
   function handleContextMenu(e: MouseEvent): void {
+    e.preventDefault()
     if (settings.mouseRightButton === 'paste') {
-      e.preventDefault()
       void pasteFromClipboard()
     }
   }
