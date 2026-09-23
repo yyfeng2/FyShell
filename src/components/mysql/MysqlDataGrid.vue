@@ -270,7 +270,7 @@
           class="mysql-grid__result"
           @click="onGridBlankClick"
         >
-          <v-table density="compact" fixed-header class="mysql-grid__result-table">
+          <v-table density="compact" fixed-header class="mysql-grid__result-table" :style="rowHeightStyle()">
             <thead>
               <tr>
                 <th class="mysql-grid__head-cell--locked" style="width: 36px; left: 0">
@@ -284,7 +284,7 @@
                   :key="col"
                   class="text-left"
                   :class="{ 'mysql-grid__head-cell--locked': isLocked(ci) }"
-                  :style="lockedStyle(ci)"
+                  :style="colStyle(ci)"
                   title="单击选中整列"
                   @click="selectColumn(ci)"
                 >
@@ -296,6 +296,14 @@
                     :icon="sortState.dir === 'asc' ? 'mdi-sort-ascending' : 'mdi-sort-descending'"
                   />
                   {{ col }}
+                  <!-- 列宽拖拽手柄：右缘 5px 竖条（Excel 式），拖拽调整列宽，双击复位 -->
+                  <span
+                    class="mysql-grid__col-resize"
+                    title="拖拽调整列宽，双击复位"
+                    @mousedown="onColResizeStart($event, ci)"
+                    @dblclick="onColResizeReset(ci)"
+                    @click.stop
+                  />
                 </th>
               </tr>
             </thead>
@@ -317,6 +325,13 @@
                 <td class="mysql-grid__cell--locked mysql-grid__row-num" style="left: 36px">
                   <!-- 全局行号（Navicat 式 gutter）：服务端分页下 = (page-1)*pageSize + 页内索引 + 1 -->
                   {{ (page - 1) * pageSize + row.originalIndex + 1 }}
+                  <!-- 行高拖拽手柄：gutter 下缘 5px 横条，拖拽全局调整行高，双击复位 -->
+                  <span
+                    class="mysql-grid__row-resize"
+                    title="拖拽调整行高，双击复位"
+                    @mousedown="onRowResizeStart($event)"
+                    @dblclick="onRowResizeReset"
+                  />
                 </td>
                 <td
                   v-for="(cell, ci) in row.cells"
@@ -1846,6 +1861,86 @@ function toggleLock(ci: number): void {
   void nextTick().then(measureColumns)
 }
 
+// ---------- 行高列宽手动调整（Excel 式拖拽） ----------
+
+/** 全局数据行高（px；null = 内容自适应，0.1em 行距下行高贴文字） */
+const rowHeight = ref<number | null>(null)
+
+/** 自定义列宽（ci → px；缺省用自动宽度） */
+const customColWidths = ref<Record<number, number>>({})
+
+/** 列样式：锁定 sticky 左偏移 + 自定义宽度（拖拽调整后精确生效） */
+function colStyle(ci: number): Record<string, string> {
+  const style = lockedStyle(ci)
+  const w = customColWidths.value[ci]
+  if (w) style.width = `${w}px`
+  return style
+}
+
+/** 表格行高变量：null 时 auto（内容自适应），否则固定 px（Vuetify td 自带规则读该变量） */
+function rowHeightStyle(): Record<string, string> {
+  return { '--v-table-row-height': rowHeight.value === null ? 'auto' : `${rowHeight.value}px` }
+}
+
+/** 拖拽通用管道：mousedown 起步，move 实时回调增量（dx/dy），up 解绑并收尾 */
+function startResize(e: MouseEvent, onMove: (dx: number, dy: number) => void, onUp?: () => void): void {
+  e.preventDefault()
+  e.stopPropagation()
+  const last = { x: e.clientX, y: e.clientY }
+  const move = (ev: MouseEvent): void => {
+    onMove(ev.clientX - last.x, ev.clientY - last.y)
+    last.x = ev.clientX
+    last.y = ev.clientY
+  }
+  const up = (): void => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', up)
+    onUp?.()
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', up)
+}
+
+/** 拖拽列头右缘调整列宽（起点 = 当前自定义宽或实际渲染宽，最小 40px） */
+function onColResizeStart(e: MouseEvent, ci: number): void {
+  // th 前两列为 checkbox + 行号 gutter，数据列 ci 对应 thead th[ci+2]
+  const th = resultHost.value?.querySelectorAll<HTMLElement>('thead th')[ci + 2] ?? null
+  let cur = customColWidths.value[ci] ?? (th ? th.getBoundingClientRect().width : 80)
+  startResize(
+    e,
+    (dx) => {
+      const w = Math.max(40, cur + dx)
+      customColWidths.value = { ...customColWidths.value, [ci]: w }
+      // colWidths 约定：[0] = 行号 gutter，[ci+1] = 数据列 ci（与 measureColumns 对齐）
+      colWidths.value = colWidths.value.map((v, i) => (i === ci + 1 ? w : v))
+    },
+    () => void nextTick().then(measureColumns),
+  )
+}
+
+/** 双击列头手柄：复位该列自动宽度 */
+function onColResizeReset(ci: number): void {
+  const next = { ...customColWidths.value }
+  delete next[ci]
+  customColWidths.value = next
+  void nextTick().then(measureColumns)
+}
+
+/** 拖拽行号 gutter 下缘调整全局行高（起点 = 当前渲染行高，自适应时先取实际值；最小 20px） */
+function onRowResizeStart(e: MouseEvent): void {
+  const firstRow = resultHost.value?.querySelector<HTMLElement>('tbody tr')
+  let base = rowHeight.value ?? (firstRow ? Math.round(firstRow.getBoundingClientRect().height) : 24)
+  startResize(e, (_dx, dy) => {
+    base = Math.max(20, base + dy)
+    rowHeight.value = base
+  })
+}
+
+/** 双击行号手柄：复位行高为内容自适应 */
+function onRowResizeReset(): void {
+  rowHeight.value = null
+}
+
 // ---------- 复制为：基于选中区域生成 SQL 文本并复制 ----------
 
 /** SQL 字面量转义：单引号/反斜杠成对转义（仅用于展示与复制） */
@@ -2661,13 +2756,13 @@ function onConnected(connLabel: string): void {
   font-size: 12px;
 }
 
-/* 行距 0.45em（2026-09-21 用户指定行高调低 1 个字符：0.5em→0.45em，36px→35px）；
+/* 行距 0.1em（2026-09-23 用户指定文字与上下边框距离 0.1 个字符：0.45em→0.1em）；
    th/td 的 v-table 默认字号 0.875rem 需显式覆盖为 1em；
    padding-block !important 压过 Vuetify 密度样式（同 min-height 覆盖惯例） */
 .mysql-grid__result-table :deep(th),
 .mysql-grid__result-table :deep(td) {
   font-size: 1em;
-  padding-block: 0.45em !important;
+  padding-block: 0.1em !important;
 }
 
 /* 表头主键/排序图标：1em 跟随 + 与文字间距 0.5em（mr-1 带 !important 须同级强度覆盖） */
@@ -2677,26 +2772,22 @@ function onConnected(connLabel: string): void {
 }
 
 /* 行高收紧（2026-09-21 用户指定"高度太大"）：checkbox 高度 28px 撑高行，
-   强制跟随字号压缩 */
+   强制跟随字号压缩；1.5em=18px 与文字行高一致，内容自适应行高下不额外撑高 */
 .mysql-grid__result-table :deep(.v-selection-control) {
-  height: 1.75em !important;
+  height: 1.5em !important;
   min-height: 0 !important;
 }
 
-/* checkbox wrapper/input 同步压到 1.75em=21px（Vuetify 默认 28px 溢出 control，
-   溢出部分计入 table-cell 高度计算撑高行至 36px） */
+/* checkbox wrapper/input 同步压到 1.5em=18px（Vuetify 默认 28px 溢出 control，
+   溢出部分计入 table-cell 高度计算撑高行） */
 .mysql-grid__result-table :deep(.v-selection-control__wrapper),
 .mysql-grid__result-table :deep(.v-selection-control__input) {
-  height: 1.75em !important;
+  height: 1.5em !important;
 }
 
-/* 行高 34px（2026-09-23 用户指定收紧 2 个字符：36px→34px）：
-   Vuetify v-table 自带 td 规则 height: var(--v-table-row-height) 特异性更高
-   （scoped 直接写 td height 会被压过不生效），因此覆写变量本身；
-   box-sizing border-box（边框含在高度内），仅影响数据行，th 不受影响 */
-.mysql-grid__result-table {
-  --v-table-row-height: 34px;
-}
+/* 行高默认内容自适应（0.1em 行距下行高贴文字）：拖拽行号 gutter 下缘手动调整，
+   rowHeightStyle 动态写入 --v-table-row-height（Vuetify td 自带规则读该变量，
+   scoped 直接写 td height 会被其更高特异性压过），双击手柄复位自适应 */
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
 /* SQL NULL：普通文字（2026-09-21 用户指定"最简表格模式"，灰色斜体等待殊样式已去除） */
@@ -2749,6 +2840,28 @@ function onConnected(connLabel: string): void {
   font-family: var(--fy-mono);
   text-align: right;
   padding: 2px 6px 2px 0;
+}
+
+/* 列宽拖拽手柄：列头右缘 5px 竖条（Excel 式），拖拽调整列宽 */
+.mysql-grid__col-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 5px;
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* 行高拖拽手柄：行号 gutter 下缘 5px 横条，拖拽调整全局行高 */
+.mysql-grid__row-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+  cursor: row-resize;
+  user-select: none;
 }
 
 /* 锁定列在选中/编辑状态下的底色与行高亮保持一致 */
