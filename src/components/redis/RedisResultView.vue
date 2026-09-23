@@ -132,7 +132,7 @@ const blobSnippet = computed(() => {
 
 .redis-result__code {
   font-family: var(--fy-mono);
-  font-size: 13px;
+  font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
   padding: 4px 8px;
@@ -159,7 +159,7 @@ const blobSnippet = computed(() => {
 /* 键值表：紧凑且不撑高，两列（字段=浅色 / 值=正文） */
 .redis-result__table :deep(td) {
   padding: 2px 8px;
-  font-size: 13px;
+  font-size: 12px;
   word-break: break-all;
   white-space: pre-wrap;
 }

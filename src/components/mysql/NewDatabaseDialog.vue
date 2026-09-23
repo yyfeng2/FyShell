@@ -203,7 +203,7 @@ watch(
 }
 
 .new-db__title {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .new-db__body {
@@ -213,7 +213,7 @@ watch(
 /* 常规分区标记（Navicat 同款 Tab 条） */
 .new-db__tab {
   display: inline-block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   padding: 4px 14px;
   margin-bottom: 10px;

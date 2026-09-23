@@ -173,7 +173,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 
 .ssh-options__nav-group {
   padding: 6px 10px 3px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.85);
   user-select: none;
@@ -187,7 +187,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
   border: none;
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
   cursor: pointer;
   text-align: left;
@@ -211,7 +211,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 <!-- 面板共享样式：非 scoped（panels 内的 settings-dialog__* 类名与 SettingsDialog 同名同值，注入一次即可） -->
 <style>
 .ssh-options .settings-dialog__section-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   margin-bottom: 8px;
 }
@@ -239,7 +239,7 @@ function isAdvancedPanel(leaf: SshOptionsLeaf): boolean {
 }
 
 .ssh-options .settings-dialog__row-title {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
 }
 

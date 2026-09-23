@@ -410,7 +410,7 @@ function cancelEditing(): void {
 }
 
 .scheme-list__name {
-  font-size: 13px;
+  font-size: 12px;
   flex: 1;
   min-width: 0;
   overflow: hidden;

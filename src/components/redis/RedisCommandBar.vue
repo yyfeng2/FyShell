@@ -174,7 +174,7 @@ async function submitCmd(): Promise<void> {
 .redis-cmdbar__raw {
   word-break: break-all;
   white-space: pre-wrap;
-  font-size: 13px;
+  font-size: 12px;
   min-width: 0;
 }
 

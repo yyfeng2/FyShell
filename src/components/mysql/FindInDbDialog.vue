@@ -151,7 +151,7 @@ async function doFind(): Promise<void> {
 }
 
 .find-db__title {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .find-db__bar {

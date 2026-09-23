@@ -239,7 +239,7 @@ defineExpose({ openMenu })
 }
 
 .menubar :deep(.v-list-item-title) {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.3;
 }
 
@@ -248,7 +248,7 @@ defineExpose({ openMenu })
 }
 
 .menubar__shortcut {
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.45);
   font-family: var(--fy-font);
 }

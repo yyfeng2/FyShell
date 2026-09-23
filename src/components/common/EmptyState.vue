@@ -63,7 +63,7 @@ const emit = defineEmits<{
 }
 
 .fy-empty__title {
-  font-size: 14px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface));
 }
 
@@ -79,7 +79,7 @@ const emit = defineEmits<{
   gap: 6px;
 }
 .fy-empty--compact .fy-empty__title {
-  font-size: 13px;
+  font-size: 12px;
 }
 .fy-empty--compact .fy-empty__desc {
   font-size: 11px;

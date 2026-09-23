@@ -406,7 +406,7 @@ function onContextMenu(e: MouseEvent): void {
 }
 
 .toolbar__fontpanel__label {
-  font-size: 13px;
+  font-size: 12px;
   width: 56px;
   flex-shrink: 0;
   color: rgba(var(--v-theme-on-surface), 0.75);

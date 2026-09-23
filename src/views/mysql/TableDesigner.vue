@@ -867,7 +867,7 @@ function diffDropped(original: string[], current: string[]): string[] {
   top: 0;
   z-index: 1;
   height: 32px;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   color: rgba(var(--v-theme-on-surface), 0.7);
   background: rgb(var(--v-theme-surface));
@@ -932,7 +932,7 @@ function diffDropped(original: string[], current: string[]): string[] {
 
 .table-designer__order {
   text-align: center;
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
@@ -941,7 +941,7 @@ function diffDropped(original: string[], current: string[]): string[] {
   align-items: center;
   justify-content: center;
   height: 120px;
-  font-size: 13px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.5);
 }
 
@@ -964,7 +964,7 @@ function diffDropped(original: string[], current: string[]): string[] {
   min-height: 0;
   padding: 8px;
   font-family: var(--fy-font);
-  font-size: 13px;
+  font-size: 12px;
   white-space: pre-wrap;
   word-break: break-all;
   background: rgba(var(--v-theme-on-surface), 0.04);

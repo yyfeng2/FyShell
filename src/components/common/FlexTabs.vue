@@ -568,7 +568,7 @@ function onDragEnd(e: DragEvent): void {
   padding: 0 8px 0 10px;
   max-width: 220px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   color: rgb(var(--v-theme-on-surface));
   opacity: 0.75;
   border-left: 1px solid transparent;

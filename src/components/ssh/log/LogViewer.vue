@@ -385,7 +385,7 @@ watch(dateContent, () => {
   display: flex;
   align-items: center;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: 12px;
   border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
@@ -412,7 +412,7 @@ watch(dateContent, () => {
   margin: 0;
   padding: 8px;
   font-family: var(--fy-font);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;

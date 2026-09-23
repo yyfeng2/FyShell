@@ -2889,7 +2889,7 @@ th[title='单击选中整列'] {
 
 .mysql-grid__sql-preview-sql {
   font-family: var(--fy-font);
-  font-size: 13px;
+  font-size: 12px;
   word-break: break-all;
   white-space: pre-wrap;
 }

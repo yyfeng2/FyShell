@@ -364,7 +364,7 @@ function formatDuration(durationMs: number | null): string {
 
 .history-drawer__title {
   font-weight: 400;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .history-drawer__search {
@@ -393,7 +393,7 @@ function formatDuration(durationMs: number | null): string {
 /* SQL 单行摘要：等宽字体 + 溢出省略 */
 .history-drawer__sql {
   font-family: var(--fy-font);
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -402,11 +402,11 @@ function formatDuration(durationMs: number | null): string {
 /* 已保存查询名称 */
 .history-drawer__name {
   font-weight: 400;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .history-drawer__meta {
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .history-drawer__error {

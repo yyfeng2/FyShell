@@ -278,7 +278,7 @@ watch(
   overflow-y: auto;
   padding: 8px 12px;
   font-family: Consolas, 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -315,7 +315,7 @@ watch(
 
 .mysql-cli__prefix {
   font-family: Consolas, 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 12px;
   color: #ffffff;
   flex: none;
 }
@@ -328,7 +328,7 @@ watch(
   outline: none;
   color: #ffffff;
   font-family: Consolas, 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 12px;
   caret-color: #ffffff;
 }
 </style>

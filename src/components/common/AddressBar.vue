@@ -155,7 +155,7 @@ function submit(): void {
   outline: none;
   background: transparent;
   color: inherit;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .addressbar__input:focus-visible {
@@ -195,7 +195,7 @@ function submit(): void {
 }
 
 .addressbar :deep(.v-list-item-title) {
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.3;
 }
 

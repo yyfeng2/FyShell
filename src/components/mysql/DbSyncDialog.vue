@@ -434,7 +434,7 @@ function onToggle(v: boolean): void {
 }
 
 .sync__count-num {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
 }
 

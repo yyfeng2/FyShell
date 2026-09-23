@@ -207,7 +207,7 @@ async function send(): Promise<void> {
   max-width: 140px;
   height: 26px; /* 与 QuickCommandBar 按钮/全局字段基线一致（原 22px 与相邻栏失配） */
   padding: 0 8px;
-  font-size: 13px;
+  font-size: 12px;
   color: inherit;
   background: transparent;
   border: 1px solid var(--fy-chrome-border);
@@ -229,7 +229,7 @@ async function send(): Promise<void> {
   min-width: 0;
   height: 26px; /* 与 target 按钮同高（原 22px） */
   padding: 0 8px;
-  font-size: 13px;
+  font-size: 12px;
   font-family: var(--fy-font);
   color: rgb(var(--v-theme-on-surface));
   background: rgb(var(--v-theme-surface));
