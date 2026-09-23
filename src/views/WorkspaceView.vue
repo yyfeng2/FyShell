@@ -2088,10 +2088,24 @@ function cycleTab(): void {
 }
 
 /** FlexTabs 渲染数据（按会话 color 着色；连接成功瞬间闪绿，1.5s 后恢复原色） */
+/** Tab 类型 → 图标名（全部已在 lucide.ts mdiMap 登记，标签栏辨识会话类型） */
+const tabIconByType: Record<WorkTab['type'], string> = {
+  terminal: 'mdi-console',
+  transfer: 'mdi-arrow-left-right',
+  tunnel: 'mdi-lan-connect',
+  sftp: 'mdi-folder-open',
+  compose: 'mdi-flash-outline',
+  mysql: 'mdi-database',
+  redis: 'mdi-database',
+  mysqlcli: 'mdi-console-line',
+  query: 'mdi-code-tags',
+}
+
 const tabItems = computed<FlexTabItem[]>(() =>
   tabs.value.map((t) => ({
     id: t.id,
     title: t.title,
+    icon: tabIconByType[t.type],
     color: t.connId && terminalStore.sessionFlash[t.connId] ? 'rgb(var(--v-theme-success))' : t.color ?? undefined,
     closable: true,
     duplicatable: t.type === 'terminal' && !!t.sessionId && !t.sessionId.startsWith('local-'),
@@ -2254,7 +2268,7 @@ const folderName = ref('')
 
 const showSessionListDialog = ref(false)
 
-/** 扁平化的已添加会话列表（非文件夹节点） */
+/** 扁平化的已添加会话列表（非文件夹节点）+ 数据库已存连接（MySQL/Redis store，树中 savedconn 常驻节点同源） */
 const sessionListFlat = computed(() => {
   const out: SessionNode[] = []
   const walkList = (list: SessionNode[]) => {
@@ -2264,6 +2278,32 @@ const sessionListFlat = computed(() => {
     }
   }
   walkList(nodes.value)
+  // 数据库已存连接：与树中数据库分区同源（session 树已有同 host 的 MySQL 会话则去重）
+  const sessionHosts = new Set<string>()
+  for (const n of nodes.value) {
+    if (!n.is_folder && n.config?.session_type === 'mysql' && n.config.host) {
+      sessionHosts.add(n.config.host)
+    }
+  }
+  for (const c of useMysqlStore().savedConnections) {
+    if (sessionHosts.has(c.host)) continue
+    out.push({
+      id: `savedconn-${c.id}`,
+      name: c.name,
+      is_folder: false,
+      children: [],
+      config: { host: c.host, port: c.port, username: c.username, session_type: 'mysql' },
+    } as unknown as SessionNode)
+  }
+  for (const c of useRedisStore().savedConnections) {
+    out.push({
+      id: `savedconn-${c.id}`,
+      name: c.name,
+      is_folder: false,
+      children: [],
+      config: { host: c.host, port: c.port, username: c.username, session_type: 'redis' },
+    } as unknown as SessionNode)
+  }
   return out
 })
 
@@ -2271,6 +2311,17 @@ const sessionListFlat = computed(() => {
 function openSessionFromList(target: { id: string; name: string }): void {
   showSessionListDialog.value = false
   selectedId.value = target.id
+  // 数据库已存连接：打开对应工作台并按保存配置建连（与树中 savedconn 节点单击一致）
+  if (target.id.startsWith('savedconn-')) {
+    const savedId = target.id.slice('savedconn-'.length)
+    if (useMysqlStore().savedConnections.some((c) => c.id === savedId)) {
+      void connectMysqlSaved(savedId)
+    } else {
+      openRedisTab()
+      void useRedisStore().connectSaved(savedId)
+    }
+    return
+  }
   const node = findNode(nodes.value, target.id)
   if (node && !node.is_folder) {
     openSessionByType(node)

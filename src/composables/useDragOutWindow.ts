@@ -41,6 +41,10 @@ export function useDragOutWindow() {
       }
       return null
     }
+    // dev 模式下主窗口（tauri.conf.json）带 additionalBrowserArgs --remote-debugging-port=9222，
+    // 子窗口若不带该参数，WebView2 会因浏览器进程参数不一致而创建冲突（webview 加载失败，
+    // 报 failed to receive message from webview）——必须与主窗口保持一致。
+    // 正式打包移除 main 窗口的该参数后此处也无需设置。
     const win = new WebviewWindow(label, {
       url: `index.html?session=${encodeURIComponent(opts.sessionId)}`,
       title: opts.title ?? 'FyShell',
@@ -48,6 +52,7 @@ export function useDragOutWindow() {
       height: opts.height ?? 600,
       center: true,
       theme: opts.theme ?? 'dark',
+      ...(import.meta.env.DEV ? { additionalBrowserArgs: '--remote-debugging-port=9222' } : {}),
     })
     return new Promise<WebviewWindow | null>((resolve) => {
       win.once('tauri://created', () => resolve(win))
