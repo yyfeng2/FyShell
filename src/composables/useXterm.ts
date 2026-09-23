@@ -695,6 +695,11 @@ export function useXterm(options: UseXtermOptions = {}) {
     term?.focus()
   }
 
+  /** 终端获得焦点（Tab 激活/新开时由工作台调用，Xshell 同款焦点直进终端） */
+  function focus(): void {
+    term?.focus()
+  }
+
   /** 计算鼠标事件对应的缓冲 cell 位置（0-based col/row，视口相对） */
   function cellPositionOf(e: MouseEvent): { col: number; row: number } | null {
     if (!term || !term.element) return null
@@ -886,6 +891,8 @@ export function useXterm(options: UseXtermOptions = {}) {
     pasteFromClipboard,
     /** 全选缓冲区文本（菜单「编辑 → 全选」入口） */
     selectAllText,
+    /** 终端获得焦点（Tab 激活/新开时由工作台调用） */
+    focus,
     /** 切换会话编码 */
     setEncoding,
     /** 运行时切换字号（需外部随后调用 fit 重新布局） */

@@ -9,7 +9,7 @@
  *
  * 全局快捷键（可修改，settings 快捷键组）：新标签/关闭/切换默认 Ctrl+T/W/Tab、Alt+1~9 直达
  */
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import FlexTabs, { type FlexTabItem } from '@/components/common/FlexTabs.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
@@ -1731,6 +1731,16 @@ function setPaneRef(id: string, el: unknown): void {
   if (el) paneRefs.set(id, el as InstanceType<typeof TerminalPane>)
   else paneRefs.delete(id)
 }
+
+// Tab 激活时终端自动聚焦（Xshell 同款：新开/切换/复制会话后焦点直进终端，免手动点击）。
+// 终端 Tab 用 v-show 保活，切回的窗格 DOM 已存在；nextTick 等 v-show 生效后再 focus。
+// 连接失败分支窗格已卸载（paneRefs 无实例）自然跳过，重试成功重新挂载后再次激活会聚焦。
+watch(activeId, async (id) => {
+  const tab = id ? tabs.value.find((t) => t.id === id) : null
+  if (!tab || tab.type !== 'terminal') return
+  await nextTick()
+  paneRefs.get(tab.id)?.focus()
+})
 
 /** 打开会话终端 Tab（Xshell 多标签：同一会话可重复开 Tab，每标签一条独立连接） */
 function openTerminal(node: { id: string; name: string; color?: string | null }): void {
