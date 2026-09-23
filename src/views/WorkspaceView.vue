@@ -1802,6 +1802,8 @@ function openLocalTerminal(): void {
 function onBlankDblclick(e: MouseEvent): void {
   const t = e.target as HTMLElement
   if (t.closest('button, input, a, .workspace__tree-node, .workspace__search, .workspace__nav-header')) return
+  // 浏览器双击默认选中一个词、高亮残留不美观（用户反馈「效果不好」）：清掉选中
+  window.getSelection()?.removeAllRanges()
   openLocalTerminal()
 }
 
@@ -3384,6 +3386,8 @@ onUnmounted(() => {
   border-right: 1px solid var(--fy-chrome-border);
   background: var(--fy-surface-raised);
   overflow: hidden;
+  /* 双击空白打开终端：禁止文本选中，双击不会拖出词选中高亮 */
+  user-select: none;
 }
 
 /* 导航右缘拖拽手柄：6px 命中区，悬停高亮主题蓝 */
@@ -3565,6 +3569,8 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   height: 100%;
+  /* 双击空白打开终端：禁止文本选中，双击不会拖出词选中高亮 */
+  user-select: none;
 }
 
 /* 树空态容器：在窄树内压缩 EmptyState 内边距（16px 上下的紧凑留白即可） */
