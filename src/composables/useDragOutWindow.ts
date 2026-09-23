@@ -41,10 +41,12 @@ export function useDragOutWindow() {
       }
       return null
     }
-    // dev 模式下主窗口（tauri.conf.json）带 additionalBrowserArgs --remote-debugging-port=9222，
+    // dev 模式下主窗口（tauri.conf.json）带 additionalBrowserArgs（9222 调试端口），
     // 子窗口若不带该参数，WebView2 会因浏览器进程参数不一致而创建冲突（webview 加载失败，
     // 报 failed to receive message from webview）——必须与主窗口保持一致。
-    // 正式打包移除 main 窗口的该参数后此处也无需设置。
+    // 该参数也不能缺省：wry 缺省时追加 --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection，
+    // 会禁掉打印预览 overlay（打印表弹不出对话框）。
+    // 正式打包主窗口须显式设置非缺省值（如 --noerrdialogs，不可删字段），子窗口同步。
     const win = new WebviewWindow(label, {
       url: `index.html?session=${encodeURIComponent(opts.sessionId)}`,
       title: opts.title ?? 'FyShell',
@@ -52,7 +54,13 @@ export function useDragOutWindow() {
       height: opts.height ?? 600,
       center: true,
       theme: opts.theme ?? 'dark',
-      ...(import.meta.env.DEV ? { additionalBrowserArgs: '--remote-debugging-port=9222' } : {}),
+      ...(import.meta.env.DEV
+        ? {
+            additionalBrowserArgs: '--remote-debugging-port=9222',
+          }
+        : {
+            additionalBrowserArgs: '--noerrdialogs',
+          }),
     })
     return new Promise<WebviewWindow | null>((resolve) => {
       win.once('tauri://created', () => resolve(win))
