@@ -4,7 +4,7 @@
  *
  * 特性：
  * - 新增（加号）/关闭按钮、中键关闭、点击切换
- * - HTML5 拖拽排序（拖动后 emit reorder，携带新 id 顺序）
+ * - 指针拖拽排序（6px 阈值：阈值内抬起=普通点击，拖动后 emit reorder，携带新 id 顺序；拖出栏外=新窗口打开）
  * - Tab 着色支持：tab.color（hex）作为激活态指示色（参考 Xshell 按连接着色）
  * - 右键菜单：复制名称 / 复制会话 / 固定 / 重命名 / 新窗口打开 / 关闭组（固定标签受关闭保护）
  *
@@ -66,16 +66,6 @@ const ui = useUiStore()
 // ---- 点击切换 ----
 function activate(id: string): void {
   if (id !== props.modelValue) emit('update:modelValue', id)
-}
-
-// ---- 中键关闭 ----
-function onMouseDown(e: MouseEvent, id: string): void {
-  if (e.button === 1) {
-    // 阻止浏览器中键自动滚动
-    e.preventDefault()
-    // 固定标签受保护：中键不关闭
-    if (!isFixed(id)) emit('close', id)
-  }
 }
 
 // ---- 固定标签（右键菜单）：固定后带图钉标识，所有关闭路径受保护 ----
@@ -267,14 +257,6 @@ const hasClosableRight = computed(() => {
   return props.tabs.slice(index + 1).some((t) => !isFixed(t.id))
 })
 
-// ---- 拖拽排序 ----
-const dragIndex = ref<number | null>(null)
-const overIndex = ref<number | null>(null)
-/** 标签栏元素引用（拖出检测时用于判定松手坐标是否在栏外） */
-const stripRef = ref<HTMLElement | null>(null)
-/** “+”新增按钮引用（位于标签栏外，需一并纳入拖出判定范围，避免误判拖出新窗口） */
-const newBtnRef = ref<HTMLElement | null>(null)
-
 // ---- 横向溢出检测 & 滚动（滚动条被隐藏，用左右按钮提供可发现性） ----
 const canScroll = ref(false)
 let resizeObserver: ResizeObserver | null = null
@@ -296,62 +278,138 @@ onMounted(() => {
   }
 })
 
-onBeforeUnmount(() => resizeObserver?.disconnect())
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  // 拖拽中途卸载：window 级监听一并清理
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragUp)
+  window.removeEventListener('pointercancel', onDragUp)
+})
 
 watch(
   () => props.tabs.length,
   () => nextTick(updateOverflow),
 )
 
-function onDragStart(index: number): void {
-  dragIndex.value = index
+// ---- 拖拽排序/拖出新窗口：手动指针拖拽（阈值 6px） ----
+// HTML5 draggable="true" 让按下后哪怕几像素的微移也启动拖拽：click 被吞掉（点标签无效）、
+// 微移落在相邻标签会误重排（用户反馈「只点下侧有效 上左右都无效 + 错误标签选择」）。
+// 改为 pointerdown 记录起点 → pointermove 超阈值进入拖拽 → pointerup 判定落点；
+// 阈值内抬起即普通点击，click 照常触发。
+const dragIndex = ref<number | null>(null)
+const overIndex = ref<number | null>(null)
+/** 标签栏元素引用（拖出检测时用于判定松手坐标是否在栏外） */
+const stripRef = ref<HTMLElement | null>(null)
+/** “+”新增按钮引用（位于标签栏外，需一并纳入拖出判定范围，避免误判拖出新窗口） */
+const newBtnRef = ref<HTMLElement | null>(null)
+
+interface PendingDrag {
+  index: number
+  id: string
+  startX: number
+  startY: number
+}
+let pendingDrag: PendingDrag | null = null
+/** 拖拽结束后抑制紧随的 click 误激活（pointer capture 会把 click 定回源标签） */
+let suppressClick = false
+
+/** 标签下标查找（拖拽落点判定用） */
+function tabIndexIndexOf(el: Element): number | null {
+  const list = stripRef.value?.querySelectorAll('.flex-tabs__tab')
+  const idx = list ? [...list].indexOf(el) : -1
+  return idx >= 0 ? idx : null
 }
 
-function onDragOver(index: number): void {
-  overIndex.value = index
+/** 标签按下：中键关闭；左键记录拖拽起点并捕获指针（窗口外松手也能收到 pointerup） */
+function onTabPointerDown(e: PointerEvent, id: string, index: number): void {
+  if (e.button === 1) {
+    // 阻止浏览器中键自动滚动；固定标签受保护：中键不关闭
+    e.preventDefault()
+    if (!isFixed(id)) emit('close', id)
+    return
+  }
+  if (e.button !== 0) return
+  suppressClick = false
+  pendingDrag = { index, id, startX: e.clientX, startY: e.clientY }
+  try {
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+  } catch {
+    /* 旧内核无此 API 时降级为仅 window 监听 */
+  }
+  window.addEventListener('pointermove', onDragMove)
+  window.addEventListener('pointerup', onDragUp)
+  window.addEventListener('pointercancel', onDragUp)
 }
 
-function onDrop(index: number): void {
+/** 拖拽移动：超过 6px 阈值进入拖拽态，实时高亮光标下标签 */
+function onDragMove(e: PointerEvent): void {
+  if (!pendingDrag) return
+  if (dragIndex.value === null) {
+    if (Math.hypot(e.clientX - pendingDrag.startX, e.clientY - pendingDrag.startY) < 6) return
+    dragIndex.value = pendingDrag.index
+  }
+  const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('.flex-tabs__tab')
+  if (el) overIndex.value = tabIndexIndexOf(el)
+}
+
+/** 拖拽松手：落点在标签上→排序；栏外→新窗口；阈值内抬起=普通点击（click 照常触发） */
+function onDragUp(e: PointerEvent): void {
+  window.removeEventListener('pointermove', onDragMove)
+  window.removeEventListener('pointerup', onDragUp)
+  window.removeEventListener('pointercancel', onDragUp)
+  const pending = pendingDrag
+  pendingDrag = null
   const from = dragIndex.value
   dragIndex.value = null
   overIndex.value = null
-  if (from == null || from === index) return
-  const ids = props.tabs.map((t) => t.id)
-  const [moved] = ids.splice(from, 1)
-  // 右向拖动：splice(from) 删除源项后，目标 index 会前移一位，需先补偿；
-  // 例如 [A,B,C,D] 把 A 拖到 C 上，期望 [B,A,C,D]，不补偿会得到 [B,C,A,D]
-  ids.splice(from < index ? index - 1 : index, 0, moved)
-  emit('reorder', ids)
-}
-
-function onDragEnd(e: DragEvent): void {
-  const from = dragIndex.value
-  // 拖出检测（P1）：未在标签栏内落下（onDrop 未触发，dragIndex 仍保留）且
-  // 松手坐标已移出标签栏边界 → 视为拖出新标签；Esc 取消时坐标仍在栏内，不会误判
-  if (from != null && stripRef.value) {
-    const rect = stripRef.value.getBoundingClientRect()
-    // 把位于标签栏外的“+”按钮也纳入栏内判定，避免拖到新增按钮上松手被误判为拖出新窗口
-    let left = rect.left
-    let right = rect.right
-    let top = rect.top
-    let bottom = rect.bottom
-    const newRect = newBtnRef.value?.getBoundingClientRect()
-    if (newRect) {
-      left = Math.min(left, newRect.left)
-      right = Math.max(right, newRect.right)
-      top = Math.min(top, newRect.top)
-      bottom = Math.max(bottom, newRect.bottom)
+  if (from == null || !pending) return // 未进入拖拽态：纯点击，交给 click 事件
+  let acted = false
+  const targetEl = document.elementFromPoint(e.clientX, e.clientY)?.closest('.flex-tabs__tab')
+  if (targetEl) {
+    const index = tabIndexIndexOf(targetEl)
+    if (index != null && index !== from) {
+      const ids = props.tabs.map((t) => t.id)
+      const [moved] = ids.splice(from, 1)
+      // 右向拖动：splice(from) 删除源项后，目标 index 会前移一位，需先补偿；
+      // 例如 [A,B,C,D] 把 A 拖到 C 上，期望 [B,A,C,D]，不补偿会得到 [B,C,A,D]
+      ids.splice(from < index ? index - 1 : index, 0, moved)
+      emit('reorder', ids)
+      acted = true
     }
-    const outside =
-      e.clientX < left - 8 || e.clientX > right + 8 || e.clientY < top - 8 || e.clientY > bottom + 8
-    const target = props.tabs[from]
-    // 固定标签受保护：不可拖出新窗口（与菜单"新窗口打开"禁用态一致）
-    if (outside && target && !isFixed(target.id)) {
-      emit('drag-out', target.id)
+  } else {
+    // 栏外（含 + 按钮，8px 容差）→ 拖出新窗口（固定标签受保护，与菜单"新窗口打开"禁用态一致）
+    if (!isFixed(pending.id)) {
+      const rect = stripRef.value?.getBoundingClientRect()
+      if (rect) {
+        let left = rect.left
+        let right = rect.right
+        let top = rect.top
+        let bottom = rect.bottom
+        const newRect = newBtnRef.value?.getBoundingClientRect()
+        if (newRect) {
+          left = Math.min(left, newRect.left)
+          right = Math.max(right, newRect.right)
+          top = Math.min(top, newRect.top)
+          bottom = Math.max(bottom, newRect.bottom)
+        }
+        if (e.clientX < left - 8 || e.clientX > right + 8 || e.clientY < top - 8 || e.clientY > bottom + 8) {
+          emit('drag-out', pending.id)
+          acted = true
+        }
+      }
     }
   }
-  dragIndex.value = null
-  overIndex.value = null
+  // 只有真实动作（重排/新窗口）才抑制 click；微移落点仍在自身标签上未动作时 click 照常激活
+  if (acted) suppressClick = true
+}
+
+/** 标签点击激活（真拖拽后的 click 抑制，避免落点标签外的误激活） */
+function onTabClick(id: string): void {
+  if (suppressClick) {
+    suppressClick = false
+    return
+  }
+  activate(id)
 }
 </script>
 
@@ -380,14 +438,9 @@ function onDragEnd(e: DragEvent): void {
         :style="{ '--tab-color': tab.color || 'transparent' }"
         role="tab"
         :aria-selected="tab.id === modelValue"
-        draggable="true"
-        @click="activate(tab.id)"
-        @mousedown="onMouseDown($event, tab.id)"
+        @pointerdown="onTabPointerDown($event, tab.id, index)"
+        @click="onTabClick(tab.id)"
         @contextmenu.prevent="openContextMenu($event, tab.id)"
-        @dragstart="onDragStart(index)"
-        @dragover.prevent="onDragOver(index)"
-        @drop.prevent="onDrop(index)"
-        @dragend="onDragEnd"
       >
         <v-icon v-if="tab.icon" :icon="tab.icon" size="14" class="flex-tabs__icon" />
         <!-- 固定标识：图钉图标（固定后关闭按钮隐藏，标签受关闭保护） -->
@@ -403,8 +456,7 @@ function onDragEnd(e: DragEvent): void {
           :aria-label="`关闭 ${tab.title}`"
           title="关闭"
           class="flex-tabs__close"
-          draggable="false"
-          @mousedown.stop
+          @pointerdown.stop
           @click.stop="emit('close', tab.id)"
         />
       </div>
