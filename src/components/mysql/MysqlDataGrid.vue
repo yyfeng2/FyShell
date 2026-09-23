@@ -329,7 +329,7 @@
                     'mysql-grid__cell--locked': isLocked(ci),
                   }"
                   :style="lockedStyle(ci)"
-                  title="双击编辑；右键打开操作菜单"
+                  :title="cellTitle(cell)"
                   @click="onCellClick($event, row.originalIndex, ci)"
                   @dblclick="startEdit(row.originalIndex, ci)"
                   @contextmenu.prevent="openCtxMenu($event, row.originalIndex, ci)"
@@ -1386,6 +1386,14 @@ function onGridBlankClick(e: MouseEvent): void {
   if (editingCell.value && !(e.target as HTMLElement).closest('.mysql-grid__cell')) {
     finalizeEdit()
   }
+}
+
+/** 单元格悬停提示：长值（超 20 字符会被列宽 ellipsis 裁剪）显示完整内容，短值保持操作提示 */
+function cellTitle(cell: string | null): string {
+  if (cell === null) return '双击编辑；右键打开操作菜单'
+  const s = String(cell)
+  if (s.length <= 20) return '双击编辑；右键打开操作菜单'
+  return s.length > 500 ? `${s.slice(0, 500)}…` : s
 }
 
 /** 行选择集：key = 当页行索引 */
@@ -2769,6 +2777,9 @@ th[title='单击选中整列'] {
   background: none !important;
   border-right-color: transparent !important;
   border-bottom-color: transparent !important;
+  /* 长值编辑：放开 td 裁剪让输入框向右延展到单元格外（Excel 式），
+     否则基础 td 规则的 overflow:hidden 会把长内容裁在列宽内 */
+  overflow: visible !important;
 }
 
 /* 单元格内联编辑输入框：不透明主色实线直角边框，占满 td（1em 跟随容器 12px） */
@@ -2786,6 +2797,21 @@ th[title='单击选中整列'] {
   color: rgb(var(--v-theme-on-surface));
   outline: none;
   box-shadow: none;
+  /* 溢出到单元格外时盖过相邻 sticky 单元格（行号/锁定列 z-index 1/2） */
+  position: relative;
+  z-index: 3;
+}
+
+/* 支持 field-sizing 的引擎（Chromium 123+ / WebView2）按内容自适应宽度：
+   输入框随长值实时延展，不再被列宽遮挡；min-width 保留单元格宽度兜底，
+   max-width 防超长 JSON 撑满整屏；不支持时退回上方 width:100% 占满行为 */
+@supports (field-sizing: content) {
+  .mysql-grid__cell-input {
+    width: auto;
+    min-width: 100%;
+    max-width: 80vw;
+    field-sizing: content;
+  }
 }
 
 /* 右键菜单覆盖层与菜单本体（fixed 定位，跟随鼠标坐标） */
