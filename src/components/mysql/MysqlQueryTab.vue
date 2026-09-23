@@ -78,6 +78,27 @@
       <v-btn variant="text" class="query-tab__tool" @click="showExplain = true">
         <v-icon size="small" class="mr-1">mdi-chart-bar</v-icon>解释
       </v-btn>
+      <!-- 指定数据库：勾选启用（默认不勾选 = 连接当前库），勾选后出现库下拉 -->
+      <v-switch
+        v-model="useDbEnabled"
+        label="指定数据库"
+        density="compact"
+        hide-details
+        class="query-tab__db-switch"
+      />
+      <v-select
+        v-if="useDbEnabled"
+        :model-value="dbSelect"
+        :items="dbItems"
+        density="compact"
+        variant="outlined"
+        single-line
+        hide-details
+        :loading="dbLoading"
+        class="query-tab__db-select"
+        placeholder="当前库"
+        @update:model-value="(v: string) => onDbSelect(v)"
+      />
     </div>
 
     <!-- SQL 编辑器 -->
@@ -161,7 +182,8 @@
  * MysqlQueryTab —— 查询 Tab（右键菜单「新建查询」入口，Navicat 查询编辑器同款）
  *
  * 两行工具条：保存/查询创建工具(开发中)/美化 SQL/代码段/创建图表(开发中)
- * + 连接下拉（已存连接切换）/查询下拉（已保存查询快召回）/运行▶/停止(置灰)/解释。
+ * + 连接下拉（已存连接切换）/查询下拉（已保存查询快召回）/运行▶/停止(置灰)/解释
+ * + 指定数据库（勾选启用 + 库下拉，默认不选 = 连接当前库，选中即切库全局生效）。
  * 编辑器复用 SqlEditor（CodeMirror 6）；结果区只读表格，多语句逐条展示。
  * 语句路由与工作台同型：SELECT → mysqlQuery（分页 100/页），其余 → mysqlExecute
  * （危险 SQL 前端捕获后 ui.confirm 二次确认重调）。连接切换走 store.connectSaved
@@ -175,6 +197,7 @@ import { formatSql, splitSqlStatements } from './sql-format'
 import { useMysqlStore } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
 import { mysqlQuery, mysqlExecute } from '@/api/mysql'
+import { mysqlDbList, mysqlDbSwitch } from '@/api/mysqlDb'
 import { mysqlSavedQueryList, mysqlSavedQuerySave, type MySqlSavedQueryItem } from '@/api/mysqlConsole'
 import { friendlyError as errText } from '@/utils/errors'
 
@@ -329,6 +352,55 @@ watch(
   { immediate: true },
 )
 
+// ---------- 指定数据库（勾选启用，默认不选 = 连接当前库） ----------
+const useDbEnabled = ref(false)
+const dbSelect = ref('')
+const dbItems = ref<string[]>([])
+const dbLoading = ref(false)
+
+/** 勾选启用后加载库列表；取消勾选复位选择 */
+watch(useDbEnabled, (on) => {
+  if (on) void loadDbs()
+  else dbSelect.value = ''
+})
+
+async function loadDbs(): Promise<void> {
+  const connId = store.connId
+  if (!connId) return
+  dbLoading.value = true
+  try {
+    dbItems.value = (await mysqlDbList(connId)).databases
+  } catch (e) {
+    ui.toast(`数据库列表获取失败：${errText(e)}`, 'error')
+  } finally {
+    dbLoading.value = false
+  }
+}
+
+/** 选中数据库：切库（mysqlDbSwitch 重建连接池，全局生效，工作台同步） */
+async function onDbSelect(db: string): Promise<void> {
+  const connId = store.connId
+  if (!connId || !db) return
+  try {
+    const newId = await mysqlDbSwitch(connId, db)
+    store.connId = newId
+    store.tables = []
+    await store.loadTables()
+    ui.toast(`已切换到数据库 ${db}`, 'success')
+  } catch (e) {
+    ui.toast(errText(e), 'error')
+  }
+}
+
+// 连接切换后库列表失效：复位选择并重载（勾选保持）
+watch(
+  () => store.connId,
+  () => {
+    dbSelect.value = ''
+    if (useDbEnabled.value) void loadDbs()
+  },
+)
+
 // ---------- 编辑器工具 ----------
 function beautifySql(): void {
   if (!sql.value.trim()) return
@@ -469,6 +541,17 @@ void loadSavedQueries()
 .query-tab__saved-select {
   flex: 0 0 180px;
   max-width: 180px;
+}
+
+/* 指定数据库：勾选开关 + 库下拉 */
+.query-tab__db-switch {
+  flex: none;
+  margin-right: -0.4em;
+}
+
+.query-tab__db-select {
+  flex: 0 0 160px;
+  max-width: 160px;
 }
 
 /* 编辑器与结果区 */

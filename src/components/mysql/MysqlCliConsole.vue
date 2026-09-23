@@ -4,16 +4,7 @@
     <div class="mysql-cli__bar">
       <span>当前库：{{ currentDb ?? '（未选择）' }}</span>
     </div>
-    <!-- 输出区（深色控制台） -->
-    <div ref="outputEl" class="mysql-cli__out">
-      <div
-        v-for="(item, i) in entries"
-        :key="i"
-        class="mysql-cli__line"
-        :class="`mysql-cli__line--${item.kind}`"
-      >{{ item.text }}</div>
-    </div>
-    <!-- 输入行 -->
+    <!-- 输入行（输出区上方，命令在顶部输入） -->
     <div class="mysql-cli__prompt">
       <span class="mysql-cli__prefix">mysql&gt;</span>
       <input
@@ -24,6 +15,15 @@
         autocomplete="off"
         @keydown="onKeydown"
       />
+    </div>
+    <!-- 输出区（深色控制台） -->
+    <div ref="outputEl" class="mysql-cli__out">
+      <div
+        v-for="(item, i) in entries"
+        :key="i"
+        class="mysql-cli__line"
+        :class="`mysql-cli__line--${item.kind}`"
+      >{{ item.text }}</div>
     </div>
   </div>
 </template>
@@ -303,13 +303,13 @@ watch(
   color: #f14c4c;
 }
 
-/* 输入行 */
+/* 输入行（输出区上方，命令在顶部输入） */
 .mysql-cli__prompt {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex: none;
 }
 
