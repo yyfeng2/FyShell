@@ -51,9 +51,6 @@
                 @update:model-value="(v: unknown) => settings.setThemeMode(v as ThemeMode)"
               />
             </div>
-            <div class="settings-dialog__hint">
-              「跟随系统」监听系统深浅色偏好并实时切换；手动选择浅色/深色后固定主题。
-            </div>
             <!-- 布局缩放：界面等比缩放（CSS zoom），立即生效并持久化 -->
             <div class="fy-field-row">
               <span class="fy-field-row__label">布局缩放</span>
@@ -64,9 +61,6 @@
                 class="settings-dialog__field"
                 @update:model-value="(v: unknown) => settings.setUiFontSize(Number(v))"
               />
-            </div>
-            <div class="settings-dialog__hint">
-              调整整个界面的显示大小，默认 100%。改动立即生效并在重启后保留。
             </div>
             <!-- 工具栏：勾选展示不勾选隐藏；勾选时才出现 图标/小图标 选择（默认图标） -->
             <div class="key-mouse__group-title">工具栏</div>
@@ -96,9 +90,6 @@
                 @update:model-value="(v: unknown) => v && settings.setToolbarMode('small-icon')"
               />
             </template>
-            <div class="settings-dialog__hint">
-              勾选「显示工具栏」后才可选择 图标（图标 + 标题）或 小图标（仅图标），默认以「图标」全显示。
-            </div>
             <!-- 托盘：勾选=关闭窗口隐藏到托盘，默认不勾选（关闭窗口即退出） -->
             <div class="key-mouse__group-title">托盘</div>
             <v-checkbox
@@ -109,9 +100,6 @@
               hide-details
               @update:model-value="(v: unknown) => settings.setTrayCloseToTray(!!v)"
             />
-            <div class="settings-dialog__hint">
-              勾选后点击窗口关闭按钮将隐藏到系统托盘（托盘右键「退出」才退出）；默认不勾选，关闭窗口即退出程序。
-            </div>
           </template>
 
           <!-- 终端 -->
@@ -159,9 +147,6 @@
               hide-details
               @update:model-value="(v: unknown) => settings.setTerminalCursorBlink(!!v)"
             />
-            <div class="settings-dialog__hint">
-              变更实时应用到已打开的终端（字号变化会联动重排），并对新终端生效。
-            </div>
           </template>
 
           <!-- 键盘和鼠标 -->
@@ -312,9 +297,6 @@
                 @update:model-value="(v: unknown) => settings.setSelectionCopyNonblankOnly(!!v)"
               />
             </div>
-            <div class="settings-dialog__hint">
-              鼠标与选择设置对已打开终端实时生效；复制后处理仅作用于复制到剪贴板的内容。
-            </div>
           </template>
 
           <!-- 快捷键 -->
@@ -367,7 +349,6 @@
                   浏览
                 </v-btn>
               </div>
-              <div class="settings-dialog__hint">SFTP 下载时默认保存到该目录。</div>
             </div>
           </template>
 
@@ -840,12 +821,6 @@ onUnmounted(() => {
 
 .settings-dialog__field {
   max-width: 420px;
-}
-
-.settings-dialog__hint {
-  margin-top: 8px;
-  font-size: 12px;
-  color: rgba(var(--v-theme-on-surface), 0.45);
 }
 
 /* 数据/安全分区行：左侧标题说明 + 右侧操作按钮 */
