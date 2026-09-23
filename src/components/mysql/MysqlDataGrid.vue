@@ -387,6 +387,21 @@
                     @mousedown="onRowResizeStart($event)"
                     @dblclick="onRowResizeReset"
                   />
+                  <!-- 列宽拖拽手柄：左右缘 7px 竖条（所有行左右边框线均可拖），双击复位 -->
+                  <span
+                    class="mysql-grid__col-resize mysql-grid__col-resize--right"
+                    title="拖拽调整列宽，双击复位"
+                    @mousedown="onColResizeStart($event, ci)"
+                    @dblclick="onColResizeReset(ci)"
+                    @click.stop
+                  />
+                  <span
+                    class="mysql-grid__col-resize mysql-grid__col-resize--left"
+                    title="拖拽调整列宽，双击复位"
+                    @mousedown="onColResizeStart($event, ci)"
+                    @dblclick="onColResizeReset(ci)"
+                    @click.stop
+                  />
                 </td>
               </tr>
               <tr v-if="!displayRows.length">
@@ -1864,9 +1879,10 @@ function isLocked(ci: number): boolean {
 function lockedStyle(ci: number): Record<string, string> {
   if (!isLocked(ci)) return {}
   const cols = resultColumns.value
-  let left = 36
+  // 起点含复选框 36px + 行号 gutter 32px；colWidths 约定 [0]=行号、[i+1]=数据列 i
+  let left = 68
   for (let i = 0; i < ci && i < cols.length; i++) {
-    if (lockedCols.value.includes(cols[i])) left += colWidths.value[i] ?? 0
+    if (lockedCols.value.includes(cols[i])) left += colWidths.value[i + 1] ?? 0
   }
   return { position: 'sticky', left: `${left}px` }
 }
@@ -1930,10 +1946,11 @@ function onColResizeStart(e: MouseEvent, ci: number): void {
   startResize(
     e,
     (dx) => {
-      const w = Math.max(40, cur + dx)
-      customColWidths.value = { ...customColWidths.value, [ci]: w }
+      // cur 累加位移（dx 是相对上次 mousemove 的单步增量，cur 不更新则 w 恒=起始宽+单步）
+      cur = Math.max(40, cur + dx)
+      customColWidths.value = { ...customColWidths.value, [ci]: cur }
       // colWidths 约定：[0] = 行号 gutter，[ci+1] = 数据列 ci（与 measureColumns 对齐）
-      colWidths.value = colWidths.value.map((v, i) => (i === ci + 1 ? w : v))
+      colWidths.value = colWidths.value.map((v, i) => (i === ci + 1 ? cur : v))
     },
     () => void nextTick().then(measureColumns),
   )
@@ -2812,6 +2829,14 @@ function onConnected(connLabel: string): void {
    表头同款：Vuetify th 自带规则读 --v-table-header-height，覆写为 auto 贴内容 */
 .mysql-grid__result-table {
   --v-table-header-height: auto;
+}
+/* fixed 布局：列宽完全由列头 width 决定（拖拽 inline width 生效）。
+   注意 .mysql-grid__result-table 是 v-table 根 div 的 class（class 透传），
+   table-layout 必须直达 table 元素（非继承属性，写在 div 上无效）；
+   auto 布局下 inline width 被内容最小宽覆盖（长内容列渲染宽恒=内容宽，拖了不变）；
+   fixed 下按指定宽比例分配填满容器，Σ列宽超容器出横向滚动 */
+.mysql-grid__result-table :deep(table) {
+  table-layout: fixed;
 }
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
