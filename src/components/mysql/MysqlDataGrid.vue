@@ -2690,10 +2690,12 @@ function onConnected(connLabel: string): void {
   height: 1.75em !important;
 }
 
-/* 行高 33px（2026-09-23 用户指定收紧 2 个字符：35px→33px；
-   table-cell height 为 min-height 性质，配合 checkbox 高度压缩生效） */
-.mysql-grid__result-table :deep(tbody td) {
-  height: 33px;
+/* 行高 34px（2026-09-23 用户指定收紧 2 个字符：36px→34px）：
+   Vuetify v-table 自带 td 规则 height: var(--v-table-row-height) 特异性更高
+   （scoped 直接写 td height 会被压过不生效），因此覆写变量本身；
+   box-sizing border-box（边框含在高度内），仅影响数据行，th 不受影响 */
+.mysql-grid__result-table {
+  --v-table-row-height: 34px;
 }
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
