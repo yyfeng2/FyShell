@@ -54,6 +54,20 @@
             <div class="settings-dialog__hint">
               「跟随系统」监听系统深浅色偏好并实时切换；手动选择浅色/深色后固定主题。
             </div>
+            <!-- 布局缩放：界面等比缩放（CSS zoom），立即生效并持久化 -->
+            <div class="fy-field-row">
+              <span class="fy-field-row__label">布局缩放</span>
+              <v-select
+                :model-value="settings.uiFontSize"
+                :items="UI_SCALE_ITEMS"
+                density="compact"
+                class="settings-dialog__field"
+                @update:model-value="(v: unknown) => settings.setUiFontSize(Number(v))"
+              />
+            </div>
+            <div class="settings-dialog__hint">
+              调整整个界面的显示大小，默认 100%。改动立即生效并在重启后保留。
+            </div>
             <!-- 工具栏：勾选展示不勾选隐藏；勾选时才出现 图标/小图标 选择（默认图标） -->
             <div class="key-mouse__group-title">工具栏</div>
             <v-checkbox
@@ -471,7 +485,7 @@
  * SettingsDialog —— 高功能设置对话框
  *
  * 左侧分类导航 + 右侧内容区（参考 Navicat/HexHub 设置布局），分区：
- * - 外观：主题模式（浅色/深色/跟随系统，跟随系统经 matchMedia 实时切换 Vuetify theme）
+ * - 外观：主题模式（浅色/深色/跟随系统，跟随系统经 matchMedia 实时切换 Vuetify theme）+ 布局缩放（CSS zoom 等比缩放全部界面）
  * - 终端：字号/字体家族/滚动缓冲/光标闪烁，变更实时生效到已打开终端（useXterm 联动）
  * - 快捷键：7 个可修改快捷键捕获式修改（需含 Ctrl/Alt 修饰、查重、恢复默认），
  *   WorkspaceView 全局注册与 useXterm 终端剪贴板键均按设置值联动
@@ -513,6 +527,14 @@ const THEME_MODE_ITEMS: { title: string; value: ThemeMode }[] = [
   { title: '浅色', value: 'light' },
   { title: '深色', value: 'dark' },
   { title: '跟随系统', value: 'auto' },
+]
+
+/** 布局缩放下拉选项（百分比） */
+const UI_SCALE_ITEMS: { title: string; value: number }[] = [
+  { title: '90%（小）', value: 90 },
+  { title: '100%（标准）', value: 100 },
+  { title: '110%（大）', value: 110 },
+  { title: '125%（特大）', value: 125 },
 ]
 
 /** 鼠标中/右键行为下拉选项 */

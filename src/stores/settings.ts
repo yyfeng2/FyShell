@@ -55,6 +55,7 @@ export const SETTING_KEYS = {
   shortcutCut: 'shortcut_cut',
   shortcutPaste: 'shortcut_paste',
   shortcutSelectAll: 'shortcut_select_all',
+  uiFontSize: 'ui_font_size',
 } as const
 
 /** 鼠标中/右键行为：没做什么 / 粘贴剪贴板内容 */
@@ -117,6 +118,8 @@ const DEFAULTS = {
   selection_copy_include_newline: true,
   selection_copy_trim_whitespace: false,
   selection_copy_nonblank_only: false,
+  /** 布局缩放百分比（100 = 默认大小，90/110/125 等比缩放全部界面） */
+  ui_font_size: 100,
   ...SHORTCUT_DEFAULTS,
 }
 
@@ -135,6 +138,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const trayCloseToTray = ref(DEFAULTS.tray_close_to_tray)
   /** 启动时自动检测更新（默认关闭：仅菜单栏「检测更新」手动触发） */
   const autoUpdateCheck = ref(DEFAULTS.auto_update_check)
+  /** 布局缩放百分比（100 = 默认大小，等比缩放全部界面） */
+  const uiFontSize = ref(DEFAULTS.ui_font_size)
   /** 终端默认字体大小（px） */
   const terminalFontSize = ref(DEFAULTS.terminal_font_size)
   /** 终端字体家族（xterm fontFamily CSS 列表） */
@@ -272,6 +277,10 @@ export const useSettingsStore = defineStore('settings', () => {
         if (trimWs !== undefined) selectionCopyTrimWhitespace.value = trimWs === 'true'
         const nonblankOnly = map[SETTING_KEYS.selectionCopyNonblankOnly]
         if (nonblankOnly !== undefined) selectionCopyNonblankOnly.value = nonblankOnly === 'true'
+        const uiScale = Number(map[SETTING_KEYS.uiFontSize])
+        if (Number.isFinite(uiScale) && uiScale >= 50 && uiScale <= 200) {
+          uiFontSize.value = Math.round(uiScale)
+        }
         // 快捷键设置：非空即采用（ui.shortcutOf 归一化格式，设置对话框负责校验）
         for (const [key, refItem] of Object.entries(shortcutRefs)) {
           const v = map[key]
@@ -280,6 +289,8 @@ export const useSettingsStore = defineStore('settings', () => {
         loaded.value = true
         // 加载完成后应用主题模式（SQLite 优先于 localStorage 的启动缓存）
         applyThemeMode()
+        // 布局缩放启动即生效（重启后恢复保存的设置）
+        applyFontSize()
         // 托盘关闭行为运行时状态同步（重启后恢复保存的设置）
         void traySetCloseToTray(trayCloseToTray.value).catch(() => {
           /* 运行时同步失败保持默认 */
@@ -357,6 +368,22 @@ export const useSettingsStore = defineStore('settings', () => {
   function setAutoUpdateCheck(enabled: boolean): void {
     autoUpdateCheck.value = enabled
     persist(SETTING_KEYS.autoUpdateCheck, enabled ? 'true' : 'false')
+  }
+
+  // ---------------- 布局缩放（CSS zoom 等比缩放全部界面） ----------------
+
+  /** 将当前缩放百分比应用到根元素（WebView2 Chromium 内核支持 CSS zoom） */
+  function applyFontSize(): void {
+    if (typeof document === 'undefined') return
+    document.documentElement.style.zoom = String(uiFontSize.value / 100)
+  }
+
+  /** 设置布局缩放：立即生效并持久化 */
+  function setUiFontSize(size: number): void {
+    if (!Number.isFinite(size) || size < 50 || size > 200) return
+    uiFontSize.value = Math.round(size)
+    applyFontSize()
+    persist(SETTING_KEYS.uiFontSize, String(uiFontSize.value))
   }
 
   // ---------------- 通用写回 ----------------
@@ -532,6 +559,7 @@ export const useSettingsStore = defineStore('settings', () => {
     shortcutCut,
     shortcutPaste,
     shortcutSelectAll,
+    uiFontSize,
     loaded,
     // 动作
     ensureLoaded,
@@ -542,6 +570,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setToolbarVisible,
     setTrayCloseToTray,
     setAutoUpdateCheck,
+    setUiFontSize,
     setTerminalFontSize,
     setTerminalFontFamily,
     setTerminalFontStyle,
