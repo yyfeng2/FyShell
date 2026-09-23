@@ -1300,7 +1300,7 @@ function printTableReport(name: string, colResult: MySqlQueryResult): string {
 <html lang="zh-CN"><head><meta charset="utf-8"><title>表结构 - ${esc(name)}</title>
 <style>
   body { font-family: "Microsoft YaHei", sans-serif; font-size: 12px; color: #222; margin: 24px; }
-  h1 { font-size: 16px; margin: 0 0 4px; }
+  h1 { font-size: 12px; margin: 0 0 4px; }
   .gen { color: #666; margin: 0 0 14px; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #bbb; padding: 3px 8px; text-align: left; }
@@ -3098,7 +3098,7 @@ th[title='单击选中整列'] {
 
 /* x-small chip 统一 11px（工具栏按钮档），rem 换算 8.75px 超小 */
 :deep(.v-chip--size-x-small .v-chip__content) {
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 
 </style>

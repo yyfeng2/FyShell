@@ -78,7 +78,7 @@ function typeOf(columnType: string): string {
   return sanitize(columnType.replace(/\(.*\)$/, ''))
 }
 
-mermaid.initialize({ startOnLoad: false, theme: 'neutral' })
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', fontSize: 12 })
 
 const loading = ref(false)
 const svg = ref('')
@@ -213,7 +213,14 @@ watch(
   height: auto;
 }
 
-/* 标题栏按钮继承标题 16px，统一压回主体档 14px */
+/* mermaid 实体/属性文字压回 12px（mermaid 默认 16px，initialize fontSize 对 ER 图标签不生效，
+   覆写文字节点本身压平；span.nodeLabel 为标签包装、p 为实体名与属性文字） */
+.er-model__svg :deep(.nodeLabel span),
+.er-model__svg :deep(.nodeLabel p) {
+  font-size: 12px !important;
+}
+
+/* 标题栏按钮继承标题字号，统一压回 12px */
 .er-model__header :deep(.v-btn) {
   font-size: 12px;
 }

@@ -333,6 +333,6 @@ async function deleteKey(): Promise<void> {
 
 
 :deep(.v-chip--size-x-small .v-chip__content) {
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 </style>

@@ -421,7 +421,7 @@ function onToggle(v: boolean): void {
 }
 
 .sync__count-label {
-  font-size: 11px;
+  font-size: 12px;
   color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
@@ -447,6 +447,6 @@ function onToggle(v: boolean): void {
 
 /* x-small chip 统一 11px（工具栏按钮档） */
 :deep(.v-chip--size-x-small .v-chip__content) {
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 </style>

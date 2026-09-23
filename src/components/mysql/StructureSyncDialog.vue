@@ -300,7 +300,7 @@ function onToggle(v: boolean): void {
 .structure__sql {
   margin: 2px 0 4px;
   padding: 4px 8px;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.6;
   font-family: monospace;
   white-space: pre-wrap;
@@ -312,6 +312,6 @@ function onToggle(v: boolean): void {
 
 /* x-small chip 统一 11px（工具栏按钮档） */
 :deep(.v-chip--size-x-small .v-chip__content) {
-  font-size: 11px !important;
+  font-size: 12px !important;
 }
 </style>

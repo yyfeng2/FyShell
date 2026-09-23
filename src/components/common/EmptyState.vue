@@ -82,6 +82,6 @@ const emit = defineEmits<{
   font-size: 12px;
 }
 .fy-empty--compact .fy-empty__desc {
-  font-size: 11px;
+  font-size: 12px;
 }
 </style>

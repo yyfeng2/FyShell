@@ -443,7 +443,7 @@ function cancelEditing(): void {
 }
 
 .scheme-actions__key {
-  font-size: 11px;
+  font-size: 12px;
   opacity: 0.6;
   margin-left: 1px;
 }
@@ -505,7 +505,7 @@ function cancelEditing(): void {
 }
 
 .scheme-edit__hex {
-  font-size: 11px;
+  font-size: 12px;
   font-family: var(--fy-mono);
   color: rgba(var(--v-theme-on-surface), 0.6);
   width: 62px;

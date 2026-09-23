@@ -1554,10 +1554,10 @@ ${colRows ? `<table><thead><tr><th>列定义</th></tr></thead><tbody>${colRows}<
 <html lang="zh-CN"><head><meta charset="utf-8"><title>数据库结构 - ${esc(dbName)}</title>
 <style>
   body { font-family: "Microsoft YaHei", sans-serif; font-size: 12px; color: #222; margin: 24px; }
-  h1 { font-size: 18px; margin: 0 0 4px; }
+  h1 { font-size: 12px; margin: 0 0 4px; }
   .gen { color: #666; margin: 0 0 16px; }
   section.tbl { margin-bottom: 18px; page-break-inside: avoid; }
-  h2 { font-size: 14px; margin: 0 0 4px; }
+  h2 { font-size: 12px; margin: 0 0 4px; }
   p.meta { color: #555; margin: 0 0 6px; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid #bbb; padding: 3px 8px; text-align: left; }

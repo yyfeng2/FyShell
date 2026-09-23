@@ -365,7 +365,7 @@ function onContextMenu(e: MouseEvent): void {
 }
 
 .toolbar__titled__body > span:last-child {
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.2;
 }
 
