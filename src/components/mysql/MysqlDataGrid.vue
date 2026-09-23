@@ -2787,7 +2787,11 @@ function onConnected(connLabel: string): void {
 
 /* 行高默认内容自适应（0.1em 行距下行高贴文字）：拖拽行号 gutter 下缘手动调整，
    rowHeightStyle 动态写入 --v-table-row-height（Vuetify td 自带规则读该变量，
-   scoped 直接写 td height 会被其更高特异性压过），双击手柄复位自适应 */
+   scoped 直接写 td height 会被其更高特异性压过），双击手柄复位自适应。
+   表头同款：Vuetify th 自带规则读 --v-table-header-height，覆写为 auto 贴内容 */
+.mysql-grid__result-table {
+  --v-table-header-height: auto;
+}
 
 /* SQL NULL：灰色斜体（深色主题下用主题 token 保证可读性）；1em 跟随容器 12px */
 /* SQL NULL：普通文字（2026-09-21 用户指定"最简表格模式"，灰色斜体等待殊样式已去除） */
@@ -2842,26 +2846,34 @@ function onConnected(connLabel: string): void {
   padding: 2px 6px 2px 0;
 }
 
-/* 列宽拖拽手柄：列头右缘 5px 竖条（Excel 式），拖拽调整列宽 */
+/* 列宽拖拽手柄：列头右缘 7px 竖条（Excel 式），hover 主色提示命中区 */
 .mysql-grid__col-resize {
   position: absolute;
   top: 0;
   bottom: 0;
   right: 0;
-  width: 5px;
+  width: 7px;
   cursor: col-resize;
   user-select: none;
 }
 
-/* 行高拖拽手柄：行号 gutter 下缘 5px 横条，拖拽调整全局行高 */
+.mysql-grid__col-resize:hover {
+  background: rgba(var(--v-theme-primary), 0.3);
+}
+
+/* 行高拖拽手柄：行号 gutter 下缘 7px 横条，hover 主色提示命中区 */
 .mysql-grid__row-resize {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  height: 5px;
+  height: 7px;
   cursor: row-resize;
   user-select: none;
+}
+
+.mysql-grid__row-resize:hover {
+  background: rgba(var(--v-theme-primary), 0.3);
 }
 
 /* 锁定列在选中/编辑状态下的底色与行高亮保持一致 */
