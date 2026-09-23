@@ -23,10 +23,6 @@
       </div>
       <v-divider />
 
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mx-4 mt-3">
-        {{ error }}
-      </v-alert>
-
       <!-- 结果区：mermaid 渲染的 ER 图（可缩放滚动） -->
       <div class="er-model__body">
         <div v-if="loading" class="er-model__loading">
@@ -49,6 +45,7 @@
  */
 import { ref, watch } from 'vue'
 import mermaid from 'mermaid'
+import { useUiStore } from '@/stores/ui'
 import { mysqlQuery } from '@/api/mysql'
 import { friendlyError as errText } from '@/utils/errors'
 
@@ -63,6 +60,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
 }>()
+
+const ui = useUiStore()
 
 /** SQL 字符串字面量（单引号翻倍转义） */
 function sqlStr(value: string): string {
@@ -82,14 +81,12 @@ function typeOf(columnType: string): string {
 mermaid.initialize({ startOnLoad: false, theme: 'neutral' })
 
 const loading = ref(false)
-const error = ref('')
 const svg = ref('')
 
 /** 打开时加载表结构并渲染 ER 图 */
 async function load(): Promise<void> {
   if (!props.connId || !props.dbName) return
   loading.value = true
-  error.value = ''
   try {
     // 单表模式（表右键入口）：列只取该表，外键取该表参与的直接关系
     const tableFilter = props.tableName ? ` AND TABLE_NAME = ${sqlStr(props.tableName)}` : ''
@@ -159,9 +156,7 @@ async function load(): Promise<void> {
     })
 
     if (entities.length === 0) {
-      error.value = props.tableName
-        ? '该表没有可渲染的列'
-        : '该库中没有可渲染的表'
+      ui.toast(props.tableName ? '该表没有可渲染的列' : '该库中没有可渲染的表', 'error')
       svg.value = ''
       return
     }
@@ -170,7 +165,7 @@ async function load(): Promise<void> {
     const rendered = await mermaid.render(`er-${Date.now()}`, definition)
     svg.value = rendered.svg
   } catch (e) {
-    error.value = errText(e)
+    ui.toast(errText(e), 'error')
     svg.value = ''
   } finally {
     loading.value = false

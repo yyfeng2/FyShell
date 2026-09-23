@@ -32,11 +32,6 @@
       <!-- SQL 预览 -->
       <div class="explain-panel__sql">{{ sqlPreview }}</div>
 
-      <!-- 错误提示 -->
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mx-3 mt-2">
-        {{ error }}
-      </v-alert>
-
       <!-- 结果区：rows 表格 / tree 等宽文本树 -->
       <v-card-text class="explain-panel__body">
         <!-- 表格模式：format="rows" 时渲染 columns/rows -->
@@ -78,6 +73,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { mysqlExplain, type MySqlExplainResult } from '@/api/mysqlConsole'
+import { useUiStore } from '@/stores/ui'
 import { friendlyError } from '@/utils/errors'
 import EmptyState from '@/components/common/EmptyState.vue'
 
@@ -95,10 +91,11 @@ const emit = defineEmits<{
   (e: 'update:modelValue', value: boolean): void
 }>()
 
+const ui = useUiStore()
+
 // ---------- 加载 ----------
 const result = ref<MySqlExplainResult | null>(null)
 const loading = ref(false)
-const error = ref('')
 
 /** 打开对话框时加载执行计划（analyze 默认 false） */
 watch(
@@ -112,11 +109,10 @@ async function load(analyze: boolean): Promise<void> {
   const text = props.sql.trim()
   if (!text) return
   loading.value = true
-  error.value = ''
   try {
     result.value = await mysqlExplain(props.connId, text, analyze)
   } catch (err) {
-    error.value = `执行计划获取失败: ${friendlyError(err)}`
+    ui.toast(`执行计划获取失败: ${friendlyError(err)}`, 'error')
   } finally {
     loading.value = false
   }

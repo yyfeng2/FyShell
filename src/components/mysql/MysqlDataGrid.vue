@@ -217,13 +217,8 @@
         </div>
 
         <!-- 错误 / 结果提示 -->
-        <v-alert v-if="store.queryError" type="error" variant="tonal" density="compact" closable class="mt-2">
-          {{ store.queryError }}
-        </v-alert>
-        <v-alert v-else-if="store.executeError" type="error" variant="tonal" density="compact" closable class="mt-2">
-          {{ store.executeError }}
-        </v-alert>
-        <v-alert v-else-if="store.executeMessage" type="success" variant="tonal" density="compact" closable class="mt-2">
+        <!-- 错误统一 toast 提示；执行成功保留内联展示 -->
+        <v-alert v-if="store.executeMessage" type="success" variant="tonal" density="compact" closable class="mt-2">
           {{ store.executeMessage }}
         </v-alert>
 
@@ -1035,7 +1030,7 @@ async function refreshTables(): Promise<void> {
   try {
     await store.loadTables()
   } catch {
-    // 错误已写入 store，由面板 v-alert 展示
+    // 错误已写入 store，由 toast 提示
   }
 }
 
@@ -2326,7 +2321,7 @@ async function runSelection(text: string): Promise<void> {
         const outcome = await store.executeSql(stmt)
         if (outcome.needsConfirm) return // 确认框由 store.pendingConfirm 驱动弹出
       } catch {
-        // 错误已写入 store，由 v-alert 展示
+        // 错误已写入 store，由 toast 提示
       }
     }
   }
@@ -2567,7 +2562,7 @@ async function runSql(): Promise<void> {
       const outcome = await store.executeSql(text)
       if (outcome.needsConfirm) return // 确认框由 store.pendingConfirm 驱动弹出
     } catch {
-      // 错误已写入 store，由 v-alert 展示
+      // 错误已写入 store，由 toast 提示
     }
   }
 }
@@ -2597,7 +2592,7 @@ async function runQuery(p: number, size: number, querySql?: string): Promise<voi
     // 异步解析当前表主键列（失败回退启发式，不阻塞结果渲染）
     void resolvePk(tableOfQuery(text))
   } catch {
-    // 错误已写入 store，由 v-alert 展示
+    // 错误已写入 store，由 toast 提示
   }
 }
 
@@ -2645,7 +2640,7 @@ async function doDisconnect(): Promise<void> {
   try {
     await store.disconnect()
   } catch {
-    /* 错误写入 store，由 v-alert 展示 */
+    /* 错误写入 store，由 toast 提示 */
   }
 }
 

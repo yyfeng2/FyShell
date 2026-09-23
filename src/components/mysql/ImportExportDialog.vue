@@ -172,10 +172,7 @@
               <template v-if="replace"> · REPLACE INTO</template>
             </div>
           </div>
-          <v-alert v-if="errorMsg" type="error" variant="tonal" density="compact" closable class="mt-2">
-            {{ errorMsg }}
-          </v-alert>
-          <v-alert v-else type="warning" variant="tonal" density="compact" class="mt-2">
+          <v-alert v-if="!errorMsg" type="warning" variant="tonal" density="compact" class="mt-2">
             {{ mode === 'export' ? '导出将直接覆盖目标文件。' : '导入将向目标表写入数据。' }}请确认后执行。
           </v-alert>
         </template>

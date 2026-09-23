@@ -187,12 +187,16 @@ export const useMysqlStore = defineStore('mysql', {
         try {
           await this.loadTables()
         } catch (err) {
-          this.queryError = errText(err)
+          const msg = errText(err)
+          this.queryError = msg
+          useUiStore().toast(msg, 'error')
         }
       } catch (err) {
         this.connId = null
         this.connLabel = ''
-        this.connError = errText(err)
+        const msg = errText(err)
+        this.connError = msg
+        useUiStore().toast(msg, 'error')
         throw err
       } finally {
         this.connecting = false
@@ -385,7 +389,9 @@ export const useMysqlStore = defineStore('mysql', {
         this.lastResult = result
         return result
       } catch (err) {
-        this.queryError = errText(err)
+        const msg = errText(err)
+        this.queryError = msg
+        useUiStore().toast(msg, 'error')
         throw err
       } finally {
         this.queryLoading = false
@@ -425,6 +431,7 @@ export const useMysqlStore = defineStore('mysql', {
           this.pendingConfirm = { sql }
           return { needsConfirm: true, affected: 0 }
         }
+        useUiStore().toast(msg, 'error')
         throw err
       } finally {
         this.executing = false

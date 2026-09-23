@@ -61,10 +61,6 @@
             hide-details
           />
         </div>
-        <v-alert v-if="targetError" type="error" variant="tonal" density="compact" class="mt-2">
-          {{ targetError }}
-        </v-alert>
-
         <v-divider class="my-2" />
 
         <!-- 比对按钮 -->
@@ -118,10 +114,6 @@
           选择源库与目标库后点击「比对」生成差异计划
         </div>
 
-        <!-- 执行结果 -->
-        <v-alert v-if="errorMsg" type="error" variant="tonal" density="compact" closable class="mt-2">
-          {{ errorMsg }}
-        </v-alert>
       </v-card-text>
 
       <v-divider />
@@ -170,7 +162,6 @@ const {
   targetDbs,
   targetDb,
   targetLoading,
-  targetError,
   targetItems,
   selectTarget,
   reset,
@@ -185,7 +176,6 @@ const sourceLoading = ref(false)
 // ---------- 比对计划 ----------
 const comparing = ref(false)
 const executing = ref(false)
-const errorMsg = ref('')
 const plan = ref<MySqlStructureSyncPlan | null>(null)
 
 /** 有差异的条目（same 不显示） */
@@ -196,7 +186,6 @@ watch(
   () => props.modelValue,
   (open) => {
     if (open) {
-      errorMsg.value = ''
       plan.value = null
       sourceDb.value = ''
       void loadSourceDbs()
@@ -234,7 +223,6 @@ function onSourceDbChange(db: string): void {
 /** 比对：execute=false 仅返回差异计划 */
 async function compare(): Promise<void> {
   if (!props.connId || !targetConnId.value || !targetDb.value) return
-  errorMsg.value = ''
   comparing.value = true
   try {
     plan.value = await mysqlStructureSync(props.connId, {
@@ -243,8 +231,7 @@ async function compare(): Promise<void> {
       target_db: targetDb.value,
     }, false)
   } catch (err) {
-    errorMsg.value = errText(err)
-    ui.toast(errorMsg.value, 'error')
+    ui.toast(errText(err), 'error')
   } finally {
     comparing.value = false
   }
@@ -253,7 +240,6 @@ async function compare(): Promise<void> {
 /** 执行同步（后端逐条执行计划） */
 async function doSync(): Promise<void> {
   if (!props.connId || !targetConnId.value || !targetDb.value) return
-  errorMsg.value = ''
   executing.value = true
   try {
     plan.value = await mysqlStructureSync(props.connId, {
@@ -265,8 +251,7 @@ async function doSync(): Promise<void> {
     ui.toast(`结构同步完成，共执行 ${count} 条变更`, 'success')
     emit('completed')
   } catch (err) {
-    errorMsg.value = errText(err)
-    ui.toast(errorMsg.value, 'error')
+    ui.toast(errText(err), 'error')
   } finally {
     executing.value = false
   }
@@ -274,10 +259,7 @@ async function doSync(): Promise<void> {
 
 /** 关闭对话框 */
 function close(): void {
-  if (errorMsg.value) {
-    errorMsg.value = ''
-    plan.value = null
-  }
+  plan.value = null
   emit('update:modelValue', false)
 }
 

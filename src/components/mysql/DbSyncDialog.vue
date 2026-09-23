@@ -74,10 +74,6 @@
             :loading="targetTablesLoading"
           />
         </div>
-        <v-alert v-if="targetError" type="error" variant="tonal" density="compact" class="mt-2">
-          {{ targetError }}
-        </v-alert>
-
         <v-divider class="my-2" />
 
         <!-- 比对结果 -->
@@ -168,10 +164,6 @@
           选择源表与目标表后点击「比对」查看差异
         </div>
 
-        <!-- 执行结果 -->
-        <v-alert v-if="errorMsg" type="error" variant="tonal" density="compact" closable class="mt-2">
-          {{ errorMsg }}
-        </v-alert>
       </v-card-text>
 
       <v-divider />
@@ -222,7 +214,6 @@ const {
   targetDbs,
   targetDb,
   targetLoading,
-  targetError,
   targetItems,
   selectTarget,
   reset,
@@ -249,7 +240,6 @@ const deleteExtra = ref(false)
 const updateDiff = ref(true)
 const comparing = ref(false)
 const executing = ref(false)
-const errorMsg = ref('')
 const outcome = ref<MySqlDataSyncOutcome | null>(null)
 
 /** 对话框打开：加载源表 + 复位目标连接 */
@@ -257,7 +247,6 @@ watch(
   () => props.modelValue,
   (open) => {
     if (open) {
-      errorMsg.value = ''
       outcome.value = null
       sourceTable.value = ''
       targetTable.value = ''
@@ -335,7 +324,6 @@ async function loadTargetTables(): Promise<void> {
 /** 比对：execute=false 仅返回差异与样例 */
 async function compare(): Promise<void> {
   if (!props.connId || !targetConnId.value || !targetDb.value || !targetTable.value) return
-  errorMsg.value = ''
   comparing.value = true
   try {
     outcome.value = await mysqlDataSync(props.connId, {
@@ -349,8 +337,7 @@ async function compare(): Promise<void> {
       update_diff: false,
     }, false)
   } catch (err) {
-    errorMsg.value = errText(err)
-    ui.toast(errorMsg.value, 'error')
+    ui.toast(errText(err), 'error')
   } finally {
     comparing.value = false
   }
@@ -359,7 +346,6 @@ async function compare(): Promise<void> {
 /** 执行同步（后端执行时重新比对后应用） */
 async function doSync(): Promise<void> {
   if (!props.connId || !targetConnId.value || !targetDb.value || !targetTable.value) return
-  errorMsg.value = ''
   executing.value = true
   try {
     outcome.value = await mysqlDataSync(props.connId, {
@@ -378,8 +364,7 @@ async function doSync(): Promise<void> {
     )
     emit('completed')
   } catch (err) {
-    errorMsg.value = errText(err)
-    ui.toast(errorMsg.value, 'error')
+    ui.toast(errText(err), 'error')
   } finally {
     executing.value = false
   }
@@ -387,10 +372,7 @@ async function doSync(): Promise<void> {
 
 /** 关闭对话框 */
 function close(): void {
-  if (errorMsg.value) {
-    errorMsg.value = ''
-    outcome.value = null
-  }
+  outcome.value = null
   emit('update:modelValue', false)
 }
 

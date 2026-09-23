@@ -171,10 +171,6 @@
           </div>
         </div>
 
-        <!-- 执行结果 -->
-        <v-alert v-if="errorMsg" type="error" variant="tonal" density="compact" closable class="mt-2">
-          {{ errorMsg }}
-        </v-alert>
       </v-card-text>
 
       <v-divider />

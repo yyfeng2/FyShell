@@ -10,6 +10,7 @@ import { computed, ref } from 'vue'
 import { mysqlConnect, mysqlDisconnect } from '@/api/mysql'
 import { mysqlDbList } from '@/api/mysqlDb'
 import { useMysqlStore } from '@/stores/mysql'
+import { useUiStore } from '@/stores/ui'
 
 import { friendlyError as errText } from '@/utils/errors'
 
@@ -21,6 +22,7 @@ export const TARGET_CURRENT = '__current__'
 
 export function useTargetConnection() {
   const store = useMysqlStore()
+  const ui = useUiStore()
 
   /** 目标连接下拉选中值 */
   const targetKey = ref<string>(TARGET_CURRENT)
@@ -32,8 +34,6 @@ export function useTargetConnection() {
   const targetDb = ref('')
   /** 目标连接建立/库列表加载中 */
   const targetLoading = ref(false)
-  /** 目标连接错误信息 */
-  const targetError = ref('')
 
   /** mysqlConnect 建立的独立连接 ID（dispose 时断开；当前连接直用时为 null） */
   let established: string | null = null
@@ -58,7 +58,7 @@ export function useTargetConnection() {
       const result = await mysqlDbList(targetConnId.value)
       targetDbs.value = result.databases
     } catch (err) {
-      targetError.value = errText(err)
+      ui.toast(errText(err), 'error')
     } finally {
       targetLoading.value = false
     }
@@ -66,7 +66,6 @@ export function useTargetConnection() {
 
   /** 建立目标连接并加载库列表（重复调用先清理旧连接；'__current__' 直用当前连接） */
   async function connectTarget(): Promise<void> {
-    targetError.value = ''
     targetDbs.value = []
     targetDb.value = ''
     targetConnId.value = null
@@ -77,7 +76,7 @@ export function useTargetConnection() {
     if (targetKey.value === TARGET_CURRENT) {
       // 当前连接直用（不建新连接，关闭时也不断开）
       if (!store.connId) {
-        targetError.value = '当前 MySQL 连接已断开，请重新连接'
+        ui.toast('当前 MySQL 连接已断开，请重新连接', 'error')
         return
       }
       targetConnId.value = store.connId
@@ -86,7 +85,7 @@ export function useTargetConnection() {
     }
     const saved = store.savedConnections.find((c) => c.id === targetKey.value)
     if (!saved) {
-      targetError.value = '目标连接不存在或已删除'
+      ui.toast('目标连接不存在或已删除', 'error')
       return
     }
     targetLoading.value = true
@@ -102,7 +101,7 @@ export function useTargetConnection() {
       targetConnId.value = established
       await loadTargetDbs()
     } catch (err) {
-      targetError.value = errText(err)
+      ui.toast(errText(err), 'error')
     } finally {
       targetLoading.value = false
     }
@@ -118,7 +117,6 @@ export function useTargetConnection() {
   /** 对话框打开：复位选中态为当前连接并加载 */
   function reset(): void {
     targetKey.value = TARGET_CURRENT
-    targetError.value = ''
     targetDbs.value = []
     targetDb.value = ''
     targetConnId.value = null
@@ -144,7 +142,6 @@ export function useTargetConnection() {
     targetDbs,
     targetDb,
     targetLoading,
-    targetError,
     targetItems,
     selectTarget,
     reset,

@@ -61,10 +61,6 @@
             hide-details
           />
         </div>
-        <v-alert v-if="targetError" type="error" variant="tonal" density="compact" class="mt-2">
-          {{ targetError }}
-        </v-alert>
-
         <v-divider class="my-2" />
 
         <!-- 传输内容 -->
@@ -118,9 +114,6 @@
         </div>
 
         <!-- 执行结果 -->
-        <v-alert v-if="errorMsg" type="error" variant="tonal" density="compact" closable class="mt-2">
-          {{ errorMsg }}
-        </v-alert>
         <div v-if="results.length" class="transfer__results mt-2">
           <div class="text-subtitle-2 mb-1">
             <v-icon size="small" class="mr-1">mdi-check-circle-outline</v-icon>传输完成
@@ -182,7 +175,6 @@ const {
   targetDbs,
   targetDb,
   targetLoading,
-  targetError,
   targetItems,
   selectTarget,
   reset,
@@ -201,7 +193,6 @@ watch(
   () => props.modelValue,
   (open) => {
     if (open) {
-      errorMsg.value = ''
       results.value = []
       void loadSourceDbs()
       reset()
@@ -263,13 +254,11 @@ function selectAll(): void {
 const content = ref<'both' | 'structure' | 'data'>('both')
 const recreate = ref(false)
 const executing = ref(false)
-const errorMsg = ref('')
 const results = ref<MySqlTransferTableResult[]>([])
 
 /** 执行数据传输 */
 async function doTransfer(): Promise<void> {
   if (!props.connId || !targetConnId.value || !targetDb.value) return
-  errorMsg.value = ''
   executing.value = true
   try {
     results.value = await mysqlDataTransfer(props.connId, {
@@ -285,8 +274,7 @@ async function doTransfer(): Promise<void> {
     ui.toast(`数据传输完成，共传输 ${rows} 行`, 'success')
     emit('completed')
   } catch (err) {
-    errorMsg.value = errText(err)
-    ui.toast(errorMsg.value, 'error')
+    ui.toast(errText(err), 'error')
   } finally {
     executing.value = false
   }
@@ -294,10 +282,7 @@ async function doTransfer(): Promise<void> {
 
 /** 关闭对话框 */
 function close(): void {
-  if (errorMsg.value) {
-    errorMsg.value = ''
-    results.value = []
-  }
+  results.value = []
   emit('update:modelValue', false)
 }
 

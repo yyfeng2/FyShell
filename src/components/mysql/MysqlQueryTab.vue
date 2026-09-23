@@ -92,11 +92,8 @@
       />
     </div>
 
-    <!-- 结果区（只读，多语句逐条展示） -->
+    <!-- 结果区（只读，多语句逐条展示；错误统一 toast 提示） -->
     <div class="query-tab__results">
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="ma-2">
-        {{ error }}
-      </v-alert>
       <div v-for="(res, i) in results" :key="i" class="query-tab__result">
         <div class="query-tab__result-label">
           <v-icon :icon="noteKind(res.note).icon" :color="noteKind(res.note).color" size="x-small" class="mr-1" />
@@ -414,7 +411,7 @@ async function run(text: string): Promise<void> {
       }
     }
   } catch (e) {
-    error.value = errText(e)
+    ui.toast(errText(e), 'error')
   } finally {
     running.value = false
   }

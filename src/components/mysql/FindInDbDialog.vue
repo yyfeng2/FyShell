@@ -37,10 +37,6 @@
         </v-btn>
       </div>
 
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mx-4 mt-2">
-        {{ error }}
-      </v-alert>
-
       <v-divider />
 
       <!-- 结果区：按表分组的命中行 -->
@@ -105,6 +101,7 @@
  * 每表限量），结果按表分组展示。搜索范围固定为右键的库，与连接默认库无关。
  */
 import { ref } from 'vue'
+import { useUiStore } from '@/stores/ui'
 import { mysqlDbFind } from '@/api/mysql'
 import type { MySqlDbFindHit } from '@/api/types'
 import { friendlyError as errText } from '@/utils/errors'
@@ -120,10 +117,11 @@ const emit = defineEmits<{
   (e: 'open-table', table: string): void
 }>()
 
+const ui = useUiStore()
+
 const maxPerTable = 20
 const keyword = ref<string>('')
 const loading = ref(false)
-const error = ref('')
 const hits = ref<MySqlDbFindHit[]>([])
 const searched = ref(false)
 
@@ -131,12 +129,11 @@ async function doFind(): Promise<void> {
   const kw = keyword.value?.trim()
   if (!props.connId || !props.dbName || !kw) return
   loading.value = true
-  error.value = ''
   try {
     hits.value = await mysqlDbFind(props.connId, props.dbName, kw, maxPerTable)
     searched.value = true
   } catch (e) {
-    error.value = errText(e)
+    ui.toast(errText(e), 'error')
   } finally {
     loading.value = false
   }

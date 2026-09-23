@@ -12,10 +12,6 @@
       </div>
       <v-divider />
 
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mx-4 mt-3">
-        {{ error }}
-      </v-alert>
-
       <!-- 常规分区（Navicat 同款：数据库名称/字符集/排序规则） -->
       <div class="new-db__body">
         <div class="new-db__tab">常规</div>
@@ -100,7 +96,6 @@ function sqlStr(value: string): string {
 }
 
 const saving = ref(false)
-const error = ref('')
 const name = ref('')
 const charset = ref('')
 const collation = ref('')
@@ -132,7 +127,6 @@ async function onCharsetChange(): Promise<void> {
 /** 打开时加载服务器默认字符集/排序规则与候选列表 */
 async function load(): Promise<void> {
   if (!props.connId) return
-  error.value = ''
   name.value = ''
   try {
     const csList: string[] = []
@@ -166,7 +160,7 @@ async function load(): Promise<void> {
       ? serverCollation
       : (collationItems.value[0] ?? '')
   } catch (e) {
-    error.value = errText(e)
+    ui.toast(errText(e), 'error')
   }
 }
 
@@ -174,14 +168,13 @@ async function save(): Promise<void> {
   const dbName = name.value?.trim()
   if (!props.connId || !dbName) return
   saving.value = true
-  error.value = ''
   try {
     await mysqlDbCreate(props.connId, dbName, charset.value, collation.value || undefined)
     ui.toast(`数据库「${dbName}」已创建`, 'success')
     emit('saved')
     emit('update:modelValue', false)
   } catch (e) {
-    error.value = errText(e)
+    ui.toast(errText(e), 'error')
   } finally {
     saving.value = false
   }

@@ -71,17 +71,6 @@
           </v-row>
         </v-form>
 
-        <!-- 连接错误提示 -->
-        <v-alert
-          v-if="lastError"
-          type="error"
-          variant="tonal"
-          density="compact"
-          class="mt-2"
-          closable
-        >
-          {{ lastError }}
-        </v-alert>
       </v-card-text>
       <v-divider />
       <v-card-actions>
@@ -96,7 +85,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { useMysqlStore } from '@/stores/mysql'
 
 const props = defineProps<{
@@ -128,16 +117,6 @@ const schema = ref<string | null>(null)
 
 const showPassword = ref(false)
 const connecting = ref(false)
-const lastError = ref('')
-
-watch(
-  () => props.modelValue,
-  (open) => {
-    if (open) {
-      lastError.value = ''
-    }
-  }
-)
 
 /** 组装契约的 MySqlConnection（schema 为 null = 不选）并建立连接 */
 async function submit(): Promise<void> {
@@ -157,8 +136,7 @@ async function submit(): Promise<void> {
     emit('connected', store.connLabel)
     emit('update:modelValue', false)
   } catch {
-    // 连接错误已写入 store.connError，取最新值展示
-    lastError.value = store.connError
+    // 连接错误已在 store.connect 内 toast 提示
   } finally {
     connecting.value = false
   }

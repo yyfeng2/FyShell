@@ -109,17 +109,6 @@
         <div class="text-caption text-medium-emphasis mt-1">
           选择已有连接进入对象工作台，或新建连接
         </div>
-        <v-alert
-          v-if="store.connError"
-          type="error"
-          variant="tonal"
-          density="compact"
-          closable
-          class="mt-3"
-          max-width="420"
-        >
-          {{ store.connError }}
-        </v-alert>
         <v-list density="compact" class="mysql-ws__connect-list mt-2">
           <v-list-item
             v-for="c in store.savedConnections"
@@ -298,12 +287,6 @@
             删除
           </v-btn>
         </div>
-        <v-alert v-if="objectError" type="error" variant="tonal" density="compact" closable class="mb-2">
-          {{ objectError }}
-        </v-alert>
-        <v-alert v-else-if="ddlError" type="error" variant="tonal" density="compact" closable class="mb-2">
-          {{ ddlError }}
-        </v-alert>
         <div class="mysql-ws__ddl">
           <div v-if="ddlLoading" class="text-caption text-medium-emphasis pa-2">加载 DDL 中…</div>
           <div v-else-if="ddl" class="mysql-ws__ddl-text">{{ ddl }}</div>
@@ -409,9 +392,6 @@
             删除
           </v-btn>
         </div>
-        <v-alert v-if="userError" type="error" variant="tonal" density="compact" closable class="mb-2">
-          {{ userError }}
-        </v-alert>
         <div class="mysql-ws__ddl">
           <div v-if="grantsLoading" class="text-caption text-medium-emphasis pa-2">加载权限中…</div>
           <template v-else-if="selectedUser">
@@ -455,9 +435,6 @@
           刷新
         </v-btn>
       </div>
-      <v-alert v-if="modelError" type="error" variant="tonal" density="compact" closable>
-        {{ modelError }}
-      </v-alert>
       <div class="mysql-ws__model-canvas-wrap">
         <div
           v-if="modelCards.length"
@@ -827,12 +804,10 @@ const kindColor = computed(() => (currentKind.value ? KIND_COLORS[currentKind.va
 
 const objects = ref<MySqlObjectInfo[]>([])
 const objectsLoading = ref(false)
-const objectError = ref('')
 const objectFilter = ref<string | null>(null)
 const selectedObject = ref('')
 const ddl = ref('')
 const ddlLoading = ref(false)
-const ddlError = ref('')
 
 /** 已加载过的对象类型（避免重复拉取；保存/删除后失效） */
 const loadedKinds = ref(new Set<MySqlObjectKind>())
@@ -868,14 +843,13 @@ async function refreshObjects(): Promise<void> {
   const connId = store.connId
   if (!kind || !connId) return
   objectsLoading.value = true
-  objectError.value = ''
   try {
     const list = await mysqlObjectList(connId, kind)
     objectsCache.set(kind, list)
     objects.value = list
     loadedKinds.value.add(kind)
   } catch (err) {
-    objectError.value = errText(err)
+    ui.toast(errText(err), 'error')
   } finally {
     objectsLoading.value = false
   }
@@ -893,7 +867,6 @@ watch(currentKind, (kind) => {
   objects.value = []
   selectedObject.value = ''
   ddl.value = ''
-  ddlError.value = ''
   if (store.connId) void refreshObjects()
 })
 
@@ -907,14 +880,13 @@ async function selectObject(name: string): Promise<void> {
   const kind = currentKind.value
   if (!connId || !kind) return
   ddlLoading.value = true
-  ddlError.value = ''
   try {
     const result = await mysqlObjectDdl(connId, kind, name)
     if (seq !== ddlSeq) return // 已被更新的选择覆盖，丢弃过期结果
     ddl.value = result.sql
   } catch (err) {
     if (seq !== ddlSeq) return
-    ddlError.value = errText(err)
+    ui.toast(errText(err), 'error')
     ddl.value = ''
   } finally {
     if (seq === ddlSeq) ddlLoading.value = false
@@ -1008,7 +980,6 @@ async function deleteObject(): Promise<void> {
 // ---------- 用户管理 ----------
 const users = ref<MySqlUserInfo[]>([])
 const usersLoading = ref(false)
-const userError = ref('')
 const userFilter = ref<string | null>(null)
 const selectedUser = ref<{ user: string; host: string } | null>(null)
 const usersLoaded = ref(false)
@@ -1026,13 +997,12 @@ async function refreshUsers(): Promise<void> {
   const connId = store.connId
   if (!connId) return
   usersLoading.value = true
-  userError.value = ''
   try {
     users.value = await mysqlUserList(connId)
     usersLoaded.value = true
   } catch (err) {
     // 权限不足等后端错误直接展示
-    userError.value = errText(err)
+    ui.toast(errText(err), 'error')
   } finally {
     usersLoading.value = false
   }
@@ -1148,7 +1118,6 @@ const MODEL_COLS = 4
 const modelCards = ref<ModelCard[]>([])
 const modelRels = ref<FkRelation[]>([])
 const modelLoading = ref(false)
-const modelError = ref('')
 
 const canvasWidth = computed(
   () => MODEL_PAD * 2 + MODEL_COLS * MODEL_CARD_W + (MODEL_COLS - 1) * MODEL_GAP_X,
@@ -1167,7 +1136,6 @@ async function refreshModel(): Promise<void> {
   const connId = store.connId
   if (!connId) return
   modelLoading.value = true
-  modelError.value = ''
   try {
     const tables = store.tables
     const designs = await Promise.all(
@@ -1203,7 +1171,7 @@ async function refreshModel(): Promise<void> {
     modelRels.value = rels.filter((r) => names.has(r.to))
     modelCards.value = cards
   } catch (err) {
-    modelError.value = errText(err)
+    ui.toast(errText(err), 'error')
   } finally {
     modelLoading.value = false
   }
@@ -1432,11 +1400,9 @@ watch(
     loadedKinds.value = new Set()
     objectsCache.clear()
     objects.value = []
-    objectError.value = ''
     selectedObject.value = ''
     ddl.value = ''
     users.value = []
-    userError.value = ''
     selectedUser.value = null
     grants.value = []
     usersLoaded.value = false

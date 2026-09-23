@@ -12,10 +12,6 @@
       </div>
       <v-divider />
 
-      <v-alert v-if="error" type="error" variant="tonal" density="compact" class="mx-4 mt-3">
-        {{ error }}
-      </v-alert>
-
       <!-- 加载中 -->
       <div v-if="loading" class="edit-db__loading">
         <v-progress-circular indeterminate size="small" />
@@ -92,7 +88,6 @@ function sqlStr(value: string): string {
 
 const loading = ref(false)
 const saving = ref(false)
-const error = ref('')
 const charset = ref('')
 const collation = ref('')
 const charsetItems = ref<string[]>([])
@@ -116,7 +111,6 @@ async function queryFirst(
 async function load(): Promise<void> {
   if (!props.connId || !props.dbName) return
   loading.value = true
-  error.value = ''
   try {
     const cur = await queryFirst(
       `SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ${sqlStr(props.dbName)}`,
@@ -136,7 +130,7 @@ async function load(): Promise<void> {
     collationItems.value = await loadCollations(charset.value)
     collation.value = cur?.DEFAULT_COLLATION_NAME ?? collationItems.value[0] ?? ''
   } catch (e) {
-    error.value = errText(e)
+    ui.toast(errText(e), 'error')
   } finally {
     loading.value = false
   }
@@ -167,14 +161,13 @@ async function onCharsetChange(): Promise<void> {
 async function save(): Promise<void> {
   if (!props.connId || !props.dbName) return
   saving.value = true
-  error.value = ''
   try {
     await mysqlDbEdit(props.connId, props.dbName, charset.value, collation.value || undefined)
     ui.toast(`已修改数据库「${props.dbName}」默认字符集为 ${charset.value}`, 'success')
     emit('saved')
     emit('update:modelValue', false)
   } catch (e) {
-    error.value = errText(e)
+    ui.toast(errText(e), 'error')
   } finally {
     saving.value = false
   }
