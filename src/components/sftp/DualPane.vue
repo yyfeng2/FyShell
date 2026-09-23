@@ -25,6 +25,7 @@
         ref="remotePane"
         side="remote"
         :session-id="sessionId"
+        :disabled="!sessionId"
         :path="remotePath"
         @update:path="setRemotePath"
         @transfer-request="(entries) => handleTransfer(entries, 'remote')"
