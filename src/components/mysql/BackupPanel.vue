@@ -42,8 +42,6 @@
                 chips
                 closable-chips
                 clearable
-                hint="不选 = 备份全库所有表"
-                persistent-hint
               >
                 <template #no-data>
                   <div class="px-4 py-2 text-body-2 text-medium-emphasis">

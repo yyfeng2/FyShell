@@ -1,9 +1,8 @@
 <template>
   <div class="mysql-cli" @click="focusInput">
-    <!-- 顶部状态条：当前库 + 共享连接提示 -->
+    <!-- 顶部状态条：当前库 -->
     <div class="mysql-cli__bar">
       <span>当前库：{{ currentDb ?? '（未选择）' }}</span>
-      <span class="mysql-cli__hint">命令列界面与工作台共享连接，use 切库全局生效</span>
     </div>
     <!-- 输出区（深色控制台） -->
     <div ref="outputEl" class="mysql-cli__out">
@@ -270,10 +269,6 @@ watch(
   font-size: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex: none;
-}
-
-.mysql-cli__hint {
-  color: #8a8a8a;
 }
 
 /* 输出区 */

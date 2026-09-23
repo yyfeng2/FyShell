@@ -52,7 +52,6 @@
               rows="3"
               auto-grow
               variant="outlined"
-              hint="仅支持 SELECT 语句"
             />
           </div>
           <v-radio-group v-model="exportFormat" label="导出格式" density="compact" hide-details class="mt-2">
@@ -124,8 +123,6 @@
               v-model="importTable"
               density="compact"
               single-line
-              :hint="importFormat === 'csv' ? 'CSV 格式必填' : 'SQL 格式的语句自带表名，此字段仅作展示'"
-              :persistent-hint="importFormat === 'csv'"
             />
           </div>
           <v-radio-group v-model="importFormat" label="文件格式" density="compact" class="mt-2">

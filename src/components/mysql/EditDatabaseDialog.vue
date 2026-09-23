@@ -48,9 +48,6 @@
             class="edit-db__select"
           />
         </div>
-        <div class="text-caption text-medium-emphasis mt-2">
-          修改的是库默认字符集/排序规则（ALTER DATABASE），仅影响新建表，已有表不受影响。
-        </div>
       </div>
 
       <v-divider />

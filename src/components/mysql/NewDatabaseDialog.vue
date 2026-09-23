@@ -57,9 +57,6 @@
             class="new-db__select"
           />
         </div>
-        <div class="text-caption text-medium-emphasis mt-2">
-          字符集/排序规则作为库默认值，不指定时使用服务器默认设置。
-        </div>
       </div>
 
       <v-divider />
