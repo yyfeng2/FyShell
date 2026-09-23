@@ -561,3 +561,27 @@ body {
 .text-subtitle-2 {
   font-family: var(--fy-font);
 }
+
+/* ---------- v-switch 选中态颜色 ---------- */
+
+/* 根因：Vuetify 3 的 v-switch 默认轨道恒为浅灰 60% 透明 + 白色圆点，选中与否
+   仅圆点位移、无颜色变化（VSwitch.css: .v-switch__track background surface-variant
+   + opacity 0.6），浅色背景上选中状态无法看清。覆盖为选中后轨道 primary 半透明 +
+   圆点 primary 实色（MD3 风格，与 v-checkbox/v-radio 选中色一致）。 */
+.v-application .v-switch .v-selection-control--dirty .v-switch__track {
+  background-color: rgb(var(--v-theme-primary));
+}
+
+.v-application .v-switch .v-selection-control--dirty .v-switch__thumb {
+  background-color: rgb(var(--v-theme-primary));
+  color: rgb(var(--v-theme-on-primary));
+}
+
+/* ---------- v-checkbox/v-radio 选中态颜色 ---------- */
+
+/* 根因：Vuetify 3 的 v-checkbox/v-radio 选中态 icon 未应用 primary 色（默认高强调
+   黑 rgba(0,0,0,.87)），黑色勾选方块与未选空心框对比弱、深色主题下不可见。
+   覆盖为 primary 实色（与 v-switch 选中色一致）。 */
+.v-application .v-selection-control--dirty .v-selection-control__input .v-icon {
+  color: rgb(var(--v-theme-primary));
+}
