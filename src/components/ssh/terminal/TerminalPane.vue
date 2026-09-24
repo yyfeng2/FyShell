@@ -97,6 +97,23 @@ watch(
   },
 )
 
+// 连接完成补齐首次尺寸同步：onMounted 的首次 fit() 常发生在 connecting 阶段，
+// 被 store 的 resizeTerminal 吞掉（未 connected 直接 return），PTY 会永久停在
+// request_pty 默认 80x24 而 xterm 是实际宽度——列数错位正是长命令行覆盖/折行错乱的根因。
+watch(
+  () => terminalStore.sessionStatus[props.sessionId],
+  (status) => {
+    if (status === 'connected') xterm.fit()
+  },
+)
+// 窗格复用到「已连接」会话时（status 值可能不变不触发上一 watch）也补一次尺寸
+watch(
+  () => props.sessionId,
+  (id) => {
+    if (terminalStore.isConnected(id)) xterm.fit()
+  },
+)
+
 onBeforeUnmount(() => {
   // 组件卸载时清理所有监听与写入器（会话生命周期由 store 管理）
   unbindWriter?.()

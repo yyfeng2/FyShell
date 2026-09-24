@@ -71,9 +71,16 @@ pub struct SshSessionHandle {
     /// russh 连接句柄（发送全局消息：disconnect、打开新 channel 等）
     handle: Arc<russh::client::Handle<SshClientHandler>>,
 
-    /// 键盘输入 / resize 消息队列，由独立写转发任务消费（同步接口下避免阻塞）。
-    /// 有界缓冲（WRITE_CHANNEL_CAPACITY）：满时丢弃并告警，禁止无界增长。
+    /// 键盘输入消息队列，由独立写转发任务消费（同步接口下避免阻塞）。
+    /// 有界缓冲（WRITE_CHANNEL_CAPACITY）：满时丢弃并告警，禁止无界增长——
+    /// 键盘输入可丢（下一批自适应），但尺寸变更不可走此通道（见 resize_tx）。
     write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>,
+
+    /// 终端尺寸变更专用通道（独立无界）：尺寸消息「最新才有效、量级极低（拖窗口
+    /// 经前端 50ms 防抖，每事件至多一条）」，且**绝对不可丢弃**——一旦被键盘输入
+    /// 积压挤掉，PTY 列数将永久与 xterm 实际宽度错位，长命令行折行/覆盖（用户
+    /// 实测 bug）再也无法自愈直到下次尺寸变化。无界在此安全，不会像键盘一样高频冲刷。
+    resize_tx: tokio::sync::mpsc::UnboundedSender<SshWriteMsg>,
 }
 
 /// 写转发任务的消息：键盘输入或终端 resize
@@ -123,8 +130,9 @@ impl SshSessionHandle {
             .map_err(|e| AppError::Ssh(format!("开通 direct-tcpip 通道失败: {e}")))
     }
 
-    /// 发送写转发消息（内部使用）。同步接口无法 async 等待，通道满时丢弃并告警，
-    /// 保证不会无界积压；通道关闭（会话断开）才返回错误。
+    /// 发送键盘输入消息（内部使用）。同步接口无法 async 等待，通道满时丢弃并告警，
+    /// 保证不会无界积压；通道关闭（会话断开）才返回错误。尺寸变更请走 `send_resize`
+    /// （专用无界通道，避免被键盘输入背压挤掉）。
     fn send_msg(&self, msg: SshWriteMsg) -> Result<(), AppError> {
         match self.write_tx.try_send(msg) {
             Ok(()) => Ok(()),
@@ -137,6 +145,14 @@ impl SshSessionHandle {
                 Ok(())
             }
         }
+    }
+
+    /// 发送终端尺寸变更：走独立无界通道，绝对不因键盘输入积压而丢弃
+    /// （丢弃会导致 PTY 列数与 xterm 实际宽度永久错位）。仅会话关闭时失败。
+    fn send_resize(&self, cols: u32, rows: u32) -> Result<(), AppError> {
+        self.resize_tx
+            .send(SshWriteMsg::Resize { cols, rows })
+            .map_err(|_| AppError::Ssh("会话已关闭，无法调整尺寸".into()))
     }
 }
 
@@ -503,21 +519,40 @@ fn zmodem_pipe_tx(app: &AppHandle, key: &str) -> Option<std::sync::mpsc::Sender<
         .and_then(|guard| guard.get(key).map(|entry| entry.pipe_tx.clone()))
 }
 
-/// 写转发任务：消费键盘输入 / resize 消息队列，转发到 russh channel
+/// 写转发任务：分别消费键盘输入（有界，满则丢）与终端尺寸变更（独立无界，必达）
+/// 消息队列，转发到 russh channel。
+/// 「最新才有效」的尺寸消息不可被键盘背压挤出（一旦挤掉 PTY 尺寸错位无法自愈），
+/// 故用 tokio::select! 双通道并发 poll；两通道均关闭（会话句柄 drop 断开）才退出。
 async fn write_forward(
     mut rx: tokio::sync::mpsc::Receiver<SshWriteMsg>,
+    mut resize_rx: tokio::sync::mpsc::UnboundedReceiver<SshWriteMsg>,
     half: russh::ChannelWriteHalf<russh::client::Msg>,
 ) {
-    while let Some(msg) = rx.recv().await {
-        match msg {
-            SshWriteMsg::Data(data) => {
-                // &[u8] 实现 AsyncRead；russh 内部按窗口/包大小分片
-                if half.data(&data[..]).await.is_err() {
-                    break;
+    let mut data_open = true;
+    let mut resize_open = true;
+    while data_open || resize_open {
+        tokio::select! {
+            msg = rx.recv(), if data_open => {
+                match msg {
+                    Some(SshWriteMsg::Data(data)) => {
+                        // &[u8] 实现 AsyncRead；russh 内部按窗口/包大小分片
+                        if half.data(&data[..]).await.is_err() {
+                            break;
+                        }
+                    }
+                    Some(SshWriteMsg::Resize { cols, rows }) => {
+                        let _ = half.window_change(cols, rows, 0, 0).await;
+                    }
+                    None => data_open = false,
                 }
             }
-            SshWriteMsg::Resize { cols, rows } => {
-                let _ = half.window_change(cols, rows, 0, 0).await;
+            resize = resize_rx.recv(), if resize_open => {
+                match resize {
+                    Some(SshWriteMsg::Resize { cols, rows }) => {
+                        let _ = half.window_change(cols, rows, 0, 0).await;
+                    }
+                    _ => resize_open = false,
+                }
             }
         }
     }
@@ -689,9 +724,11 @@ async fn connect_impl(
     // 日志键用稳定会话 id（非 per-tab 路由键 key）：同一会话多标签/重连共享一份
     // 落盘，关闭重开标签不产生孤儿日志目录（LogViewer 亦按会话 id 查询）。
     let (read_half, write_half) = channel.split();
-    // 有界写通道：下游写入积压（SSH 窗口暂停等）时满则丢批告警，禁止无界增长
+    // 有界写通道：下游写入积压（SSH 窗口暂停等）时满则丢批告警，禁止无界增长。
+    // 仅承载键盘输入；尺寸变更走后独立无界通道 resize_rx（不可丢，见 send_resize）。
     let (write_tx, write_rx) = tokio::sync::mpsc::channel(WRITE_CHANNEL_CAPACITY);
-    tauri::async_runtime::spawn(write_forward(write_rx, write_half));
+    let (resize_tx, resize_rx) = tokio::sync::mpsc::unbounded_channel();
+    tauri::async_runtime::spawn(write_forward(write_rx, resize_rx, write_half));
     tauri::async_runtime::spawn(read_loop(
         cfg.id.clone(),
         key.to_string(),
@@ -724,6 +761,7 @@ async fn connect_impl(
         SshSessionHandle {
             handle: handle.clone(),
             write_tx,
+            resize_tx,
         },
     );
 
@@ -838,10 +876,12 @@ pub fn write(state: &AppState, id: &str, data: &[u8]) -> Result<(), AppError> {
 }
 
 /// 终端尺寸变更（按会话 ID 路由 resize）
+/// 走专用无界通道（send_resize）：键盘输入积压不影响尺寸消息送达，
+/// 保证 xterm 宽度变更必然同步到远端 PTY（长命令行折行/覆盖的根因修复）。
 pub fn resize(state: &AppState, id: &str, cols: u32, rows: u32) -> Result<(), AppError> {
     let sessions = state.ssh_sessions.lock().map_err(lock_err)?;
     let handle = sessions
         .get(id)
         .ok_or_else(|| AppError::Ssh(format!("会话 {id} 不存在或已断开")))?;
-    handle.send_msg(SshWriteMsg::Resize { cols, rows })
+    handle.send_resize(cols, rows)
 }
