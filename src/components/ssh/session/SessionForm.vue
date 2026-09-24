@@ -347,6 +347,8 @@ const props = defineProps<{
   folderOptions?: { value: string; title: string }[]
   /** 新建会话时预设的主机（快速连接地址栏预填） */
   presetHost?: string
+  /** 新建会话时预设的会话类型（如 SFTP 独立会话入口；未指定缺省 SSH） */
+  defaultType?: 'ssh' | 'sftp'
   /** 保存入口覆盖（编辑已保存连接等非会话场景）：提供时替代 session store 落盘 */
   saveHandler?: (cfg: SessionConfigWithProfile) => Promise<SessionConfig>
 }>()
@@ -562,7 +564,7 @@ function initForm(): void {
     name.value = ''
     host.value = props.presetHost ?? ''
     port.value = 22
-    sessionKind.value = 'ssh'
+    sessionKind.value = props.defaultType ?? 'ssh'
     // 默认留空避免无脑 root（placeholder 提示输入格式，必填校验拦截空值）
     username.value = ''
     authType.value = 'password'
@@ -656,6 +658,11 @@ function onColorChange(value: string | Record<string, number>) {
 }
 
 async function runTest(): Promise<void> {
+  // 与 submit 同源的必填/范围校验：空用户名/坏端口直接提示，不发无效连接
+  if (formRef.value) {
+    const { valid } = await formRef.value.validate()
+    if (!valid) return
+  }
   // 数据库会话：mysql_connect 建连后立即断开作为测试
   if (sessionKind.value === 'mysql') {
     testing.value = true
