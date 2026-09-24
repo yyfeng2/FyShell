@@ -193,13 +193,27 @@ fn read_loop(
     }
 }
 
-/// 写转发线程：消费键盘输入队列，写入 TCP 流
+/// 写转发线程：消费键盘输入队列，写入 TCP 流。
+/// RFC 854：数据字节 0xFF(IAC) 必须按 0xFF 0xFF 转义发送（裸 0xFF 会被对端当作
+/// IAC 命令起始解析而错乱），与读侧状态机 IAC IAC → 字面 0xFF 的还原对称。
 fn write_forward(
     mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
     mut stream: TcpStream,
 ) {
     while let Some(data) = rx.blocking_recv() {
-        if stream.write_all(&data).is_err() {
+        // 有含 0xFF 的输入才逐个转义；常规输入直接透传避免分配
+        if data.contains(&IAC) {
+            let mut escaped = Vec::with_capacity(data.len() + data.iter().filter(|&&b| b == IAC).count());
+            for &b in &data {
+                escaped.push(b);
+                if b == IAC {
+                    escaped.push(IAC);
+                }
+            }
+            if stream.write_all(&escaped).is_err() {
+                break;
+            }
+        } else if stream.write_all(&data).is_err() {
             break;
         }
     }

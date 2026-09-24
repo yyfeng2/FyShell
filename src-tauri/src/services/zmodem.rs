@@ -45,6 +45,20 @@ const PROGRESS_INTERVAL: Duration = Duration::from_millis(100);
 /// 中止序列：连续 8 个 CAN（0x18），lrzsz 视为放弃传输
 const CAN_ABORT: [u8; 8] = [0x18; 8];
 
+/// leftover 容量上限：状态机无法消费的控制字节（数据流掺入非预期字节、帧损坏等）
+/// 持续累积时的内存上限，超限丢弃最老字节（协议重发机制会重新对齐）
+const LEFTOVER_MAX: usize = 64 * 1024;
+
+/// 限制 leftover 容量：超出上限丢弃最老字节并告警，防止无界增长导致内存膨胀。
+/// 丢弃方向取最老（先入）字节——状态机始终在头部找帧同步，尾部待消费数据保留。
+fn cap_leftover(leftover: &mut Vec<u8>) {
+    let overflow = leftover.len().saturating_sub(LEFTOVER_MAX);
+    if overflow > 0 {
+        eprintln!("[zmodem] leftover 超限：丢弃最老 {overflow} 字节（协议重发对齐）");
+        leftover.drain(..overflow);
+    }
+}
+
 /// 前端选择（方向识别失败时的三选手选）
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub enum ZmodemChoice {
@@ -99,7 +113,7 @@ pub fn start(
     state: &AppState,
     key: &str,
     initial: Vec<u8>,
-    write_tx: tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
+    write_tx: tokio::sync::mpsc::Sender<crate::services::ssh::SshWriteMsg>,
 ) {
     let (pipe_tx, pipe_rx) = std::sync::mpsc::channel::<Vec<u8>>();
     // 哨兵起的字节（含 ZRQINIT 帧）作为任务的首批输入
@@ -178,7 +192,7 @@ fn run(
     key: String,
     pipe_rx: std::sync::mpsc::Receiver<Vec<u8>>,
     respond_rx: std::sync::mpsc::Receiver<ZmodemChoice>,
-    write_tx: tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
+    write_tx: tokio::sync::mpsc::Sender<crate::services::ssh::SshWriteMsg>,
 ) {
     // 方向识别：哨兵后首帧类型区分对端 rz/sz；识别期间截留的字节稍后喂状态机
     let mut prelude = Vec::new();
@@ -246,7 +260,7 @@ fn run_recv(
     app: &AppHandle,
     key: &str,
     pipe_rx: &std::sync::mpsc::Receiver<Vec<u8>>,
-    write_tx: &tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
+    write_tx: &tokio::sync::mpsc::Sender<crate::services::ssh::SshWriteMsg>,
     dir: &str,
     prelude: Vec<u8>,
 ) -> Result<(), String> {
@@ -273,14 +287,16 @@ fn run_recv(
     // 待后续管道数据合并（submit_wire 提前 break 会丢弃同批输入中完整帧
     // 之后的字节）
     let mut prelude = prelude;
-    // prelude 帧损坏（CRC 错误）可恢复：对端重试机制会重发握手帧，丢弃本批
-    // 继续等待重发即可；其余错误终止传输
+    // prelude 帧损坏（CRC 错误）可恢复：对端重试机制会重发握手帧。不整批丢弃，
+    // 原样保留为 leftover（consumed=0）让重发内容与之对齐——整批丢弃会因对端已
+    // 进入重传而缺帧；其余错误终止传输
     let consumed = match receiver.submit_wire(&prelude) {
         Ok(n) => n,
-        Err(e) if is_crc_error(&e) => prelude.len(),
+        Err(e) if is_crc_error(&e) => 0,
         Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
     };
     let mut leftover = prelude.split_off(consumed);
+    cap_leftover(&mut leftover);
     let dir_path = PathBuf::from(dir);
     let mut file: Option<std::fs::File> = None;
     let mut file_name = String::new();
@@ -354,12 +370,16 @@ fn run_recv(
         // 未消费残余优先喂入（outgoing 已排空；1 字节进展即继续）——完整帧
         // 滞留残余会让对端等待响应自旋
         if !leftover.is_empty() {
-            let consumed = receiver
-                .submit_wire(&leftover)
-                .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
-            if consumed > 0 {
-                leftover.drain(..consumed);
-                continue;
+            match receiver.submit_wire(&leftover) {
+                Ok(consumed) if consumed > 0 => {
+                    leftover.drain(..consumed);
+                    cap_leftover(&mut leftover);
+                    continue;
+                }
+                Ok(_) => {}
+                // CRC 损坏可恢复：保留 leftover 等对端重发对齐（状态机已排队 NAK/ZRPOS）
+                Err(e) if is_crc_error(&e) => {}
+                Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
             }
         }
 
@@ -370,14 +390,18 @@ fn run_recv(
                 let mut buf = std::mem::take(&mut leftover);
                 buf.extend_from_slice(&data);
                 match receiver.submit_wire(&buf) {
-                    Ok(consumed) => {
-                        if consumed < buf.len() {
-                            leftover = buf.split_off(consumed);
-                        }
+                    Ok(consumed) if consumed < buf.len() => {
+                        leftover = buf.split_off(consumed);
+                        cap_leftover(&mut leftover);
                     }
-                    // CRC 损坏可恢复：状态机已排队 NAK（或对端重试机制会重发
-                    // 损坏帧），本批输入已耗尽，继续等待重发即可
-                    Err(e) if is_crc_error(&e) => {}
+                    Ok(_) => {}
+                    // CRC 损坏可恢复：状态机已排队 NAK/ZRPOS（对端从最后好偏移重传）。
+                    // 保留本批数据供重发对齐，不整批丢弃——丢弃会把对端重传的帧头
+                    // 一起丢掉导致缺帧；容量由 cap_leftover 兜底
+                    Err(e) if is_crc_error(&e) => {
+                        leftover = buf;
+                        cap_leftover(&mut leftover);
+                    }
                     Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
                 }
             }
@@ -398,7 +422,7 @@ fn run_send(
     app: &AppHandle,
     key: &str,
     pipe_rx: &std::sync::mpsc::Receiver<Vec<u8>>,
-    write_tx: &tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
+    write_tx: &tokio::sync::mpsc::Sender<crate::services::ssh::SshWriteMsg>,
     path: &str,
     prelude: Vec<u8>,
 ) -> Result<(), String> {
@@ -444,14 +468,20 @@ fn run_send(
     // 未消费的残余保留待后续管道数据合并（submit_wire 提前 break 会丢弃
     // 同批输入中完整帧之后的字节）
     let mut prelude = prelude;
-    // prelude 帧损坏（CRC 错误）可恢复：对端重试机制会重发握手帧，丢弃本批
-    // 继续等待重发即可；其余错误终止传输
+    // 发送方向命中坏帧（CRC 错误）整批丢弃、不入 leftover 滞留：zmodem2 发送侧
+    // submit_wire 对坏帧只 queue_nak + 返回 Err（无 enter_resync，接收侧才有），
+    // 若把坏帧留在 leftover 前部，对端随后重发的合法帧永远排在坏帧之后、每次
+    // submit 先命中坏帧 Err 提前返回 → 合法重传帧长期不可达。丢弃后由本状态机
+    // 已排队的 NAK / 对端超时重发恢复对齐（发送侧帧多为对端短响应控制帧，整批
+    // 丢弃无损于本地待发文件数据）；接收侧才需保留数据供对齐重传。其余错误终止传输
     let consumed = match sender.submit_wire(&prelude) {
         Ok(n) => n,
+        // 丢弃整批：split_off(prelude.len()) 后 leftover 为空（不滞留坏帧）
         Err(e) if is_crc_error(&e) => prelude.len(),
         Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
     };
     let mut leftover = prelude.split_off(consumed);
+    cap_leftover(&mut leftover);
 
     let mut transferred: u64 = 0;
     let mut last_emit = Instant::now();
@@ -530,12 +560,17 @@ fn run_send(
         // 未消费残余优先喂入（outgoing 已排空；1 字节进展即继续）——完整帧
         // 滞留残余会让对端等待响应自旋
         if !leftover.is_empty() {
-            let consumed = sender
-                .submit_wire(&leftover)
-                .map_err(|e| format!("ZMODEM 协议错误: {e}"))?;
-            if consumed > 0 {
-                leftover.drain(..consumed);
-                continue;
+            match sender.submit_wire(&leftover) {
+                Ok(consumed) if consumed > 0 => {
+                    leftover.drain(..consumed);
+                    cap_leftover(&mut leftover);
+                    continue;
+                }
+                Ok(_) => {}
+                // 发送方向坏帧整批丢弃、不入 leftover 滞留（原因见下方管道喂入注释）：
+                // 状态机已排队 NAK，对端重传恢复对齐
+                Err(e) if is_crc_error(&e) => leftover.clear(),
+                Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
             }
         }
 
@@ -546,13 +581,18 @@ fn run_send(
                 let mut buf = std::mem::take(&mut leftover);
                 buf.extend_from_slice(&data);
                 match sender.submit_wire(&buf) {
-                    Ok(consumed) => {
-                        if consumed < buf.len() {
-                            leftover = buf.split_off(consumed);
-                        }
+                    Ok(consumed) if consumed < buf.len() => {
+                        leftover = buf.split_off(consumed);
+                        cap_leftover(&mut leftover);
                     }
-                    // CRC 损坏可恢复：状态机已排队 NAK（或对端重试机制会重发
-                    // 损坏帧），本批输入已耗尽，继续等待重发即可
+                    Ok(_) => {}
+                    // 发送方向坏帧整批丢弃、不入 leftover 滞留：zmodem2 发送侧
+                    // submit_wire 对坏帧只 queue_nak + 返回 Err（无 enter_resync），
+                    // 若把坏帧保留在 leftover 前部，对端随后重发的合法帧永远排在
+                    // 坏帧之后、每次 submit 先命中坏帧 Err 提前返回 → 合法重传帧
+                    // 长期不可达。丢弃后由状态机已排队的 NAK / 对端超时重发恢复
+                    // （buf 已 take 清空 leftover，此处不赋回即整批丢弃，不滞留）；
+                    // 与接收侧「保留数据供对齐重传」的处理相区分
                     Err(e) if is_crc_error(&e) => {}
                     Err(e) => return Err(format!("ZMODEM 协议错误: {e}")),
                 }
@@ -593,12 +633,23 @@ fn wait_pipe(pipe_rx: &std::sync::mpsc::Receiver<Vec<u8>>) -> PipeWait {
     }
 }
 
-/// 经既有写转发路径回传协议字节（与键盘输入同路）
+/// 经既有写转发路径回传协议字节（与键盘输入同路）。
+/// 有界通道满（下游写入积压）时丢弃本批并告警——阻塞线程无法 async 等待，
+/// 丢弃后由 ZMODEM 重传/超时机制重发对齐，避免无界积压导致内存膨胀。
 fn write_to_wire(
-    write_tx: &tokio::sync::mpsc::UnboundedSender<crate::services::ssh::SshWriteMsg>,
+    write_tx: &tokio::sync::mpsc::Sender<crate::services::ssh::SshWriteMsg>,
     bytes: &[u8],
 ) {
-    let _ = write_tx.send(crate::services::ssh::SshWriteMsg::Data(bytes.to_vec()));
+    match write_tx.try_send(crate::services::ssh::SshWriteMsg::Data(bytes.to_vec())) {
+        Ok(()) => {}
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+            eprintln!(
+                "[zmodem] 写缓冲已满：{} 字节协议数据被丢弃（等待对端重传）",
+                bytes.len()
+            );
+        }
+        Err(_) => {}
+    }
 }
 
 /// 进度推送（节流）
@@ -624,7 +675,9 @@ fn emit_progress(
     }
 }
 
-/// 服务端文件名合法性：拒绝路径分隔符与相对路径片段（防路径穿越）
+/// 服务端文件名合法性：拒绝路径分隔符与相对路径片段（防路径穿越）。
+/// Windows 保留名（CON/PRN/AUX/NUL/COM1-9/LPT1-9 及带扩展名形式）在落盘时会被
+/// 系统拦截导致写文件失败/静默，加下划线前缀改名规避（仅 Windows 生效）。
 fn sanitized_file_name(name: &str) -> Result<String, String> {
     let trimmed = name.trim();
     if trimmed.is_empty()
@@ -635,5 +688,29 @@ fn sanitized_file_name(name: &str) -> Result<String, String> {
     {
         return Err(format!("文件名不合法: {name}"));
     }
-    Ok(trimmed.to_string())
+    let mut safe = trimmed.to_string();
+    if cfg!(windows) && is_windows_reserved_name(&safe) {
+        safe = format!("_{safe}");
+    }
+    Ok(safe)
+}
+
+/// Windows 保留设备名检测：基名（首个 '.' 前的部分，含带扩展名形式如 "CON.txt"、
+/// "COM1.log"）命中保留名即视为保留。纯字符串逻辑，非 Windows 平台不调用。
+fn is_windows_reserved_name(name: &str) -> bool {
+    use std::sync::OnceLock;
+    static RESERVED: OnceLock<Vec<String>> = OnceLock::new();
+    let reserved = RESERVED.get_or_init(|| {
+        let mut v: Vec<String> = ["CON", "PRN", "AUX", "NUL"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        for i in 1..=9 {
+            v.push(format!("COM{i}"));
+            v.push(format!("LPT{i}"));
+        }
+        v
+    });
+    let stem = name.split('.').next().unwrap_or(name).trim().to_ascii_uppercase();
+    reserved.iter().any(|r| r == &stem)
 }

@@ -134,6 +134,33 @@ pub async fn chmod(state: &AppState, id: &str, path: &str, mode: u32) -> Result<
     sftp.set_metadata(path, metadata).await.map_err(sftp_err)
 }
 
+/// 续传截短（SETSTAT SIZE）降级：设置远端文件大小的调用失败时，若服务端明确
+/// 不支持 size 属性（SSH_FX_OP_UNSUPPORTED），降级为仅 seek 续传（打 warning、
+/// 不中断作业）——后续写入从已确认偏移起覆盖写至 EOF，最终远端大小仍正确；
+/// 其余错误（IO/权限/超时等）如实报错中止。correctness-first 权衡：只有明确
+/// Unsupported 才降级，其余如实报错。
+async fn truncate_remote(
+    remote: &russh_sftp::client::fs::File,
+    size: u64,
+    context: &str,
+) -> Result<(), AppError> {
+    let mut trunc = FileAttributes::default();
+    trunc.size = Some(size);
+    match remote.set_metadata(trunc).await {
+        Ok(()) => Ok(()),
+        Err(russh_sftp::client::error::Error::Status(status))
+            if status.status_code == StatusCode::OpUnsupported =>
+        {
+            eprintln!(
+                "[sftp] {context}: 服务端不支持 SETSTAT(SIZE) 截断（OP_UNSUPPORTED），\
+                 降级为仅 seek 续传"
+            );
+            Ok(())
+        }
+        Err(err) => Err(sftp_err(err)),
+    }
+}
+
 /// 上传核心逻辑：4KB 批量读写、每块更新进度、断点续传。
 ///
 /// `progress(transferred, total)` 每写完一批调用一次，
@@ -166,8 +193,17 @@ where
     let mut local = tokio::fs::File::open(local_path).await?; // io::Error 经 From 归入 AppError::Io
     let local_size = local.metadata().await?.len();
 
-    // 远端已不小于本地：视为已传完
+    // 远端已不小于本地。恰相等视为传完；远端更大（本地文件曾缩小/被替换）时
+    // 截断远端到本地大小，否则重传后残留 stale tail，文件大小与本地不一致；
+    // 服务端不支持 size 属性时按 truncate_remote 降级（跳过截短、按完成处理）
     if resume_offset >= local_size {
+        if resume_offset > local_size {
+            let remote = sftp
+                .open_with_flags(remote_path, OpenFlags::WRITE)
+                .await
+                .map_err(sftp_err)?;
+            truncate_remote(&remote, local_size, "远端大于本地（截短至本地大小）").await?;
+        }
         progress(local_size, local_size);
         return Ok(());
     }
@@ -183,6 +219,11 @@ where
         .await
         .map_err(sftp_err)?;
     if resume_offset > 0 {
+        // 续传先截断再续：把服务端文件截断到已确认的续传偏移（SETSTAT SIZE），
+        // 再 seek 到该偏移写入——防止此前中断的传输在已确认长度之后残留多余数据，
+        // 确保完成后服务端文件恰好等于 local_size；服务端不支持 size 属性时按
+        // truncate_remote 降级为仅 seek 续写（从该偏移覆盖写至 EOF，大小仍正确）
+        truncate_remote(&remote, resume_offset, "续传截断").await?;
         // 从已传偏移继续写
         remote.seek(SeekFrom::Start(resume_offset)).await.map_err(sftp_err)?;
     }
@@ -231,10 +272,19 @@ where
         .ok_or_else(|| AppError::general(format!("远端无文件大小信息: {remote_path}")))?;
 
     // 断点续传：本地已有字节数作为起始偏移
-    let resume_offset = std::fs::metadata(local_path)
+    let local_size = std::fs::metadata(local_path)
         .map(|m| m.len())
-        .unwrap_or(0)
-        .min(total);
+        .unwrap_or(0);
+    // 本地已有文件大于远端总字节数（本地文件曾比远端大/上次未完成的下载残留）：
+    // 先截断本地到已确认的完整长度（== total），否则 min(local, total) 续传会
+    // 残留 stale tail 且仍返回成功，导致本地文件大小与远端不一致
+    if local_size > total {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(local_path)?
+            .set_len(total)?;
+    }
+    let resume_offset = local_size.min(total);
 
     let mut remote = sftp.open(remote_path).await.map_err(sftp_err)?;
     if resume_offset > 0 {

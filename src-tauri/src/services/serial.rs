@@ -23,6 +23,9 @@ const READ_BATCH_BYTES: usize = 4096;
 /// 串口读超时（毫秒）：读循环按此节奏轮询存活标志，断开后及时退出
 const READ_TIMEOUT_MS: u64 = 100;
 
+/// 写转发通道容量：有界缓冲，满时丢弃本批并告警（禁止无界增长导致内存膨胀）
+const WRITE_CHANNEL_CAPACITY: usize = 1024;
+
 /// session-status 事件的状态字符串（与 ssh.rs 一致）
 const STATUS_CONNECTING: &str = "connecting";
 
@@ -39,8 +42,9 @@ fn lock_err<T>(_e: PoisonError<T>) -> AppError {
 /// 提供 write / close 能力。存于 `AppState::serial_sessions`。
 #[derive(Clone)]
 pub struct SerialSessionHandle {
-    /// 键盘输入队列，由独立写转发线程消费
-    write_tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    /// 键盘输入队列，由独立写转发线程消费。
+    /// 有界缓冲（WRITE_CHANNEL_CAPACITY）：满时丢弃并告警，禁止无界增长。
+    write_tx: tokio::sync::mpsc::Sender<Vec<u8>>,
     /// 存活标志：断开时置 false，读循环每轮检查后退出（串口无 shutdown 语义，
     /// Windows 下 try_clone 克隆的句柄在原句柄 drop 后仍有效，无法依赖 drop 关闭）
     alive: Arc<AtomicBool>,
@@ -113,7 +117,7 @@ fn read_loop(
 
 /// 写转发线程：消费键盘输入队列，写入串口
 fn write_forward(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
+    mut rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
     mut port: Box<dyn serialport::SerialPort>,
 ) {
     while let Some(data) = rx.blocking_recv() {
@@ -191,8 +195,8 @@ pub async fn connect(
     let thread_key = key.to_string();
     std::thread::spawn(move || read_loop(thread_app, thread_key, read_port, on_output, read_alive));
 
-    // 写转发线程：消费键盘输入队列
-    let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
+    // 写转发线程：消费键盘输入队列（有界通道，满则丢批告警）
+    let (write_tx, write_rx) = tokio::sync::mpsc::channel(WRITE_CHANNEL_CAPACITY);
     std::thread::spawn(move || write_forward(write_rx, port));
 
     // 注册会话句柄（断开时清理）
@@ -217,16 +221,23 @@ pub fn disconnect(state: &AppState, id: &str) {
     }
 }
 
-/// 键盘输入写入（按连接键路由）
+/// 键盘输入写入（按连接键路由）。同步接口无法 async 等待，通道满时丢弃并告警，
+/// 保证不会无界积压；通道关闭（会话断开）才返回错误。
 pub fn write(state: &AppState, id: &str, data: &[u8]) -> Result<(), AppError> {
     let sessions = state.serial_sessions.lock().map_err(lock_err)?;
     let handle = sessions
         .get(id)
         .ok_or_else(|| AppError::general(format!("串口会话 {id} 不存在或已断开")))?;
-    handle
-        .write_tx
-        .send(data.to_vec())
-        .map_err(|_| AppError::general("会话已关闭，无法写入"))
+    match handle.write_tx.try_send(data.to_vec()) {
+        Ok(()) => Ok(()),
+        Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+            Err(AppError::general("会话已关闭，无法写入"))
+        }
+        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+            eprintln!("[serial] 写缓冲已满，输入被丢弃（下游写入积压）");
+            Ok(())
+        }
+    }
 }
 
 /// 会话是否存活：Rust 侧是否持有该会话的句柄（对齐 ssh.rs alive）

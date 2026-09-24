@@ -6,7 +6,8 @@
 //! - 连接状态通过 `session-status` 事件推送（仅低频状态走 event）；
 //! - 断开时同步清理 AppState::ssh_sessions 中的句柄。
 
-use std::sync::{Arc, PoisonError};
+use std::collections::HashSet;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::time::Duration;
 
 use russh::client::{AuthResult, DisconnectReason};
@@ -41,6 +42,18 @@ const STATUS_CONNECTED: &str = "connected";
 const STATUS_DISCONNECTED: &str = "disconnected";
 const STATUS_HOSTKEY_VERIFY: &str = "hostkey-verify";
 
+/// 写转发通道容量：有界缓冲，满时丢弃本批并告警（禁止无界增长导致内存膨胀）
+const WRITE_CHANNEL_CAPACITY: usize = 1024;
+
+/// HostKey 前端确认超时：超时中止连接，避免 oneshot 永久挂起
+const HOSTKEY_CONFIRM_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 进行中的 SSH 连接键集合（模块级静态，避免给 AppState 加字段）。
+/// connect() 在真正建连前插入，建连结束（成功/失败）后移除——
+/// SshSessionHandle 要等连接完成后才注册进 ssh_sessions，单纯查该表
+/// 无法识别"正在建连"的中间态，并发触发同一会话会重复建连。
+static CONNECTING_KEYS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
 /// std::sync::Mutex 中毒时的统一错误转换
 fn lock_err<T>(_e: PoisonError<T>) -> AppError {
     AppError::general("全局状态锁被污染")
@@ -58,8 +71,9 @@ pub struct SshSessionHandle {
     /// russh 连接句柄（发送全局消息：disconnect、打开新 channel 等）
     handle: Arc<russh::client::Handle<SshClientHandler>>,
 
-    /// 键盘输入 / resize 消息队列，由独立写转发任务消费（同步接口下避免阻塞）
-    write_tx: tokio::sync::mpsc::UnboundedSender<SshWriteMsg>,
+    /// 键盘输入 / resize 消息队列，由独立写转发任务消费（同步接口下避免阻塞）。
+    /// 有界缓冲（WRITE_CHANNEL_CAPACITY）：满时丢弃并告警，禁止无界增长。
+    write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>,
 }
 
 /// 写转发任务的消息：键盘输入或终端 resize
@@ -109,11 +123,20 @@ impl SshSessionHandle {
             .map_err(|e| AppError::Ssh(format!("开通 direct-tcpip 通道失败: {e}")))
     }
 
-    /// 发送写转发消息（内部使用）
+    /// 发送写转发消息（内部使用）。同步接口无法 async 等待，通道满时丢弃并告警，
+    /// 保证不会无界积压；通道关闭（会话断开）才返回错误。
     fn send_msg(&self, msg: SshWriteMsg) -> Result<(), AppError> {
-        self.write_tx
-            .send(msg)
-            .map_err(|_| AppError::Ssh("会话已关闭，无法写入".into()))
+        match self.write_tx.try_send(msg) {
+            Ok(()) => Ok(()),
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                Err(AppError::Ssh("会话已关闭，无法写入".into()))
+            }
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                // 写通道满（下游写入积压，如 SSH 窗口暂停/拥堵）：丢弃本批并告警
+                eprintln!("[ssh] 写缓冲已满，输入被丢弃（下游写入积压）");
+                Ok(())
+            }
+        }
     }
 }
 
@@ -217,8 +240,24 @@ impl russh::client::Handler for SshClientHandler {
                 .map_err(lock_err)?
                 .insert(self.session_id.clone(), tx);
         }
-        // 前端确认前一直挂起；Sender 被清理（如断开）视为拒绝
-        let accepted = rx.await.unwrap_or(false);
+        // 前端确认前挂起；Sender 被清理（如断开）视为拒绝。
+        // 加超时防止 OOB 消息不匹配时永久挂起（前端窗口已关/事件丢失时挂死整个连接）
+        let accepted = match tokio::time::timeout(HOSTKEY_CONFIRM_TIMEOUT, rx).await {
+            Ok(Ok(v)) => v,
+            Ok(Err(_)) => false, // Sender 被清理（如断开）→ 视为拒绝
+            Err(_) => {
+                // 超时未收到前端确认：移除挂起点并返回错误，不再无限挂起
+                if let Some(state) = self.app.try_state::<AppState>() {
+                    if let Ok(mut pending) = state.pending_hostkey.lock() {
+                        pending.remove(&self.session_id);
+                    }
+                }
+                return Err(AppError::Ssh(format!(
+                    "等待主机密钥确认超时（{}s 内未收到前端确认），连接已中止",
+                    HOSTKEY_CONFIRM_TIMEOUT.as_secs()
+                )));
+            }
+        };
 
         if accepted {
             // 用户信任该主机：写入 known_hosts，下次连接不再确认
@@ -352,7 +391,7 @@ async fn read_loop(
     mut read_half: russh::ChannelReadHalf,
     on_output: Channel<Vec<u8>>,
     app: AppHandle,
-    write_tx: tokio::sync::mpsc::UnboundedSender<SshWriteMsg>,
+    write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>,
 ) {
     let mut buf: Vec<u8> = Vec::with_capacity(READ_BATCH_BYTES);
     let mut first_chunk = true;
@@ -466,7 +505,7 @@ fn zmodem_pipe_tx(app: &AppHandle, key: &str) -> Option<std::sync::mpsc::Sender<
 
 /// 写转发任务：消费键盘输入 / resize 消息队列，转发到 russh channel
 async fn write_forward(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<SshWriteMsg>,
+    mut rx: tokio::sync::mpsc::Receiver<SshWriteMsg>,
     half: russh::ChannelWriteHalf<russh::client::Msg>,
 ) {
     while let Some(msg) = rx.recv().await {
@@ -488,10 +527,65 @@ async fn write_forward(
 // 公开 API
 // ---------------------------------------------------------------------------
 
-/// 建立 SSH 连接：TCP 连接 → HostKey 验证 → 认证 → PTY/shell → 读循环。
-/// 输出流走 tauri::ipc::Channel（4KB 批量），连接状态通过 session-status 事件推送。
+/// CONNECTING_KEYS 的 RAII Drop 守卫：acquire 把 key 登记进「建连中」集合，
+/// drop 时无论成功/失败/future 被 abort 一律移除——避免 connect_impl 的 future
+/// 被 abort（会话切换/应用关闭等）后残留 key 永久拒绝该会话后续连接。
+struct ConnectGuard(String);
+
+impl ConnectGuard {
+    /// 尝试登记建连标记；key 已在集合（并发重复建连）返回 None
+    fn acquire(key: &str) -> Result<Option<Self>, AppError> {
+        let mut connecting = CONNECTING_KEYS
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+            .map_err(lock_err)?;
+        if !connecting.insert(key.to_string()) {
+            return Ok(None);
+        }
+        Ok(Some(ConnectGuard(key.to_string())))
+    }
+}
+
+impl Drop for ConnectGuard {
+    fn drop(&mut self) {
+        // 锁中毒时静默跳过（与既有 lock 风格一致，避免 drop 中 panic）
+        if let Ok(mut connecting) = CONNECTING_KEYS
+            .get_or_init(|| Mutex::new(HashSet::new()))
+            .lock()
+        {
+            connecting.remove(&self.0);
+        }
+    }
+}
+
+/// 建立 SSH 连接（公开入口）：连接去重 + 记录建连进行中，实际步骤见 [`connect_impl`]。
 /// key：连接路由键（多标签同会话独立连接时为每标签唯一，未传时等于会话 id）。
 pub async fn connect(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    cfg: &SessionConfig,
+    key: &str,
+    on_output: tauri::ipc::Channel<Vec<u8>>,
+) -> Result<(), AppError> {
+    // 连接去重：同一路由键（未传时等于会话 id）已有连接进行中时拒绝重复建连。
+    // SshSessionHandle 要到连接完成后才注册进 ssh_sessions，单纯查该表覆盖不了
+    // "正在建连"的中间态（TCP/SOCKS 握手 + kex + HostKey 确认可能耗时数秒），
+    // 并发触发同一会话会重复建立连接。建连标记用 RAII 守卫在真正建连前 acquire，
+    // 守卫 drop 时（含 connect_impl 的 future 被 abort）自动移除。
+    let _guard = match ConnectGuard::acquire(key)? {
+        Some(guard) => guard,
+        None => {
+            return Err(AppError::Ssh(format!(
+                "会话 {key} 正在连接中，请等待当前连接完成（勿重复连接）"
+            )));
+        }
+    };
+    connect_impl(app, state, cfg, key, on_output).await
+}
+
+/// 连接核心实现：TCP 连接 → HostKey 验证 → 认证 → PTY/shell → 读循环。
+/// 输出流走 tauri::ipc::Channel（4KB 批量），连接状态通过 session-status 事件推送。
+async fn connect_impl(
     app: &tauri::AppHandle,
     state: &AppState,
     cfg: &SessionConfig,
@@ -595,7 +689,8 @@ pub async fn connect(
     // 日志键用稳定会话 id（非 per-tab 路由键 key）：同一会话多标签/重连共享一份
     // 落盘，关闭重开标签不产生孤儿日志目录（LogViewer 亦按会话 id 查询）。
     let (read_half, write_half) = channel.split();
-    let (write_tx, write_rx) = tokio::sync::mpsc::unbounded_channel();
+    // 有界写通道：下游写入积压（SSH 窗口暂停等）时满则丢批告警，禁止无界增长
+    let (write_tx, write_rx) = tokio::sync::mpsc::channel(WRITE_CHANNEL_CAPACITY);
     tauri::async_runtime::spawn(write_forward(write_rx, write_half));
     tauri::async_runtime::spawn(read_loop(
         cfg.id.clone(),
@@ -687,14 +782,16 @@ fn settings_number(key: &str, default: u64) -> u64 {
 /// 每行经既有写转发路径发送（与键盘输入同路），发送失败（会话关闭）即终止。
 async fn run_login_script(
     key: String,
-    write_tx: tokio::sync::mpsc::UnboundedSender<SshWriteMsg>,
+    write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>,
     lines: Vec<login_script::ScriptLine>,
     delay_ms: u64,
 ) {
     let total = lines.len();
     for line in lines {
+        // 有界通道 async 发送：满时挂起等待（登录脚本低频，等待优于丢行）
         if write_tx
             .send(SshWriteMsg::Data(line.send.into_bytes()))
+            .await
             .is_err()
         {
             return; // 会话已关闭

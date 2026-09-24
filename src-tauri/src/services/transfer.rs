@@ -117,11 +117,18 @@ async fn run_task(app: AppHandle, task_id: String) {
                 t.local_path.clone(),
                 t.remote_path.clone(),
             ),
-            None => return,
+            None => {
+                // 任务不存在（异常态）也先释放锁再走终态清理，
+                // 避免进度 Channel 注册表项/取消标记泄漏
+                drop(tasks);
+                cleanup(&state, &task_id);
+                return;
+            }
         }
     };
 
     // 进度回调：每批更新 AppState 并检查取消，emit / Channel 按间隔节流
+    // （核心传输 sftp.rs 内部打开的读/写文件句柄由 RAII 自动关闭，无 fd 泄漏）
     let mut last_emit = Instant::now() - EMIT_INTERVAL; // 允许立即首次推送
     let mut progress = |transferred: u64, total: u64| -> bool {
         // 取消检查：命中即中止

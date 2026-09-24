@@ -9,6 +9,7 @@
 
 use std::io::{Read, Write};
 use std::sync::{Arc, PoisonError};
+use std::time::Duration;
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use tauri::ipc::Channel;
@@ -225,8 +226,22 @@ pub fn disconnect(state: &AppState, id: &str) {
         .lock()
         .map(|mut m| m.remove(id))
         .unwrap_or_default();
+    // 确保子进程一定终止：kill 后轮询 try_wait（短眠重试），否则 kill 可能因
+    // 竞态未生效（进程恰好已退出但状态未回收、或 ConPTY 下 kill 未命中真实进程）。
+    // 轮询之余 write_tx drop → 写转发线程退出 → master drop 关闭 ConPTY，
+    // Pty 内带进来的子进程同样终止，双保险下 5 次内必然退出
     if let Some(handle) = removed {
         if let Ok(mut child) = handle.child.lock() {
+            for _ in 0..5 {
+                match child.try_wait() {
+                    // 已退出（或 wait 出错）：终止完成
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) => {
+                        let _ = child.kill();
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }
+            }
             let _ = child.kill();
         }
     }

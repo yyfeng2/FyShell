@@ -21,8 +21,7 @@
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
-use chacha20poly1305::aead::{Aead, KeyInit};
-use chacha20poly1305::aead::generic_array::GenericArray;
+use chacha20poly1305::aead::{Aead, KeyInit, Nonce};
 use chacha20poly1305::ChaCha20Poly1305;
 use pbkdf2::pbkdf2_hmac;
 use rusqlite::{params, Connection};
@@ -36,8 +35,16 @@ const KEY_LEN: usize = 32;
 const SALT_LEN: usize = 16;
 /// AEAD nonce 长度（ChaCha20-Poly1305 标准 12 字节）
 const NONCE_LEN: usize = 12;
-/// PBKDF2 迭代轮数（OWASP 建议 ≥ 60 万；取 20 万平衡交互速度与安全）
-const PBKDF2_ROUNDS: u32 = 200_000;
+/// v1 历史信封固定轮数：200_000（v1 信封无 rounds 字段，解开存量密文的唯一
+/// 派生依据就是它——**严禁对 v1 密文改用新默认轮数**，否则派生 KEK 不符，
+/// AEAD 认证整体失败、所有已存密文不可解。此常量只读永不改）
+const PBKDF2_ROUNDS_V1_LEGACY: u32 = 200_000;
+/// v2 信封默认迭代轮数（由 v1 的 20 万提升至 60 万，对齐 OWASP ≥ 60 万建议；
+/// 新 wrap 一律以此为输出值并写入信封 rounds 字段，解密方按信封内值派生）
+const PBKDF2_ROUNDS: u32 = 600_000;
+/// v2 信封 rounds 字段允许上限（防御性：仅挡恶意超大 rounds 引发 CPU 消耗型
+/// DoS，10 万倍于默认 60 万，远高于任何现实配置；解析同时走检查化防溢出）
+const PBKDF2_ROUNDS_MAX: u32 = 10_000_000;
 /// meta 表中包裹后 DEK 的键名
 const META_KEY: &str = "vault_dek";
 
@@ -136,10 +143,72 @@ fn random_bytes(n: usize) -> Vec<u8> {
 // 加密原语（AEAD + KEK 派生）
 // ---------------------------------------------------------------------------
 
-fn derive_kek(password: &str, salt: &[u8]) -> [u8; KEY_LEN] {
+/// PBKDF2-HMAC-SHA256 派生 KEK；轮数由调用方按信封版本显式指定
+///（v1 → PBKDF2_ROUNDS_V1_LEGACY，v2 → 信封内 rounds），杜绝全局默认漂移
+fn derive_kek(password: &str, salt: &[u8], rounds: u32) -> [u8; KEY_LEN] {
     let mut kek = [0u8; KEY_LEN];
-    pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, PBKDF2_ROUNDS, &mut kek);
+    pbkdf2_hmac::<Sha256>(password.as_bytes(), salt, rounds, &mut kek);
     kek
+}
+
+/// 版本感知的信封解析 + KEK 派生统一入口（所有 DEK 包裹/解包路径都走它）：
+/// - `v1$salt$nonce$cipher`：轮数固定取 PBKDF2_ROUNDS_V1_LEGACY（200_000）——
+///   这是「防 v1 被新默认轮数误解」的关键：v1 永远按历史值派生，与全局默认
+///   PBKDF2_ROUNDS 是否被再调大无关
+/// - `v2$<rounds>$salt$nonce$cipher`：轮数取信封内 rounds（检查化解析 + 上限）
+/// 返回 (nonce, cipher, kek)；畸形版本 / 缺字段 / 非法 rounds / 超长一律返回
+/// 错误而非 panic/溢出（安全失败）。
+fn parse_envelope_and_derive_kek(
+    value: &str,
+    password: &str,
+) -> Result<(Vec<u8>, Vec<u8>, [u8; KEY_LEN]), AppError> {
+    let parts: Vec<&str> = value.split('$').collect();
+    let (rounds, salt_hex, nonce_hex, cipher_hex) = match parts.first().copied() {
+        // v1 旧信封：无 rounds 字段 → 强制历史轮数（封装期 200_000 是唯一派生依据）
+        Some("v1") => {
+            if parts.len() != 4 {
+                return Err(AppError::general("保险库数据损坏（格式非法）"));
+            }
+            (PBKDF2_ROUNDS_V1_LEGACY, parts[1], parts[2], parts[3])
+        }
+        // v2 新信封：rounds 字段显式携带 → 按信封内值派生
+        Some("v2") => {
+            if parts.len() != 5 {
+                return Err(AppError::general("保险库数据损坏（格式非法）"));
+            }
+            (parse_rounds(parts[1])?, parts[2], parts[3], parts[4])
+        }
+        _ => return Err(AppError::general("保险库数据损坏（格式非法）")),
+    };
+    let salt = from_hex(salt_hex)?;
+    let nonce = from_hex(nonce_hex)?;
+    let cipher = from_hex(cipher_hex)?;
+    let kek = derive_kek(password, &salt, rounds);
+    Ok((nonce, cipher, kek))
+}
+
+/// 检查化解析 rounds 字符串：拒绝空 / 超长 / 非数字 / 溢出 / 0 / 超上限，
+/// 全程返回错误不 panic（恶意畸形信封安全失败）。
+fn parse_rounds(s: &str) -> Result<u32, AppError> {
+    // u32 十进制最多 10 位（4294967295）；超长即畸形，先拦下避免长字符串遍历
+    if s.is_empty() || s.len() > 10 {
+        return Err(AppError::general("保险库数据损坏（rounds 非法）"));
+    }
+    let mut rounds: u32 = 0;
+    for ch in s.chars() {
+        let d = ch.to_digit(10).ok_or_else(|| AppError::general("保险库数据损坏（rounds 非法）"))?;
+        rounds = rounds
+            .checked_mul(10)
+            .and_then(|r| r.checked_add(d))
+            .ok_or_else(|| AppError::general("保险库数据损坏（rounds 溢出）"))?;
+    }
+    if rounds == 0 {
+        return Err(AppError::general("保险库数据损坏（rounds 非法）"));
+    }
+    if rounds > PBKDF2_ROUNDS_MAX {
+        return Err(AppError::general("保险库数据损坏（rounds 超上限）"));
+    }
+    Ok(rounds)
 }
 
 fn aead_cipher(key: &[u8; KEY_LEN]) -> ChaCha20Poly1305 {
@@ -149,39 +218,51 @@ fn aead_cipher(key: &[u8; KEY_LEN]) -> ChaCha20Poly1305 {
 /// AEAD 加密：随机 nonce + 密文（含 auth tag）
 fn aead_encrypt(key: &[u8; KEY_LEN], plain: &[u8]) -> Result<(Vec<u8>, Vec<u8>), AppError> {
     let nonce_bytes = random_bytes(NONCE_LEN);
-    let nonce = GenericArray::clone_from_slice(&nonce_bytes);
+    // Nonce 别名即 ChaCha20-Poly1305 的 nonce 类型；用 From<[u8; N]> 构造，避开
+    // generic-array 0.14 已弃用的 from_slice/clone_from_slice（行为一致：长度不符 panic）
+    let mut nonce_buf = [0u8; NONCE_LEN];
+    nonce_buf.copy_from_slice(&nonce_bytes);
+    let nonce = Nonce::<ChaCha20Poly1305>::from(nonce_buf);
     let cipher = aead_cipher(key)
         .encrypt(&nonce, plain)
         .map_err(|_| AppError::general("凭据加密失败"))?;
     Ok((nonce_bytes, cipher))
 }
 
-/// AEAD 解密（auth 校验失败统一为数据损坏 / 密钥不符错误）
+/// AEAD 解密（auth 校验失败统一为数据损坏 / 密钥不符错误）；nonce 长度不符
+/// 直接报错而非 panic（畸形信封/密文安全失败）
 fn aead_decrypt(key: &[u8; KEY_LEN], nonce: &[u8], cipher: &[u8]) -> Result<Vec<u8>, AppError> {
-    let nonce = GenericArray::clone_from_slice(nonce);
+    if nonce.len() != NONCE_LEN {
+        return Err(AppError::general("凭据解密失败（数据损坏或密钥不符）"));
+    }
+    // 与 encrypt 对称：From<[u8; N]> 构造 nonce（长度不符 panic 与旧 from_slice 行为一致）
+    let mut nonce_buf = [0u8; NONCE_LEN];
+    nonce_buf.copy_from_slice(nonce);
+    let nonce = Nonce::<ChaCha20Poly1305>::from(nonce_buf);
     aead_cipher(key)
         .decrypt(&nonce, cipher)
         .map_err(|_| AppError::general("凭据解密失败（数据损坏或密钥不符）"))
 }
 
-/// 用主密码派生 KEK 包裹 DEK，生成 meta 可存值：`v1$salt$nonce$cipher`
+/// 用主密码派生 KEK 包裹 DEK，生成 meta 可存值：`v2$<rounds>$salt$nonce$cipher`
+///（rounds 固定为当前默认 PBKDF2_ROUNDS = 60 万，显式入信封；新写信封一律 v2）
 fn wrap_dek(dek: &[u8; KEY_LEN], password: &str) -> Result<String, AppError> {
     let salt = random_bytes(SALT_LEN);
-    let kek = derive_kek(password, &salt);
+    let kek = derive_kek(password, &salt, PBKDF2_ROUNDS);
     let (nonce, cipher) = aead_encrypt(&kek, dek)?;
-    Ok(format!("v1${}${}${}", to_hex(&salt), to_hex(&nonce), to_hex(&cipher)))
+    Ok(format!(
+        "v2${}${}${}${}",
+        PBKDF2_ROUNDS,
+        to_hex(&salt),
+        to_hex(&nonce),
+        to_hex(&cipher)
+    ))
 }
 
-/// 解包 DEK；主密码错误 / 数据损坏返回错误
+/// 解包 DEK；主密码错误 / 数据损坏返回错误。兼容 v1 旧信封（按历史 200_000 轮
+/// 派生，存量 v1 信封无需重加密即可继续解开）与 v2 新信封（按信封内 rounds）。
 fn unwrap_dek(value: &str, password: &str) -> Result<[u8; KEY_LEN], AppError> {
-    let parts: Vec<&str> = value.split('$').collect();
-    if parts.len() != 4 || parts[0] != "v1" {
-        return Err(AppError::general("保险库数据损坏（格式非法）"));
-    }
-    let salt = from_hex(parts[1])?;
-    let nonce = from_hex(parts[2])?;
-    let cipher = from_hex(parts[3])?;
-    let kek = derive_kek(password, &salt);
+    let (nonce, cipher, kek) = parse_envelope_and_derive_kek(value, password)?;
     let plain = aead_decrypt(&kek, &nonce, &cipher)?;
     let mut dek = [0u8; KEY_LEN];
     if plain.len() != KEY_LEN {
@@ -336,7 +417,8 @@ fn decrypt_json_field(auth_json: &str) -> Result<String, AppError> {
 ///
 /// 覆盖：settings 表 mysql/redis_saved_connections（整 JSON 加密，与前端读写路径
 /// 一致）、sshopt_proxy_password（单值）、sessions 表 auth_type JSON 的 password
-/// 字段（结构保留，仅加密 password 值）。解密失败的条目跳过保持原样。
+/// 字段（结构保留，仅加密 password 值）、auth_profiles 表认证配置 auth_type 的
+/// password 字段（与 sessions 同模式）。解密失败的条目跳过保持原样。
 /// 在 `master_password_set` / `vault_unlock` 成功后调用（DEK 已在内存）。
 pub fn migrate_plaintext() -> Result<usize, AppError> {
     if !is_unlocked() {
@@ -346,7 +428,8 @@ pub fn migrate_plaintext() -> Result<usize, AppError> {
     migrated += migrate_setting_value("mysql_saved_connections")?;
     migrated += migrate_setting_value("redis_saved_connections")?;
     migrated += migrate_setting_value("sshopt_proxy_password")?;
-    migrated += migrate_session_auth_types()?;
+    migrated += migrate_table_auth_types("sessions")?;
+    migrated += migrate_table_auth_types("auth_profiles")?;
     Ok(migrated)
 }
 
@@ -362,13 +445,25 @@ fn migrate_setting_value(key: &str) -> Result<usize, AppError> {
     Ok(1)
 }
 
-/// 迁移 sessions 表 auth_type JSON：password 字段非空且非密文时加密写回整行
-fn migrate_session_auth_types() -> Result<usize, AppError> {
+/// 迁移指定表（sessions / auth_profiles）的 auth_type JSON：password 字段非空且
+/// 非密文时加密写回整行。表缺失（对应服务模块尚未建表）时静默跳过返回 0，
+/// 与各服务模块建表进度解耦，不阻塞其余表迁移。
+fn migrate_table_auth_types(table: &str) -> Result<usize, AppError> {
     // 先在锁内读取待迁移行，锁释放后再解密写回（Mutex 不可重入，避免嵌套 lock_conn 死锁）
     let rows: Vec<(String, String)> = {
         let conn = lock_conn();
-        let mut stmt =
-            conn.prepare("SELECT id, auth_type FROM sessions WHERE auth_type LIKE '%password%'")?;
+        // 表不存在（服务建表条件变化/极端旧库）时跳过，避免 migrate_plaintext 报错
+        let table_exists: bool = conn.query_row(
+            "SELECT COUNT(*) > 0 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            params![table],
+            |r| r.get(0),
+        )?;
+        if !table_exists {
+            return Ok(0);
+        }
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, auth_type FROM {table} WHERE auth_type LIKE '%password%'"
+        ))?;
         let collected =
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<Vec<_>, _>>()?;
         collected
@@ -403,7 +498,10 @@ fn migrate_session_auth_types() -> Result<usize, AppError> {
     if count > 0 {
         let conn = lock_conn();
         for (updated, id) in &updates {
-            conn.execute("UPDATE sessions SET auth_type = ?1 WHERE id = ?2", params![updated, id])?;
+            conn.execute(
+                &format!("UPDATE {table} SET auth_type = ?1 WHERE id = ?2"),
+                params![updated, id],
+            )?;
         }
     }
     Ok(count)
@@ -421,9 +519,14 @@ mod tests {
     /// 用互斥锁串行化全部用例，避免 DEK/信封互相覆盖。
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
+    /// 测试库目录（与 init 同目录，保证 auth_profile 等服务模块共用同一 fyshell.db）
+    fn test_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join("fyshell-vault-unit-test")
+    }
+
     /// 初始化服务（幂等：CONN 已有实例时取第一次打开的库；同库足够，各用例自洽）
     fn setup() {
-        let dir = std::env::temp_dir().join("fyshell-vault-unit-test");
+        let dir = test_dir();
         let _ = std::fs::create_dir_all(&dir);
         init(&dir).expect("vault 测试初始化失败");
     }
@@ -618,5 +721,266 @@ mod tests {
             auth_json,
             "未解锁时 auth_type 密文应原样透传"
         );
+    }
+
+    #[test]
+    fn migrate_plaintext_covers_auth_profiles() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+        fake_set_master_password();
+
+        // 建 auth_profiles 表（应用侧由 auth_profile::init 建，测试内补建，
+        // 结构须与 services/auth_profile.rs 一致）
+        {
+            let conn = lock_conn();
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS auth_profiles (
+                     id        TEXT PRIMARY KEY,
+                     name      TEXT NOT NULL,
+                     auth_type TEXT NOT NULL
+                 );",
+            )
+            .expect("建 auth_profiles 表失败");
+        }
+
+        // 模拟明文存量：password 型 profile 明文 + 无 password 字段的 publicKey profile
+        {
+            let conn = lock_conn();
+            conn.execute(
+                "INSERT OR REPLACE INTO auth_profiles (id, name, auth_type) VALUES ('p1', '跳板机', ?1)",
+                params![r#"{"type":"password","password":"profile明文pw"}"#],
+            )
+            .expect("写入 password profile 明文存量失败");
+            conn.execute(
+                "INSERT OR REPLACE INTO auth_profiles (id, name, auth_type) VALUES ('p2', '公钥', ?1)",
+                params![r#"{"type":"publicKey","privateKeyPath":"C:\\keys\\id_rsa","passphrase":null}"#],
+            )
+            .expect("写入 publicKey profile 失败");
+        }
+
+        // 未解锁时迁移被拒
+        assert!(migrate_plaintext().is_err(), "未解锁时迁移应被拒");
+
+        // 解锁后迁移：password profile 加密，publicKey profile（无 password 字段）不动
+        rekey("master-pw").expect("设主密码应成功");
+        let n = migrate_plaintext().expect("迁移应成功");
+        assert!(n >= 1, "至少迁移 auth_profiles 一条");
+
+        let auth_json = {
+            let conn = lock_conn();
+            conn.query_row("SELECT auth_type FROM auth_profiles WHERE id = 'p1'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .expect("读取迁移后 profile auth_type 失败")
+        };
+        assert!(is_ciphertext(&auth_json), "auth_profiles 存量应已加密");
+        let restored = decrypt_auth_json(&auth_json);
+        assert!(restored.contains("profile明文pw"), "解密后应还原明文密码");
+
+        // 无 password 字段的 profile 无需加密（与 sessions 行为一致，不解密照常可用）
+        let pub_json = {
+            let conn = lock_conn();
+            conn.query_row("SELECT auth_type FROM auth_profiles WHERE id = 'p2'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .expect("读取 publicKey profile 失败")
+        };
+        assert!(!is_ciphertext(&pub_json), "无 password 字段的 profile 不应被加密");
+    }
+
+    #[test]
+    fn auth_profile_save_list_vault_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+        fake_set_master_password();
+
+        // 初始化 auth_profile 服务（与应用 setup 同目录，共用同一 fyshell.db）
+        crate::services::auth_profile::init(&test_dir()).expect("auth_profile 初始化失败");
+
+        // 解锁前保存：未加密，明文落库（兼容未设主密码场景）
+        let plain_profile = crate::models::auth_profile::AuthProfile {
+            id: "prof-unlocked".to_string(),
+            name: "未解锁配置".to_string(),
+            auth_type: crate::models::session::AuthType::Password {
+                password: "明文pre".to_string(),
+            },
+        };
+        crate::services::auth_profile::save(&plain_profile).expect("解锁前保存应成功");
+        let listed = crate::services::auth_profile::list().expect("解锁前列表应成功");
+        assert!(
+            listed.iter().any(|p| matches!(&p.auth_type,
+                crate::models::session::AuthType::Password { password } if password == "明文pre")),
+            "解密前保存的 profile 应保持明文可取"
+        );
+
+        // 设置主密码并解锁 → 加密路径保存，落库为密文
+        rekey("master-pw").expect("设主密码应成功");
+        let secret = crate::models::auth_profile::AuthProfile {
+            id: "prof-secret".to_string(),
+            name: "机密配置".to_string(),
+            auth_type: crate::models::session::AuthType::Password {
+                password: "加密后密码".to_string(),
+            },
+        };
+        crate::services::auth_profile::save(&secret).expect("加密保存应成功");
+
+        // 落库内容应为密文（不出现明文密码）
+        let stored: String = {
+            let conn = lock_conn();
+            conn.query_row(
+                "SELECT auth_type FROM auth_profiles WHERE id = 'prof-secret'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("读取加密 profile 失败")
+        };
+        assert!(is_ciphertext(&stored), "解锁保存的 auth_profiles 应为密文");
+        assert!(!stored.contains("加密后密码"), "密文不应包含明文密码");
+
+        // 解锁状态读取：取回明文密码
+        let listed = crate::services::auth_profile::list().expect("解锁列表应成功");
+        assert!(
+            listed.iter().any(|p| matches!(&p.auth_type,
+                crate::models::session::AuthType::Password { password } if password == "加密后密码")),
+            "解锁后读取应还原明文密码"
+        );
+
+        // 锁定后读取：密文 round-trip 无损（不解密原样返回，不崩）
+        lock();
+        let listed = crate::services::auth_profile::list().expect("锁定列表应成功");
+        assert!(
+            listed.iter().any(|p| matches!(&p.auth_type,
+                crate::models::session::AuthType::Password { password } if password.starts_with("v1$"))),
+            "锁定后 profile password 应为密文原样透传"
+        );
+
+        // 重新解锁后再次取回明文（换密码等路径不破坏存量）
+        unlock("master-pw").expect("重新解锁应成功");
+        let listed = crate::services::auth_profile::list().expect("再解锁列表应成功");
+        assert!(
+            listed.iter().any(|p| matches!(&p.auth_type,
+                crate::models::session::AuthType::Password { password } if password == "加密后密码")),
+            "重新解锁后仍应取回明文密码"
+        );
+    }
+
+    // ---------------------------------------------------------------------------
+    // 信封版本化（v1 兼容 / v2 新格式 / 畸形安全失败）
+    // ---------------------------------------------------------------------------
+
+    /// v1 旧信封（无 rounds 字段）必须按历史 200_000 轮解开——这是版本路由
+    /// 防「v1 被新默认轮数误解」的核心回归测试：手工构造固定输入的可复现向量，
+    /// 无论全局默认 PBKDF2_ROUNDS 如何变更，v1 只能按 PBKDF2_ROUNDS_V1_LEGACY 派生。
+    #[test]
+    fn v1_envelope_legacy_rounds_opens() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+
+        // 固定向量：DEK / salt / nonce 全固定 → ChaCha20-Poly1305 确定性，
+        // 每次运行产物一致（可跑环境下等价已知向量）
+        let dek = [0x42u8; KEY_LEN];
+        let salt = [0x11u8; SALT_LEN];
+        let nonce = [0x22u8; NONCE_LEN];
+        let kek = derive_kek("known-pw", &salt, PBKDF2_ROUNDS_V1_LEGACY);
+        let cipher = aead_cipher(&kek)
+            .encrypt(&Nonce::<ChaCha20Poly1305>::from(nonce), &dek[..])
+            .expect("用 200_000 轮 KEK 加密 DEK 失败");
+        let v1_envelope = format!("v1${}${}${}", to_hex(&salt), to_hex(&nonce), to_hex(&cipher));
+
+        // 关键路由断言：v1 必须按 200_000 轮解开，解出 DEK 与构造时一致
+        assert_eq!(
+            unwrap_dek(&v1_envelope, "known-pw").expect("v1 信封应能解包"),
+            dek,
+            "v1 解出 DEK 应与构造一致"
+        );
+        // 错误密码被 AEAD 认证拒绝
+        assert!(unwrap_dek(&v1_envelope, "wrong-pw").is_err(), "v1 信封错误密码应拒绝");
+
+        // 对照：若有人用新默认 600_000 轮手工造出一个「v1」信封，本路由固定走
+        // 200_000 轮派生 → KEK 不符 → 必须解不开（反向证明 v1 永不被新默认误解）
+        let kek_new = derive_kek("known-pw", &salt, PBKDF2_ROUNDS);
+        let cipher_new = aead_cipher(&kek_new)
+            .encrypt(&Nonce::<ChaCha20Poly1305>::from(nonce), &dek[..])
+            .expect("用新默认轮数加密 DEK 失败");
+        let fake_v1 = format!("v1${}${}${}", to_hex(&salt), to_hex(&nonce), to_hex(&cipher_new));
+        assert!(
+            unwrap_dek(&fake_v1, "known-pw").is_err(),
+            "v1 路由必须固定 200_000 轮，新默认轮数派生的密文不应被解开"
+        );
+    }
+
+    /// v2 新信封 round-trip：wrap 输出 v2 且 rounds 为当前默认；解包还原同一
+    /// DEK；篡改信封内 rounds 会让派生 KEK 变化 → 认证失败（证明路由真实使用
+    /// 信封内轮数，而非全局默认）。
+    #[test]
+    fn v2_envelope_roundtrip_with_rounds_routing() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+
+        let dek = generate_dek();
+        let wrapped = wrap_dek(&dek, "test-pw").expect("v2 包装应成功");
+        let head: Vec<&str> = wrapped.split('$').collect();
+        assert!(wrapped.starts_with("v2$"), "新 wrap 应输出 v2 信封");
+        assert_eq!(head[1], PBKDF2_ROUNDS.to_string(), "v2 信封 rounds 应为当前默认");
+        assert_eq!(head.len(), 5, "v2 信封应有 5 段：版本+rounds+salt+nonce+cipher");
+
+        // round-trip：按信封内 rounds 派生解包，还原同一 DEK
+        assert_eq!(
+            unwrap_dek(&wrapped, "test-pw").expect("v2 信封应能解包"),
+            dek,
+            "v2 round-trip 应还原 DEK"
+        );
+
+        // 篡改 rounds：rounds-1 依然合法且 ≤ 上限，但派生 KEK 不同 → 认证失败
+        let tampered = wrapped.replace(
+            &format!("v2${}", PBKDF2_ROUNDS),
+            &format!("v2${}", PBKDF2_ROUNDS - 1),
+        );
+        assert!(
+            tampered != wrapped && unwrap_dek(&tampered, "test-pw").is_err(),
+            "rounds 篡改应导致解包失败（证明信封内轮数被真实采用）"
+        );
+    }
+
+    /// 畸形信封一律安全失败返回错误，绝不 panic/溢出：未知版本、缺/多字段、
+    /// rounds 非数字 / 0 / 溢出 / 超长 / 空串。
+    #[test]
+    fn malformed_envelopes_fail_safely() {
+        let _g = TEST_LOCK.lock().unwrap();
+        setup();
+
+        // 未知版本 / 缺版本
+        assert!(parse_envelope_and_derive_kek("v3$1$2$3", "pw").is_err(), "未知版本应报错");
+        assert!(parse_envelope_and_derive_kek("$1$2$3", "pw").is_err(), "缺版本应报错");
+        assert!(parse_envelope_and_derive_kek("", "pw").is_err(), "空串应报错");
+        // v1 缺/多字段
+        assert!(parse_envelope_and_derive_kek("v1$a$b", "pw").is_err(), "v1 缺字段应报错");
+        assert!(parse_envelope_and_derive_kek("v1$a$b$c$d", "pw").is_err(), "v1 多字段应报错");
+        // v2 缺字段 / rounds 非法
+        assert!(parse_envelope_and_derive_kek("v2$a$b", "pw").is_err(), "v2 缺字段应报错");
+        assert!(parse_envelope_and_derive_kek("v2$abc$a$b$c", "pw").is_err(), "rounds 非数字应报错");
+        assert!(parse_envelope_and_derive_kek("v2$0$a$b$c", "pw").is_err(), "rounds=0 应报错");
+        assert!(parse_envelope_and_derive_kek("v2$-1$a$b$c", "pw").is_err(), "rounds 带负号应报错");
+        assert!(parse_envelope_and_derive_kek("v2$1.0$a$b$c", "pw").is_err(), "rounds 带点号应报错");
+        // rounds 溢出（u32 最大 4294967295）与超上限
+        assert!(
+            parse_envelope_and_derive_kek("v2$4294967296$a$b$c", "pw").is_err(),
+            "rounds 超 u32 应报错"
+        );
+        assert!(
+            parse_envelope_and_derive_kek(&format!("v2${}$a$b$c", "9".repeat(20)), "pw").is_err(),
+            "rounds 超长应报错"
+        );
+        assert!(
+            parse_envelope_and_derive_kek("v2$10000001$a$b$c", "pw").is_err(),
+            "rounds 超上限应报错"
+        );
+        // 合法轮数 + 非法 hex → from_hex 报错（整链路安全失败）
+        assert!(
+            parse_envelope_and_derive_kek("v2$600000$zz$bb$cc", "pw").is_err(),
+            "非法 hex 应报错"
+        );
+        // 畸形信封经 unwrap_dek 同样安全失败（统一走同一解析入口）
+        assert!(unwrap_dek("v2$abc$1$2$3", "pw").is_err(), "unwrap 也应安全拒绝畸形信封");
     }
 }

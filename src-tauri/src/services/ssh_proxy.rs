@@ -131,7 +131,10 @@ async fn connect_socks5(
         .await
         .map_err(socks_io_err("发送 CONNECT 请求失败"))?;
 
-    // 回应：VER REP RSV ATYP ADDR...（地址部分长度随 ATYP 变化，全部读掉）
+    // 回应：VER REP RSV ATYP BND.ADDR BND.PORT（地址部分长度随 ATYP 变化，全部读掉）。
+    // head 先读 5 字节 = VER REP RSV ATYP + BND.ADDR 首字节（IPv4/IPv6 的地址首字节，
+    // 或域名模式的长度字节）。0x01/0x04 分支若只补足 BND.ADDR 剩余就会漏读 1 字节
+    // BND.PORT，污染后续 SSH 握手——剩余字节必须把 BND.PORT(2 字节)一并吸收。
     let mut head = [0u8; 5];
     read_exact(&mut stream, &mut head).await?;
     if head[1] != 0x00 {
@@ -140,13 +143,16 @@ async fn connect_socks5(
             head[1]
         )));
     }
+    // ATYP → BND.ADDR 完整长度：IPv4=4；域名=1(长度字节，已含在 head[4])+head[4]；IPv6=16
     let addr_len = match head[3] {
-        0x01 => 4,  // IPv4
-        0x03 => head[4] as usize + 2, // 域名（1 字节长度 + 域名）
-        0x04 => 16, // IPv6
+        0x01 => 4u8,         // IPv4：4 字节地址
+        0x03 => head[4] + 1, // 域名：长度字节 + head[4] 字节域名
+        0x04 => 16u8,        // IPv6：16 字节地址
         _ => return Err(AppError::Ssh("SOCKS5 回应地址类型未知".into())),
     };
-    let mut addr = vec![0u8; addr_len];
+    // 剩余 = 完整地址 - 1(已在 head 中) + 2(BND.PORT)
+    let remaining = addr_len as usize - 1 + 2;
+    let mut addr = vec![0u8; remaining];
     read_exact(&mut stream, &mut addr).await?;
     Ok(stream)
 }

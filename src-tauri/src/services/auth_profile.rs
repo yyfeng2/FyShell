@@ -65,11 +65,16 @@ pub fn list() -> Result<Vec<AuthProfile>, AppError> {
     Ok(profiles)
 }
 
-/// 保存认证配置文件（按 id upsert；新配置文件的 id 由 commands 层生成后传入）
+/// 保存认证配置文件（按 id upsert；新配置文件的 id 由 commands 层生成后传入）。
+///
+/// 主密码保险库已解锁时对 auth_type 的 password 字段加密落盘（与
+/// sessions.auth_type 的既有加解密模式一致）；未解锁/未设置主密码时原样写入
+///（密文 round-trip 无损，明文由下次解锁时的存量迁移兜底），不阻塞保存。
 pub fn save(profile: &AuthProfile) -> Result<(), AppError> {
     let store = store()?;
     let conn = store.lock();
-    let auth_json = serde_json::to_string(&profile.auth_type)?;
+    let auth_json =
+        crate::services::vault::encrypt_auth_json(&serde_json::to_string(&profile.auth_type)?)?;
     conn.execute(
         "INSERT INTO auth_profiles (id, name, auth_type) VALUES (?1, ?2, ?3)
          ON CONFLICT(id) DO UPDATE SET
@@ -105,6 +110,8 @@ impl AuthProfileStore {
 fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuthProfile> {
     // serde_json::Error 需手动转入 rusqlite::Error（query_map 闭包内无法提前用 ?）
     let auth_json: String = row.get("auth_type")?;
+    // 已解锁时把密文 password 解回明文；未解锁/解密失败原样透传（密文 round-trip 无损）
+    let auth_json = crate::services::vault::decrypt_auth_json(&auth_json);
     let auth_type: AuthType = serde_json::from_str(&auth_json).map_err(|e| {
         rusqlite::Error::FromSqlConversionFailure(
             0,
