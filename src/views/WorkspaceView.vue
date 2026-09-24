@@ -293,11 +293,21 @@ function restoreMysqlTreeHistory(): void {
   }
 }
 
-/** 会话树归一化：兼容「config 挂载」与「节点本身即 SessionConfig（Rust enum 平铺序列化）」
+/** 文件夹 id → 父文件夹 id（组树时记录）：重命名文件夹时保留原父级，
+    避免「重命名 = 变相新建 + 移到根级」的错误行为。 */
+const folderParents = new Map<string, string | null>()
+
+/** 会话树归一化 + 组树：wire 为扁平全量列表——文件夹节点带 parent_id、
+    会话节点带 folder_id（bindings SessionNode 契约）——必须按父子关系组装嵌套树，
+    否则文件夹层级永远平铺（「文件夹功能没生效」根因）。
+    孤儿节点（父不存在）按根级挂载，避免节点丢失。
+    同时兼容「config 挂载」与「节点本身即 SessionConfig（Rust enum 平铺序列化）」
     两种 wire 形态——不归一化时 config 恒为 undefined，host 匹配/连接路由/图标全部失效 */
 function normalizeTreeNodes(raw: unknown): SessionNode[] {
+  folderParents.clear()
   if (!Array.isArray(raw)) return []
-  const out: SessionNode[] = []
+  const nodes: SessionNode[] = []
+  const byId = new Map<string, SessionNode>()
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue
     const r = item as Record<string, unknown>
@@ -306,24 +316,40 @@ function normalizeTreeNodes(raw: unknown): SessionNode[] {
     const isFolder =
       r.kind === 'folder' || r.kind === 'Folder' || r.is_folder === true || Array.isArray(r.children)
     if (isFolder) {
-      out.push({
+      const node: SessionNode = { id, name: String(r.name ?? ''), is_folder: true, children: [] }
+      nodes.push(node)
+      byId.set(id, node)
+      folderParents.set(id, (r.parent_id as string | null) ?? null)
+    } else {
+      // 会话节点：config 挂载优先，缺失时节点本身即配置（平铺）
+      const node: SessionNode = {
         id,
         name: String(r.name ?? ''),
-        is_folder: true,
-        children: normalizeTreeNodes(r.children),
-      })
-      continue
+        is_folder: false,
+        config: (r.config ?? r) as SessionNode['config'],
+      }
+      nodes.push(node)
+      byId.set(id, node)
     }
-    // 会话节点：config 挂载优先，缺失时节点本身即配置（平铺）
-    const config = (r.config ?? r) as SessionNode['config']
-    out.push({
-      id,
-      name: String(r.name ?? ''),
-      is_folder: false,
-      config,
-    })
   }
-  return out
+  // 二次遍历按父子关系挂载：文件夹挂父文件夹（parent_id）、会话挂所属文件夹（folder_id）
+  const roots: SessionNode[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const r = item as Record<string, unknown>
+    const id = String(r.id ?? '')
+    if (!id) continue
+    const node = byId.get(id)
+    if (!node) continue
+    const parentId = (node.is_folder ? r.parent_id : r.folder_id) as string | null
+    const parent = parentId ? byId.get(parentId) : undefined
+    if (parent && parent.is_folder) {
+      parent.children!.push(node)
+    } else {
+      roots.push(node)
+    }
+  }
+  return roots
 }
 
 /** 搜索过滤：保留命中节点及含命中子孙的文件夹 */
@@ -1046,12 +1072,17 @@ function menuSessionSettings(): void {
   openSessionSettingsFor({ sessionId: node.id, title: node.name })
 }
 
-/** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框；已存连接按保存配置预填） */
+/** 右键菜单"重命名"：打开会话表单编辑态（文件夹打开名称对话框并预填原名；已存连接按保存配置预填） */
 function menuRename(): void {
   treeMenu.visible = false
   const node = treeMenu.node
   if (!node) return
   if (node.isFolder) {
+    // 进入重命名编辑态：保留原 id 与父级，预填原名（此前误走新建逻辑——
+    // 重命名实际再建了一个文件夹，原文件夹纹丝不动）
+    editingFolderId.value = node.id
+    editingFolderParent.value = folderParents.get(node.id) ?? null
+    folderName.value = node.name
     showFolderDialog.value = true
     return
   }
@@ -2258,9 +2289,23 @@ async function saveSavedConn(cfg: SessionConfig): Promise<SessionConfig> {
   return cfg
 }
 
-/** 新建文件夹（P0：新建在根级） */
+/** 新建文件夹（P0：新建在根级） / 重命名文件夹（右键菜单）对话框共用状态 */
 const showFolderDialog = ref(false)
 const folderName = ref('')
+/** 编辑态：null = 新建文件夹；否则为被重命名的文件夹 id */
+const editingFolderId = ref<string | null>(null)
+/** 重命名时保留的原父文件夹 id（防改名后被误移到根级） */
+const editingFolderParent = ref<string | null>(null)
+/** 对话框标题（新建/重命名共用一套输入框，按编辑态切换文案） */
+const folderDialogTitle = computed(() => (editingFolderId.value ? '重命名文件夹' : '新建文件夹'))
+
+/** 打开「新建文件夹」对话框（ToolBar/MenuBar/树按钮入口，重置为新建编辑态） */
+function openNewFolderDialog(): void {
+  editingFolderId.value = null
+  editingFolderParent.value = null
+  folderName.value = ''
+  showFolderDialog.value = true
+}
 
 // ---------------- 文件菜单"打开"：会话列表对话框（SessionListDialog） ----------------
 
@@ -2354,13 +2399,22 @@ async function deleteFromList(node: { id: string; name: string } | null): Promis
 async function createFolder(): Promise<void> {
   const name = folderName.value.trim()
   if (!name) return
+  const renaming = editingFolderId.value !== null
   try {
-    await sessionStore.saveFolder({ id: crypto.randomUUID(), name, parent_id: null })
+    // 重命名：传原 id + 原父级 → 后端 folder_save 按 id upsert 原地改名（保留位置）；
+    // 新建：随机 id + 根级父（P0 新建仅根级）
+    await sessionStore.saveFolder({
+      id: renaming ? editingFolderId.value! : crypto.randomUUID(),
+      name,
+      parent_id: renaming ? editingFolderParent.value : null,
+    })
     folderName.value = ''
+    editingFolderId.value = null
+    editingFolderParent.value = null
     showFolderDialog.value = false
     await loadTree()
   } catch (e) {
-    ui.toast(`新建文件夹失败：${friendlyError(e)}`, 'error')
+    ui.toast(`保存文件夹失败：${friendlyError(e)}`, 'error')
   }
 }
 
@@ -2535,7 +2589,7 @@ async function onMenuAction(action: string): Promise<void> {
       openSessionForm()
       break
     case 'new-folder':
-      showFolderDialog.value = true
+      openNewFolderDialog()
       break
     case 'open-session-list':
       showSessionListDialog.value = true
@@ -2822,7 +2876,7 @@ onUnmounted(() => {
       :sftp-tools="sftpTools"
       @nav="ui.toggleNav()"
       @new-session="openSessionForm"
-      @new-folder="showFolderDialog = true"
+      @new-folder="openNewFolderDialog"
       @connect="onCreate"
       @disconnect="disconnectActive"
       @search="focusSearch"
@@ -3261,7 +3315,7 @@ onUnmounted(() => {
     <!-- 新建文件夹对话框 -->
     <v-dialog v-model="showFolderDialog" width="360">
       <v-card>
-        <v-card-title class="d-flex align-center text-subtitle-1">新建文件夹
+        <v-card-title class="d-flex align-center text-subtitle-1">{{ folderDialogTitle }}
           <v-spacer />
           <v-btn
           icon="mdi-close"
@@ -3349,7 +3403,7 @@ onUnmounted(() => {
       @properties="openListProperties"
       @delete="deleteFromList"
       @new-session="openSessionForm"
-      @new-folder="showFolderDialog = true"
+      @new-folder="openNewFolderDialog"
       @refresh="loadTree"
     />
 
