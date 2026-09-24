@@ -1277,7 +1277,7 @@ async function printTable(name: string): Promise<void> {
       1,
       100000,
     )
-    printTableReport(name, colResult)
+    printHtml(printTableReport(name, colResult))
   } catch (e) {
     ui.toast(`打印表失败：${errText(e)}`, 'error')
   }
