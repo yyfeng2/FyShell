@@ -66,6 +66,20 @@
                 />
               </div>
             </v-col>
+            <v-col v-if="(props.folderOptions?.length ?? 0) > 0" cols="12">
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">所属文件夹</span>
+                <v-select
+                  v-model="folderId"
+                  density="compact"
+                  :items="props.folderOptions ?? []"
+                  item-title="title"
+                  item-value="value"
+                  clearable
+                  placeholder="根级"
+                />
+              </div>
+            </v-col>
             <v-col v-if="sessionKind !== 'serial'" cols="12" sm="8">
               <div class="fy-field-row">
                 <span class="fy-field-row__label">主机</span>
@@ -328,6 +342,9 @@ const props = defineProps<{
   session?: SessionConfig | null
   /** 新建会话时预设的所属文件夹 id */
   folderId?: string | null
+  /** 所属文件夹候选（值为文件夹 id，按树序带层级缩进；不含根级——根级由清空表达）。
+      空数组时隐藏「所属文件夹」控件（如组件无会话树数据源的调用场景） */
+  folderOptions?: { value: string; title: string }[]
   /** 新建会话时预设的主机（快速连接地址栏预填） */
   presetHost?: string
   /** 保存入口覆盖（编辑已保存连接等非会话场景）：提供时替代 session store 落盘 */
@@ -378,6 +395,8 @@ const formRef = ref<{ validate: () => Promise<{ valid: boolean }> } | null>(null
 const name = ref('')
 const host = ref('')
 const port = ref(22)
+/** 所属文件夹 id（null = 根级）；保存时写入 SessionConfig.folder_id */
+const folderId = ref<string | null>(null)
 /** 会话类型（新建缺省 SSH；编辑从 session_type 恢复） */
 const sessionKind = ref<SessionKind>('ssh')
 const username = ref('')
@@ -537,6 +556,7 @@ function initForm(): void {
     }
     // 契约 P1：恢复已保存的认证配置文件引用（并加载配置文件列表供选择器展示）
     profileId.value = (cfg as SessionConfigWithProfile).profile_id ?? null
+    folderId.value = cfg.folder_id ?? null
     void loadProfiles()
   } else {
     name.value = ''
@@ -557,6 +577,7 @@ function initForm(): void {
     serialBaud.value = 115200
     description.value = ''
     profileId.value = null
+    folderId.value = props.folderId ?? null
     void loadProfiles()
   }
   void loadSerialPorts()
@@ -607,7 +628,7 @@ function buildConfig(): SessionConfigWithProfile {
   const config: SessionConfigWithProfile = {
     id: props.session?.id ?? '',
     name: name.value.trim(),
-    folder_id: props.session ? props.session.folder_id : (props.folderId ?? null),
+    folder_id: folderId.value,
     host: isSerial ? '' : host.value.trim(),
     port: isSerial ? 0 : port.value,
     username: isSerial ? '' : username.value.trim(),

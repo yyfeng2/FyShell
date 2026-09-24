@@ -2225,6 +2225,8 @@ async function loadTransferSnapshot(): Promise<void> {
 const showSessionForm = ref(false)
 const editingSession = ref<SessionConfig | null>(null)
 const presetHost = ref('')
+/** 新建会话预设的所属文件夹 id（根级新建 = null；文件夹右键「在此新建会话…」设置） */
+const newFolderPreset = ref<string | null>(null)
 /** 编辑已保存连接标记（menuRename 已存连接分支设置）：保存走 saveHandler 覆盖链路而非 session_save */
 const editingSavedConn = ref<{ mysql: boolean; id: string } | null>(null)
 
@@ -2232,6 +2234,7 @@ function openSessionForm(): void {
   editingSession.value = null
   editingSavedConn.value = null
   presetHost.value = ''
+  newFolderPreset.value = null
   showSessionForm.value = true
 }
 
@@ -2240,8 +2243,47 @@ function quickConnect(host: string): void {
   editingSession.value = null
   editingSavedConn.value = null
   presetHost.value = host
+  newFolderPreset.value = null
   showSessionForm.value = true
 }
+
+/** 右键「在此新建会话…」：预设所属文件夹并打开新建会话表单（组树后文件夹归类闭环入口） */
+function menuNewSessionInFolder(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node?.isFolder) return
+  editingSession.value = null
+  editingSavedConn.value = null
+  presetHost.value = ''
+  newFolderPreset.value = node.id
+  showSessionForm.value = true
+}
+
+/** 右键「在此新建子文件夹…」：预设父文件夹打开新建文件夹对话框（支持任意层级嵌套） */
+function menuNewSubFolder(): void {
+  treeMenu.visible = false
+  const node = treeMenu.node
+  if (!node?.isFolder) return
+  editingFolderId.value = null
+  editingFolderParent.value = node.id
+  folderName.value = ''
+  showFolderDialog.value = true
+}
+
+/** 会话表单「所属文件夹」候选：组树结果按树序递归拍平（缩进表达层级；根级由控件的清空表达） */
+const folderOptions = computed(() => {
+  const out: { value: string; title: string }[] = []
+  const walk = (list: SessionNode[], depth: number): void => {
+    for (const n of list) {
+      if (n.is_folder) {
+        out.push({ value: n.id, title: `${'　'.repeat(depth)}${n.name}` })
+        walk(n.children ?? [], depth + 1)
+      }
+    }
+  }
+  walk(nodes.value, 0)
+  return out
+})
 
 /** 会话保存成功（新建/编辑/快速连接）：刷新树并按类型打开（sftp 会话开独立 SFTP 双栏 Tab） */
 async function onSessionSaved(config: SessionConfig): Promise<void> {
@@ -2402,11 +2444,11 @@ async function createFolder(): Promise<void> {
   const renaming = editingFolderId.value !== null
   try {
     // 重命名：传原 id + 原父级 → 后端 folder_save 按 id upsert 原地改名（保留位置）；
-    // 新建：随机 id + 根级父（P0 新建仅根级）
+    // 新建（根级/子文件夹）：随机 id + 预设父级（根级入口父为 null）
     await sessionStore.saveFolder({
       id: renaming ? editingFolderId.value! : crypto.randomUUID(),
       name,
-      parent_id: renaming ? editingFolderParent.value : null,
+      parent_id: editingFolderParent.value,
     })
     folderName.value = ''
     editingFolderId.value = null
@@ -3167,8 +3209,15 @@ onUnmounted(() => {
             </v-list-item>
           </template>
 
-          <!-- 文件夹：重命名/删除 -->
+          <!-- 文件夹：在此新建会话/子文件夹 + 重命名/删除（组树后归类闭环入口） -->
           <template v-else>
+            <v-list-item @click="menuNewSessionInFolder">
+              <v-list-item-title>在此新建会话…</v-list-item-title>
+            </v-list-item>
+            <v-list-item @click="menuNewSubFolder">
+              <v-list-item-title>在此新建子文件夹…</v-list-item-title>
+            </v-list-item>
+            <v-divider />
             <v-list-item @click="menuRename">
               <v-list-item-title>重命名</v-list-item-title>
             </v-list-item>
@@ -3307,6 +3356,8 @@ onUnmounted(() => {
     <SessionForm
       v-model="showSessionForm"
       :session="editingSession"
+      :folder-id="newFolderPreset"
+      :folder-options="folderOptions"
       :preset-host="presetHost"
       :save-handler="editingSavedConn ? saveSavedConn : undefined"
       @saved="onSessionSaved"
