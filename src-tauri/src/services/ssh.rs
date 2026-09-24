@@ -841,7 +841,7 @@ async fn run_login_script(
 
 /// 断开并清理会话：从 ssh_sessions 移除句柄（触发连接关闭），
 /// 同时清理可能挂起的 HostKey 确认与残留 oneshot。
-pub fn disconnect(state: &AppState, id: &str) {
+pub fn disconnect(state: &AppState, app: &tauri::AppHandle, id: &str) {
     // 取出句柄并发送优雅断开消息；Handle drop 后连接同样会终止
     let removed = state
         .ssh_sessions
@@ -855,6 +855,9 @@ pub fn disconnect(state: &AppState, id: &str) {
                 .disconnect(Disconnect::ByApplication, "", "")
                 .await;
         });
+        // 应用主动断开不触发 Handler::disconnected（那只在远端断开/网络错误时回调），
+        // 主动推送 disconnected，前端状态条依赖此事件把标签置灰
+        emit_status(app, id, STATUS_DISCONNECTED);
     }
     // 清理挂起的 HostKey 确认（若有），挂起点将因 Sender 被丢弃而中止
     if let Ok(mut pending) = state.pending_hostkey.lock() {

@@ -32,8 +32,8 @@ pub async fn ssh_connect(
 /// 关闭并清理 session/PTY（契约红线：标签关闭时 Rust 侧同步清理）
 #[tauri::command]
 #[specta::specta]
-pub fn ssh_disconnect(id: String, state: State<'_, AppState>) -> Result<(), AppError> {
-    ssh::disconnect(state.inner(), &id);
+pub fn ssh_disconnect(id: String, app: AppHandle, state: State<'_, AppState>) -> Result<(), AppError> {
+    ssh::disconnect(state.inner(), &app, &id);
     Ok(())
 }
 

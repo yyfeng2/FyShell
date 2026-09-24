@@ -1105,6 +1105,7 @@ function menuRename(): void {
       auth_type: { type: 'password', password: saved.password ?? '' },
     } as unknown as SessionConfig
     presetHost.value = ''
+    presetSftp.value = false
     showSessionForm.value = true
     return
   }
@@ -1112,6 +1113,7 @@ function menuRename(): void {
   if (!target) return
   editingSession.value = (target.config ?? {}) as unknown as SessionConfig
   presetHost.value = ''
+  presetSftp.value = false
   showSessionForm.value = true
 }
 
@@ -1277,6 +1279,7 @@ async function menuCloneConnection(): Promise<void> {
     // 复制后立即弹出编辑：装载副本配置（新 uuid，保存即更新副本）
     editingSession.value = cloned as unknown as SessionConfig
     presetHost.value = ''
+    presetSftp.value = false
     showSessionForm.value = true
   } catch (e) {
     ui.toast(`复制连接失败：${friendlyError(e)}`, 'error')
@@ -2227,6 +2230,8 @@ const editingSession = ref<SessionConfig | null>(null)
 const presetHost = ref('')
 /** 新建会话预设的所属文件夹 id（根级新建 = null；文件夹右键「在此新建会话…」设置） */
 const newFolderPreset = ref<string | null>(null)
+/** 新建会话预设为 SFTP 类型（工具栏「传文件」→「新建 SFTP 会话…」，配合独立会话启动） */
+const presetSftp = ref(false)
 /** 编辑已保存连接标记（menuRename 已存连接分支设置）：保存走 saveHandler 覆盖链路而非 session_save */
 const editingSavedConn = ref<{ mysql: boolean; id: string } | null>(null)
 
@@ -2235,6 +2240,7 @@ function openSessionForm(): void {
   editingSavedConn.value = null
   presetHost.value = ''
   newFolderPreset.value = null
+  presetSftp.value = false
   showSessionForm.value = true
 }
 
@@ -2244,6 +2250,18 @@ function quickConnect(host: string): void {
   editingSavedConn.value = null
   presetHost.value = host
   newFolderPreset.value = null
+  presetSftp.value = false
+  showSessionForm.value = true
+}
+
+/** 新建独立 SFTP 会话（工具栏「传文件」→「新建 SFTP 会话…」）：打开新建表单并预设类型=SFTP，
+    保存后由 openSessionByType（sftp 分支）以独立连接启动独立双栏 Tab */
+function openNewSftpSession(): void {
+  editingSession.value = null
+  editingSavedConn.value = null
+  presetHost.value = ''
+  newFolderPreset.value = null
+  presetSftp.value = true
   showSessionForm.value = true
 }
 
@@ -2256,6 +2274,7 @@ function menuNewSessionInFolder(): void {
   editingSavedConn.value = null
   presetHost.value = ''
   newFolderPreset.value = node.id
+  presetSftp.value = false
   showSessionForm.value = true
 }
 
@@ -2460,9 +2479,17 @@ async function createFolder(): Promise<void> {
   }
 }
 
-/** 断开当前活动 Tab 的会话（closeTab 内含 Rust 侧清理逻辑） */
+/** 断开当前活动会话（Xshell 惯例：断开连接保留标签，终端留在灰态可回看缓冲区） */
 function disconnectActive(): void {
-  if (activeId.value) closeTab(activeId.value)
+  const tab = tabs.value.find((t) => t.id === activeId.value)
+  if (!tab?.connId) return
+  const key = tab.connId
+  // 先置灰再断开：覆盖连接进行中点断开的竞态（后端尚未注册句柄、无 disconnected 事件回流，
+  // connectSession 的 M2 守卫靠此状态拦截连接完成后的复活回写）；SFTP 独立会话 Tab 同理。
+  // store sessionStatus 驱动树状态点/标签，本地 connStatus 驱动底部状态条，两处同步置灰
+  terminalStore.sessionStatus[key] = 'disconnected'
+  connStatus.value = new Map(connStatus.value).set(key, 'disconnected')
+  void terminalStore.disconnectSession(key)
 }
 
 // ---------------- 日志（P1） ----------------
@@ -2924,6 +2951,7 @@ onUnmounted(() => {
       @search="focusSearch"
       @transfer="openTransferTab"
       @sftp="openSftpTab"
+      @sftp-new="openNewSftpSession"
       @font-size="onToolbarFont"
       @font-family="onToolbarFontFamily"
       @font-style="onToolbarFontStyle"
@@ -3309,6 +3337,7 @@ onUnmounted(() => {
               :session-id="sftpPaneSessionId(tab)"
               :session-name="tab.sessionId ? tab.title : lastTerminalSessionName"
               @remote-path-change="(p: string) => (currentPath = p)"
+              @transfer-started="openTransferTab"
             />
             <TunnelView v-else-if="tab.type === 'tunnel'" />
             <ComposePane v-else-if="tab.type === 'compose'" @sent="onComposeSent" />
@@ -3359,6 +3388,7 @@ onUnmounted(() => {
       :folder-id="newFolderPreset"
       :folder-options="folderOptions"
       :preset-host="presetHost"
+      :default-type="presetSftp ? 'sftp' : undefined"
       :save-handler="editingSavedConn ? saveSavedConn : undefined"
       @saved="onSessionSaved"
     />
