@@ -213,29 +213,39 @@ export function useXterm(options: UseXtermOptions = {}) {
     }
   }
 
+  /** 共享 beep 用的 AudioContext（复用防止反复创建/销毁，dispose 时统一关闭） */
+  let bellCtx: AudioContext | null = null
   /** Web Audio 短促 beep（OscillatorNode，880Hz / 120ms） */
   function playBellSound(): void {
     try {
-      const ctx = new AudioContext()
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
+      // 复用共享 context：首次创建、已关闭则重建；suspended 时尝试恢复（无手势可能失败而静默）
+      if (!bellCtx || bellCtx.state === 'closed') {
+        bellCtx = new AudioContext()
+      }
+      if (bellCtx.state === 'suspended') void bellCtx.resume().catch(() => undefined)
+      const osc = bellCtx.createOscillator()
+      const gain = bellCtx.createGain()
       osc.frequency.value = 880
       gain.gain.value = 0.08
       osc.connect(gain)
-      gain.connect(ctx.destination)
+      gain.connect(bellCtx.destination)
       osc.start()
-      osc.stop(ctx.currentTime + 0.12)
-      osc.onended = () => void ctx.close()
+      osc.stop(bellCtx.currentTime + 0.12)
+      // 共享 context 不在每次响铃时 close，由 dispose 统一关闭
     } catch {
       // Web Audio 不可用（无用户手势等）时静默
     }
   }
 
-  /** 容器背景闪烁（视觉响铃，150ms 后恢复） */
+  /** 铃声闪烁恢复定时器（dispose 清理：组件卸载后不得再改已销毁容器样式） */
+  let flashTimer: ReturnType<typeof setTimeout> | null = null
+  /** 容器背景闪烁（视觉响铃，150ms 后恢复；连续闪烁前清掉上一次定时器） */
   function flashScreen(container: HTMLElement): void {
     const prev = container.style.backgroundColor
     container.style.backgroundColor = 'rgba(255, 255, 255, 0.25)'
-    setTimeout(() => {
+    if (flashTimer !== null) clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => {
+      flashTimer = null
       container.style.backgroundColor = prev
     }, 150)
   }
@@ -842,6 +852,15 @@ export function useXterm(options: UseXtermOptions = {}) {
     if (highlightTimer !== null) {
       clearTimeout(highlightTimer)
       highlightTimer = null
+    }
+    // 清理铃声闪烁恢复定时器与共享 beep 音频上下文（组件卸载后资源不滞留）
+    if (flashTimer !== null) {
+      clearTimeout(flashTimer)
+      flashTimer = null
+    }
+    if (bellCtx) {
+      void bellCtx.close().catch(() => undefined)
+      bellCtx = null
     }
     for (const d of highlightDecorations) {
       try {

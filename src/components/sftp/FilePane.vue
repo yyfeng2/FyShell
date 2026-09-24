@@ -387,21 +387,30 @@ const isRoot = computed(() => isRootPath(props.side, currentPath.value))
 /** 当前选中条目名（单选；空串表示未选中） */
 const selectedName = ref('')
 
+/** 目录加载序号：快速切换路径/连接时丢弃过期响应（防止慢的旧目录覆盖新目录/错弹错误） */
+let loadSeq = 0
 async function load(): Promise<void> {
   if (props.disabled) return
   if (props.side === 'remote' && !props.sessionId) {
     entries.value = []
     return
   }
+  const seq = ++loadSeq
+  const path = currentPath.value
   loading.value = true
   errorMsg.value = ''
   try {
     if (props.side === 'remote') {
-      entries.value = ((await sftpList(props.sessionId, currentPath.value)) as unknown[]) as FileEntry[]
+      const list = ((await sftpList(props.sessionId, path)) as unknown[]) as FileEntry[]
+      if (seq !== loadSeq) return // 已被更新的跳转覆盖：丢弃过期目录内容
+      entries.value = list
     } else {
-      entries.value = ((await localList(currentPath.value)) as unknown[]) as FileEntry[]
+      const list = ((await localList(path)) as unknown[]) as FileEntry[]
+      if (seq !== loadSeq) return
+      entries.value = list
     }
   } catch (e) {
+    if (seq !== loadSeq) return // 过期响应失败不弹错误（报错已属于离开的目录）
     entries.value = []
     errorMsg.value = friendlyError(e)
     snackbar.value = true

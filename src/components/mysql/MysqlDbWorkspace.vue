@@ -709,7 +709,6 @@ import { mysqlTableDesignGet } from '@/api/mysqlDesign'
 import {
   mysqlDbDrop,
   mysqlDbList,
-  mysqlDbSwitch,
   mysqlTableOptimize,
   mysqlTableRename,
   mysqlTableShowCreate,
@@ -721,7 +720,11 @@ import NewDatabaseDialog from './NewDatabaseDialog.vue'
 import BackupPanel from './BackupPanel.vue'
 import AutoRunPanel from './AutoRunPanel.vue'
 import VaultUnlockDialog from '@/components/common/VaultUnlockDialog.vue'
-import type { SavedMysqlConnection } from '@/stores/mysql'
+import {
+  mysqlConnToken,
+  mysqlConnTokenCurrent,
+  type SavedMysqlConnection,
+} from '@/stores/mysql'
 import { friendlyError as errText } from '@/utils/errors'
 
 const store = useMysqlStore()
@@ -838,17 +841,25 @@ const filteredObjects = computed(() => {
   return objects.value.filter((o) => o.name.toLowerCase().includes(kw))
 })
 
+/** 对象列表刷新序号：切换对象类型/快速连点时丢弃过期响应（与连接代际共用守卫） */
+let objectsSeq = 0
 async function refreshObjects(): Promise<void> {
   const kind = currentKind.value
   const connId = store.connId
   if (!kind || !connId) return
+  const seq = ++objectsSeq
+  const token = mysqlConnToken()
   objectsLoading.value = true
   try {
     const list = await mysqlObjectList(connId, kind)
+    // 已被更新的刷新 / 连接切换接管：丢弃（不污染 objectsCache）
+    if (seq !== objectsSeq || !mysqlConnTokenCurrent(token)) return
     objectsCache.set(kind, list)
     objects.value = list
     loadedKinds.value.add(kind)
   } catch (err) {
+    // 过期响应不弹错（报错必来自已切换的旧连接/旧代际）
+    if (seq !== objectsSeq || !mysqlConnTokenCurrent(token)) return
     ui.toast(errText(err), 'error')
   } finally {
     objectsLoading.value = false
@@ -993,29 +1004,43 @@ const filteredUsers = computed(() => {
   return users.value.filter((u) => `${u.user}@${u.host}`.toLowerCase().includes(kw))
 })
 
+/** 用户列表刷新序号：快速连点/连接切换时丢弃过期响应 */
+let usersSeq = 0
 async function refreshUsers(): Promise<void> {
   const connId = store.connId
   if (!connId) return
+  const seq = ++usersSeq
+  const token = mysqlConnToken()
   usersLoading.value = true
   try {
-    users.value = await mysqlUserList(connId)
+    const list = await mysqlUserList(connId)
+    if (seq !== usersSeq || !mysqlConnTokenCurrent(token)) return
+    users.value = list
     usersLoaded.value = true
   } catch (err) {
-    // 权限不足等后端错误直接展示
+    // 权限不足等后端错误直接展示（过期响应静默）
+    if (seq !== usersSeq || !mysqlConnTokenCurrent(token)) return
     ui.toast(errText(err), 'error')
   } finally {
     usersLoading.value = false
   }
 }
 
+/** 权限列表刷新序号：连接切换/选中用户变更时丢弃过期响应 */
+let grantsSeq = 0
 async function refreshGrants(): Promise<void> {
   const connId = store.connId
   const target = selectedUser.value
   if (!connId || !target) return
+  const seq = ++grantsSeq
+  const token = mysqlConnToken()
   grantsLoading.value = true
   try {
-    grants.value = await mysqlUserGrants(connId, target.user, target.host)
+    const list = await mysqlUserGrants(connId, target.user, target.host)
+    if (seq !== grantsSeq || !mysqlConnTokenCurrent(token)) return
+    grants.value = list
   } catch (err) {
+    if (seq !== grantsSeq || !mysqlConnTokenCurrent(token)) return
     ui.toast(errText(err), 'error')
     grants.value = []
   } finally {
@@ -1128,6 +1153,8 @@ const canvasHeight = computed(() => {
   return MODEL_PAD * 2 + rows * MODEL_CARD_H + (rows - 1) * MODEL_GAP_Y
 })
 
+/** 模型刷新序号：进入模型 tab / 连接切换时丢弃过期响应（只看最近一次） */
+let modelSeq = 0
 /**
  * 刷新模型视图：对当前库每张表调 mysql_table_design_get 拉外键
  * （单表失败按无外键处理，不阻塞整体渲染），按网格排布表卡片。
@@ -1135,6 +1162,8 @@ const canvasHeight = computed(() => {
 async function refreshModel(): Promise<void> {
   const connId = store.connId
   if (!connId) return
+  const seq = ++modelSeq
+  const token = mysqlConnToken()
   modelLoading.value = true
   try {
     const tables = store.tables
@@ -1148,6 +1177,7 @@ async function refreshModel(): Promise<void> {
         }
       }),
     )
+    if (seq !== modelSeq || !mysqlConnTokenCurrent(token)) return
     const cards: ModelCard[] = []
     const rels: FkRelation[] = []
     designs.forEach((design, i) => {
@@ -1171,6 +1201,7 @@ async function refreshModel(): Promise<void> {
     modelRels.value = rels.filter((r) => names.has(r.to))
     modelCards.value = cards
   } catch (err) {
+    if (seq !== modelSeq || !mysqlConnTokenCurrent(token)) return
     ui.toast(errText(err), 'error')
   } finally {
     modelLoading.value = false
@@ -1207,12 +1238,14 @@ const connHost = ref('')
 /** 系统库清单（自动选中第一个用户库时跳过） */
 const SYSTEM_DBS = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
 
-/** 拉取库列表 + 当前库 + host（连接后自动加载，切换后刷新） */
+/** 拉取库列表 + 当前库 + host（连接后自动加载，切换后刷新）；连接已切换的滞留响应丢弃 */
 async function loadDatabases(): Promise<void> {
   const connId = store.connId
   if (!connId) return
+  const token = mysqlConnToken()
   try {
     const result = await mysqlDbList(connId)
+    if (!mysqlConnTokenCurrent(token)) return // 连接已切换：丢弃陈旧库列表
     databases.value = result.databases
     currentDb.value = result.current_db
     connHost.value = result.host
@@ -1226,34 +1259,32 @@ async function loadDatabases(): Promise<void> {
       }
     }
   } catch (err) {
-    // 权限不足等错误以 toast 提示，不影响工作台其它区域
+    // 权限不足等错误以 toast 提示，不影响工作台其它区域（过期响应静默）
+    if (!mysqlConnTokenCurrent(token)) return
     ui.toast(errText(err), 'error')
   }
 }
 
 /**
- * 切换数据库：后端重建该连接的连接池（新 conn_id）。
- * store.connId 替换后触发本组件的 connId watch 清空会话级状态（对象树缓存等），
- * 再重新加载表列表，数据网格与对象树随之刷新。
+ * 切换数据库：统一走 store.switchDb（后端 mysql_db_switch 重建连接池并返回新 conn_id，
+ * store 内部按连接代际守卫——与其它切库入口竞争/快速连点时仅最后一次回写，过期切换
+ * 失败静默丢弃）。store.connId 替换后触发本组件的 connId watch 清空会话级状态
+ * （对象树缓存等），再重新加载表列表，数据网格与对象树随之刷新。
  */
-/** 切库在途守卫：快速连点两次时，第二次在旧 connId 尚未写回前发起会命中已被
- *  第一次 switch_database 断开的旧池而必然失败，这里直接丢弃（与 connectFromSaved
- *  的 connecting 守卫同理） */
+/**
+ * 切库在途守卫（本地去重）：快速连点两次时避免对同一旧 connId 发起并发 switch——
+ * 第二次在旧 connId 尚未写回前发起会命中已被第一次 switch_database 断开的旧池而
+ * 必然失败；事务性由 store 代际守卫兜底（跨入口竞争同样只回写最后一次）
+ */
 let switchingDb = false
 async function switchDb(name: string | null): Promise<void> {
   const connId = store.connId
   if (!connId || !name || name === currentDb.value || switchingDb) return
   switchingDb = true
   try {
-    const newId = await mysqlDbSwitch(connId, name)
-    // 以新 conn_id 替换（watch 自动清空 loadedKinds 等会话级状态）
-    store.connId = newId
+    const applied = await store.switchDb(name)
+    if (!applied) return // 已被更新的切库接管：不更新本地展示、不提示
     currentDb.value = name
-    // 重置表列表后重新加载（新库的表清单）
-    store.tables = []
-    await store.loadTables()
-    // 切库成功后清除连接期的旧报错（如未选库时的提示横幅）
-    store.queryError = ''
     ui.toast(`已切换到数据库「${name}」`, 'success')
   } catch (err) {
     ui.toast(errText(err), 'error')
@@ -1432,12 +1463,15 @@ function startSideResize(e: MouseEvent): void {
   const onMove = (ev: MouseEvent): void => {
     sidebarWidth.value = Math.min(420, Math.max(160, startW + (ev.clientX - startX)))
   }
+  // 集中解绑：mouseup 释放完成；窗口失焦（鼠标在窗口外释放等）兜底清理防监听泄漏
   const onUp = (): void => {
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
+    window.removeEventListener('blur', onUp)
   }
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
+  window.addEventListener('blur', onUp)
 }
 
 /**

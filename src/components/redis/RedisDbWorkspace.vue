@@ -179,12 +179,13 @@ onMounted(() => {
   void store.loadSavedConnections()
 })
 
-/** 切换 DB：store.selectDb(n) 内部已刷新键列表（Keys 面板按 store.db watch 自动复位选中） */
+/** 切换 DB：store.selectDb(n) 内部已刷新键列表（Keys 面板按 store.db watch 自动复位选中）；
+ *  返回 false 表示本次切换已被更新的切库接管（快速连点时过期的一次），不再提示 */
 async function onSelectDb(n: number | null): Promise<void> {
   if (n === null || n === store.db) return
   try {
-    await store.selectDb(n)
-    ui.toast(`已切换到 DB ${n}`, 'success')
+    const applied = await store.selectDb(n)
+    if (applied) ui.toast(`已切换到 DB ${n}`, 'success')
   } catch (err) {
     ui.toast(errText(err), 'error')
   }

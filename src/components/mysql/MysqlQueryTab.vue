@@ -194,10 +194,10 @@ import SqlEditor from './SqlEditor.vue'
 import ExplainPanel from './ExplainPanel.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { formatSql, splitSqlStatements } from './sql-format'
-import { useMysqlStore } from '@/stores/mysql'
+import { useMysqlStore, mysqlConnToken, mysqlConnTokenCurrent } from '@/stores/mysql'
 import { useUiStore } from '@/stores/ui'
 import { mysqlQuery, mysqlExecute } from '@/api/mysql'
-import { mysqlDbList, mysqlDbSwitch } from '@/api/mysqlDb'
+import { mysqlDbList } from '@/api/mysqlDb'
 import { mysqlSavedQueryList, mysqlSavedQuerySave, type MySqlSavedQueryItem } from '@/api/mysqlConsole'
 import { friendlyError as errText } from '@/utils/errors'
 
@@ -377,16 +377,13 @@ async function loadDbs(): Promise<void> {
   }
 }
 
-/** 选中数据库：切库（mysqlDbSwitch 重建连接池，全局生效，工作台同步） */
+/** 选中数据库：切库（统一走 store.switchDb 重建连接池，连接代际守卫，全局生效，工作台同步） */
 async function onDbSelect(db: string): Promise<void> {
-  const connId = store.connId
-  if (!connId || !db) return
+  if (!db || !store.connId) return
   try {
-    const newId = await mysqlDbSwitch(connId, db)
-    store.connId = newId
-    store.tables = []
-    await store.loadTables()
-    ui.toast(`已切换到数据库 ${db}`, 'success')
+    const applied = await store.switchDb(db)
+    // 过期切换（已被其它入口接管）不提示，避免陈旧成功 toast
+    if (applied) ui.toast(`已切换到数据库 ${db}`, 'success')
   } catch (e) {
     ui.toast(errText(e), 'error')
   }
@@ -427,7 +424,14 @@ function runSelectionOnly(): void {
 /** 编辑器选中区文本（SqlEditor executeSelection 事件回写） */
 const selectionText = ref('')
 
-/** 执行 SQL：多语句逐条路由（SELECT 分页查询，其余写操作），结果逐条展示 */
+/** 运行序号：快速连续运行 / 连接切换时丢弃过期响应（只在最后保存现场） */
+let runSeq = 0
+
+/**
+ * 执行 SQL：多语句逐条路由（SELECT 分页查询，其余写操作），结果逐条展示。
+ * 守卫：本次运行发起时的镜像（seq + 连接代际 token），任何 await 之后校验——已有
+ * 更新的运行（runSeq 变化）或连接/库已切换（token 过期）则丢弃后续结果与报错提示。
+ */
 async function run(text: string): Promise<void> {
   const connId = store.connId
   if (!connId) {
@@ -435,14 +439,19 @@ async function run(text: string): Promise<void> {
     return
   }
   if (!text.trim()) return
+  const seq = ++runSeq
+  const token = mysqlConnToken()
   running.value = true
   error.value = ''
   results.value = []
+  const stale = (): boolean => seq !== runSeq || !mysqlConnTokenCurrent(token)
   try {
     const stmts = splitSqlStatements(text)
     for (const stmt of stmts) {
+      if (stale()) return
       if (SELECT_RE.test(stmt)) {
         const result = await mysqlQuery(connId, stmt, 1, PAGE_SIZE)
+        if (stale()) return
         results.value.push({
           columns: result.columns,
           rows: result.rows,
@@ -451,6 +460,7 @@ async function run(text: string): Promise<void> {
       } else {
         try {
           const affected = await mysqlExecute(connId, stmt)
+          if (stale()) return
           results.value.push({
             columns: [],
             rows: [],
@@ -466,11 +476,13 @@ async function run(text: string): Promise<void> {
               confirmText: '执行',
               danger: true,
             })
+            if (stale()) return
             if (!ok) {
               results.value.push({ columns: [], rows: [], note: '已取消' })
               continue
             }
             const affected = await mysqlExecute(connId, stmt, true)
+            if (stale()) return
             results.value.push({
               columns: [],
               rows: [],
@@ -483,6 +495,7 @@ async function run(text: string): Promise<void> {
       }
     }
   } catch (e) {
+    if (stale()) return
     ui.toast(errText(e), 'error')
   } finally {
     running.value = false

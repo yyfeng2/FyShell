@@ -35,6 +35,18 @@ import { friendlyError as errText } from '@/utils/errors'
 /** 对外复用契约类型（单一事实来源在 @/api/types） */
 export type { RedisConnection, RedisExecResult }
 
+// ---------- 连接代际守卫（连接/切库并发防陈旧响应，镜像 mysql store） ----------
+/**
+ * 任何改变「当前连接语义」的入口（connect / disconnect / selectDb）先递增 connGen；
+ * loadKeys / selectDb 捕获发起时的 token，响应归来时校验仍为当前才写 state，过期写
+ * 作静默丢弃（不覆盖 keys/db、不弹陈旧的错误）。快速连点切库时仅最后一次回写。
+ */
+let connGen = 0
+
+function bumpConnGen(): void {
+  connGen += 1
+}
+
 /** 已保存连接的持久化键（后端 SQLite settings 表，key-value 文本） */
 const SAVED_CONN_KEY = 'redis_saved_connections'
 
@@ -129,6 +141,8 @@ export const useRedisStore = defineStore('redis', {
     // ---------- 连接管理 ----------
     /** 建立连接并自动加载键列表；失败时抛出（组件可捕获展示）。config.db 作为默认库随连接选择 */
     async connect(config: RedisConnection): Promise<void> {
+      // 连接上下文即将变更：在途旧连接/旧库的异步响应（键列表等）即刻过期
+      bumpConnGen()
       // 已连接时先断开旧连接（切换语义，与 connectSaved 一致）：
       // 避免直接覆盖 connId 导致后端旧连接池/独占连接滞留注册表
       if (this.connId) await this.disconnect()
@@ -162,6 +176,8 @@ export const useRedisStore = defineStore('redis', {
     async disconnect(): Promise<void> {
       const id = this.connId
       if (!id) return
+      // 连接已断开：在途旧请求（键列表）的响应一律过期丢弃
+      bumpConnGen()
       try {
         await redisDisconnect(id)
       } finally {
@@ -314,12 +330,15 @@ export const useRedisStore = defineStore('redis', {
     },
 
     // ---------- 键列表 ----------
-    /** 拉取当前库匹配 pattern 的键列表（pattern 空串按 "*" 处理） */
+    /** 拉取当前库匹配 pattern 的键列表（pattern 空串按 "*" 处理）；连接已切换的滞留响应丢弃 */
     async loadKeys(): Promise<void> {
       if (!this.connId) throw new Error('未连接 Redis')
+      const token = connGen
       this.keysLoading = true
       try {
-        this.keys = await redisKeys(this.connId, this.pattern || '*')
+        const keys = await redisKeys(this.connId, this.pattern || '*')
+        if (token !== connGen) return // 连接/库已切换：丢弃陈旧键列表
+        this.keys = keys
       } finally {
         this.keysLoading = false
       }
@@ -331,12 +350,24 @@ export const useRedisStore = defineStore('redis', {
     },
 
     // ---------- 库与命令 ----------
-    /** 切换当前库（select n），成功后刷新键列表 */
-    async selectDb(n: number): Promise<void> {
+    /**
+     * 切换当前库（select n），成功后刷新键列表。返回是否本次生效。
+     * 并发快速连点切库时仅最后一次生效：过期切换不覆盖 db、不刷新键列表、
+     * 失败静默丢弃（旧库已断导致的必然失败不弹错）。
+     */
+    async selectDb(n: number): Promise<boolean> {
       if (!this.connId) throw new Error('未连接 Redis')
-      await redisSelectDb(this.connId, n)
-      this.db = n
-      await this.loadKeys()
+      const token = ++connGen
+      try {
+        await redisSelectDb(this.connId, n)
+        if (token !== connGen) return false // 更新的切库已接管
+        this.db = n
+        await this.loadKeys()
+        return true
+      } catch (err) {
+        if (token !== connGen) return false // 过期切库失败静默
+        throw err
+      }
     },
 
     /** 任意 Redis 命令执行（args 为命令+参数）；错误归一化为字符串抛出 */

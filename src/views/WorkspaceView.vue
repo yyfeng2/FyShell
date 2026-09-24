@@ -51,7 +51,7 @@ import SessionListDialog from '@/components/ssh/session/SessionListDialog.vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { friendlyError } from '@/utils/errors'
 import { useRedisStore } from '@/stores/redis'
-import { mysqlDbList, mysqlDbSwitch, mysqlDbDrop } from '@/api/mysqlDb'
+import { mysqlDbList, mysqlDbDrop } from '@/api/mysqlDb'
 import { mysqlListTables, mysqlQuery } from '@/api/mysql'
 import { sessionList, sessionClone } from '@/api/session'
 import { transferList } from '@/api/sftp'
@@ -628,12 +628,15 @@ function startNavResize(e: MouseEvent): void {
   const onMove = (ev: MouseEvent): void => {
     ui.setNavWidth(startW + (ev.clientX - startX))
   }
+  // 集中解绑：mouseup 释放完成；窗口失焦（鼠标在窗口外释放等）兜底清理防监听泄漏
   const onUp = (): void => {
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
+    window.removeEventListener('blur', onUp)
   }
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
+  window.addEventListener('blur', onUp)
 }
 
 function findNode(list: SessionNode[], id: string): SessionNode | null {
@@ -1015,25 +1018,20 @@ async function connectMysqlSaved(savedId: string): Promise<void> {
 let lastDbSwitchId = ''
 let lastDbSwitchAt = 0
 
-/** 树中双击数据库子节点：切换 MySQL 当前库并刷新表清单 */
+/** 树中双击数据库子节点：切换 MySQL 当前库并刷新表清单（统一走 store.switchDb） */
 async function switchMysqlDbFromTree(node: FlatNode): Promise<void> {
   const mysqlStore = useMysqlStore()
-  const connId = mysqlStore.connId
   const dbName = node.dbName
-  if (!connId || !dbName) return
+  if (!mysqlStore.connId || !dbName) return
   if (dbName === lastDbSwitchId && Date.now() - lastDbSwitchAt < 800) return
   lastDbSwitchId = dbName
   lastDbSwitchAt = Date.now()
   try {
     // 打开 MySQL 工作台展示切库结果（树中切库的可见反馈）
     openMysqlTab()
-    // 后端重建连接池并返回新 conn_id，须替换 store.connId
+    // 统一走 store.switchDb：后端重建连接池、内部按连接代际守卫回写
     //（MysqlDbWorkspace 的 connId watch 随之清空会话级状态并刷新库下拉）
-    const newId = await mysqlDbSwitch(connId, dbName)
-    mysqlStore.connId = newId
-    mysqlStore.tables = []
-    await mysqlStore.loadTables()
-    mysqlStore.queryError = ''
+    await mysqlStore.switchDb(dbName)
   } catch {
     // 切库失败由 MySQL 工作台 v-alert 展示；清除去重标记允许立即重试
     lastDbSwitchId = ''
@@ -1293,17 +1291,14 @@ async function menuNewQuery(): Promise<void> {
   openQueryTab()
 }
 
-/** 切换 MySQL 连接默认库（复用 mysql_db_switch 重建连接池；与工作台 switchDb 同型） */
+/** 切换 MySQL 连接默认库（统一走 store.switchDb：代际守卫，与工作台/树/命令列同型） */
 async function switchMysqlDb(name: string): Promise<void> {
   const st = useMysqlStore()
   if (!st.connId || !name) return
   try {
-    const newId = await mysqlDbSwitch(st.connId, name)
-    st.connId = newId
-    st.tables = []
-    await st.loadTables()
-    st.queryError = ''
-    ui.toast(`已切换到数据库「${name}」`, 'success')
+    const applied = await st.switchDb(name)
+    // 过期切换（已被其它入口的切库接管）不提示，避免陈旧成功 toast
+    if (applied) ui.toast(`已切换到数据库「${name}」`, 'success')
   } catch (e) {
     ui.toast(friendlyError(e), 'error')
   }
@@ -1491,16 +1486,13 @@ const findDbName = ref('')
 async function openFoundTable(table: string): Promise<void> {
   showFindDialog.value = false
   const mysqlStore = useMysqlStore()
-  const connId = mysqlStore.connId
-  if (!connId || !findDbName.value) return
+  if (!mysqlStore.connId || !findDbName.value) return
   openMysqlTab()
   try {
-    // 后端重建连接池并返回新 conn_id，须替换 store.connId（表名按当前库解析，切库保证命中）
-    const newId = await mysqlDbSwitch(connId, findDbName.value)
-    mysqlStore.connId = newId
-    mysqlStore.tables = []
-    await mysqlStore.loadTables()
-    mysqlStore.pendingOpenTable = table
+    // 统一走 store.switchDb（切到查找的库；表名按当前库解析，切库保证命中）。
+    // 未生效（已被其它入口的切库接管）则不打开表，避免错库错表
+    const applied = await mysqlStore.switchDb(findDbName.value)
+    if (applied) mysqlStore.pendingOpenTable = table
   } catch (e) {
     ui.toast(`切换数据库失败：${friendlyError(e)}`, 'error')
   }
@@ -1569,7 +1561,8 @@ ${sections}
 </body></html>`
 }
 
-/** 隐藏 iframe 写入 HTML 并调起打印（WebView2 内打印，不弹新窗口） */
+/** 隐藏 iframe 写入 HTML 并调起打印（WebView2 内打印，不弹新窗口）；
+ *  打印完成（afterprint）立即移除临时 iframe，避免打印对话框关后被隐藏框架滞留 */
 function printHtml(html: string): void {
   const iframe = document.createElement('iframe')
   iframe.style.position = 'fixed'
@@ -1586,8 +1579,13 @@ function printHtml(html: string): void {
   doc.write(html)
   doc.close()
   iframe.contentWindow?.focus()
+  // 打印完成后立即移除（afterprint 前端事件；兜底超时防 60s 滞留，移除幂等）
+  const removeFrame = (): void => {
+    if (iframe.parentNode === document.body) document.body.removeChild(iframe)
+  }
+  iframe.contentWindow?.addEventListener('afterprint', removeFrame)
   iframe.contentWindow?.print()
-  window.setTimeout(() => document.body.removeChild(iframe), 60_000)
+  window.setTimeout(removeFrame, 60_000)
 }
 
 /** 导入导出对话框（树右键"运行 SQL 文件"入口；connId 挂当前活动 MySQL 连接） */

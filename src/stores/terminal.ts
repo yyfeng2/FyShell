@@ -308,15 +308,25 @@ export const useTerminalStore = defineStore('terminal', () => {
         await sshConnect(session.id, onOutput, key)
       }
       debugLog(`${type} connect resolved (connected): ${key}`)
+      // M2 守卫：连接期间 tab 已关闭（cleanupSession 已删除状态条目 → undefined）则不回写
+      // 已销毁会话的状态，并清理刚建成但已无人接收的后端连接句柄（防已死会话复活/句柄泄漏）
+      if (sessionStatus.value[key] === undefined) {
+        debugLog(`${type} connect resolved after session closed, cleanup handle: ${key}`)
+        void disconnectSession(key).catch(() => undefined)
+        return
+      }
       sessionStatus.value[key] = 'connected'
       // 连接成功峰值反馈：标签短暂闪绿（setTimeout 恢复原色）
       sessionFlash.value[key] = true
       setTimeout(() => delete sessionFlash.value[key], 1500)
     } catch (e) {
       debugLog(`${type} connect failed: ${key} ${e instanceof Error ? e.message : String(e)}`)
-      sessionStatus.value[key] = 'disconnected'
-      sessionError.value[key] =
-        e instanceof Error ? e.message : String(e)
+      // M2 守卫：会话已销毁则不回写错误状态（避免复活已死会话的状态条目）
+      if (sessionStatus.value[key] !== undefined) {
+        sessionStatus.value[key] = 'disconnected'
+        sessionError.value[key] =
+          e instanceof Error ? e.message : String(e)
+      }
       throw e
     }
   }

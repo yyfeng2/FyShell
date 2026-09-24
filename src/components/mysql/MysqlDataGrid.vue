@@ -1072,12 +1072,15 @@ function startSideResize(e: MouseEvent): void {
   const onMove = (ev: MouseEvent): void => {
     sidebarWidth.value = Math.min(420, Math.max(160, startW + (ev.clientX - startX)))
   }
+  // 集中解绑：mouseup 释放完成；窗口失焦（鼠标在窗口外释放等）兜底清理防监听泄漏
   const onUp = (): void => {
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
+    window.removeEventListener('blur', onUp)
   }
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
+  window.addEventListener('blur', onUp)
 }
 
 // ---------- 表右键菜单（Navicat 表对象菜单） ----------
@@ -1312,7 +1315,8 @@ function printTableReport(name: string, colResult: MySqlQueryResult): string {
 </body></html>`
 }
 
-/** 隐藏 iframe 写入 HTML 并调起打印（WebView2 内打印，不弹新窗口） */
+/** 隐藏 iframe 写入 HTML 并调起打印（WebView2 内打印，不弹新窗口）；
+ *  打印完成（afterprint）立即移除临时 iframe，避免打印对话框关后被隐藏框架滞留 */
 function printHtml(html: string): void {
   const iframe = document.createElement('iframe')
   iframe.style.position = 'fixed'
@@ -1329,8 +1333,13 @@ function printHtml(html: string): void {
   doc.write(html)
   doc.close()
   iframe.contentWindow?.focus()
+  // 打印完成后立即移除（afterprint 前端事件；兜底超时防 60s 滞留，移除幂等）
+  const removeFrame = (): void => {
+    if (iframe.parentNode === document.body) document.body.removeChild(iframe)
+  }
+  iframe.contentWindow?.addEventListener('afterprint', removeFrame)
   iframe.contentWindow?.print()
-  window.setTimeout(() => document.body.removeChild(iframe), 60_000)
+  window.setTimeout(removeFrame, 60_000)
 }
 
 // 逆向表到模型：单表模式 ER 图对话框
@@ -1925,13 +1934,16 @@ function startResize(e: MouseEvent, onMove: (dx: number, dy: number) => void, on
     last.x = ev.clientX
     last.y = ev.clientY
   }
+  // 集中解绑：mouseup 释放完成；window blur（鼠标在窗口外释放/Alt+Tab 等）兜底清理防监听泄漏
   const up = (): void => {
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', up)
+    window.removeEventListener('blur', up)
     onUp?.()
   }
   window.addEventListener('mousemove', move)
   window.addEventListener('mouseup', up)
+  window.addEventListener('blur', up)
 }
 
 /** 拖拽列头右缘调整列宽（起点 = 当前自定义宽或实际渲染宽，最小 40px） */
@@ -2575,7 +2587,9 @@ async function runQuery(p: number, size: number, querySql?: string): Promise<voi
   if (!text) return
   const seq = ++querySeq
   try {
-    await store.query(text, p, size)
+    // seq 作为 resultToken 传入 store.query：store 侧「仅最新者写 lastResult」，
+    // 此前的慢查询（含连接切换后滞留）不会覆盖新结果，过期响应按失败短路
+    await store.query(text, p, size, seq)
     if (seq !== querySeq) return // 已有更新的查询在途/完成，丢弃本此过期结果
     lastQuerySql.value = text
     page.value = p
@@ -2644,18 +2658,39 @@ async function doDisconnect(): Promise<void> {
   }
 }
 
-function onConnected(connLabel: string): void {
-  // 连接成功后重置查询区（store 已自动加载表列表），并清空编辑态
+/**
+ * 清空结果网格的全部会话态（连接成功 / switchDb 切库 / 断开后调用）：
+ * 与 runQuery 成功分支一致清理待提交集、选中行、编辑态、右键菜单、选区与排序；
+ * 另清空预览管道（showPreview/previewItems/pendingInsert/previewLoading，防切库时
+ * 悬挂的预览对话框携带旧库 SQL 以新 connId 确认执行）、lastQuerySql 与 page——
+ * 保证 connId 变化后旧库结果不停留、也不会误对新库发起编辑/删除
+ */
+function clearGridSession(): void {
   lastQuerySql.value = ''
   selectedTable.value = ''
   pendingEdits.value = new Map()
   selectedRows.value = new Set()
   editingCell.value = null
   ctxMenu.value = null
+  previewItems.value = []
+  showPreview.value = false
+  previewMode.value = 'edit'
+  pendingInsert.value = null
+  previewLoading.value = false
+  page.value = 1
   clearCellSelection()
   sortState.value = null
   lockedCols.value = []
   pkColumn.value = ''
+}
+
+// 连接上下文切换信号：connId 变化（连接成功 / switchDb 换库 / 断开）即清空结果网格，
+// 与 store.switchDb 同步清空 lastResult 双保险，杜绝旧库行以新库 connId 被编辑/删除
+watch(() => store.connId, clearGridSession)
+
+function onConnected(connLabel: string): void {
+  // 连接成功后重置查询区（store 已自动加载表列表），并清空编辑态
+  clearGridSession()
   void connLabel
 }
 </script>

@@ -27,6 +27,7 @@ import {
   mysqlQuery,
   mysqlRollback,
 } from '@/api/mysql'
+import { mysqlDbSwitch } from '@/api/mysqlDb'
 import { settingsGet, settingsSet } from '@/api/settings'
 import { vaultDecrypt, vaultEncrypt, vaultStatus, vaultUnlock } from '@/api/vault'
 import { useUiStore } from './ui'
@@ -35,6 +36,45 @@ import { friendlyError as errText } from '@/utils/errors'
 
 /** 对外复用契约类型（单一事实来源在 @/api/types） */
 export type { MySqlConnection, MySqlQueryResult, MySqlTableInfo }
+
+// ---------- 连接代际守卫（并发防陈旧响应） ----------
+/**
+ * 连接/切库统一并发守卫：任何改变「当前连接语义」的入口（connect / disconnect /
+ * switchDb）先递增 connGen，异步请求发起前用 mysqlConnToken() 取快照，响应归来时
+ * 用 mysqlConnTokenCurrent(token) 校验——false 表示连接/库已被切换，响应一律丢弃
+ * 并抑制错误提示（此时报的错必然来自已被替换的连接/库，弹窗只会误导当前 UI）。
+ *
+ * 组件接入约定（优先收敛到 store，组件尽量少自己造并发控制）：
+ * - 同步 ctx：在 store action 内部取 this.connId + token，await 后核对再写 state
+ * - 查询级：grid 把 querySeq 作为 resultToken 传入 query()，store 仅当 token 仍为
+ *   latestQueryToken 且连接未切换时才写 lastResult
+ */
+let connGen = 0
+/** 最近一次被采纳的查询序号（resultToken 传入时登记；仅仍为最新者写 lastResult） */
+let latestQueryToken = 0
+
+/** 取当前连接代际快照（异步请求发起前调用） */
+export function mysqlConnToken(): number {
+  return connGen
+}
+
+/** 代际是否仍为当前（false = 连接/库已切换，响应应丢弃） */
+export function mysqlConnTokenCurrent(token: number): boolean {
+  return token === connGen
+}
+
+/** 登记连接上下文变更（connect / disconnect / switchDb 内部调用） */
+function bumpConnGen(): void {
+  connGen += 1
+}
+
+/** 过期响应哨兵（非用户可见错误：仅用于让调用方按失败短路、不落任何 UI 状态） */
+class StaleResultError extends Error {
+  constructor() {
+    super('查询结果已过期，已丢弃')
+    this.name = 'StaleResultError'
+  }
+}
 
 /** 已保存连接的持久化键（后端 SQLite settings 表，key-value 文本） */
 const SAVED_CONN_KEY = 'mysql_saved_connections'
@@ -173,6 +213,8 @@ export const useMysqlStore = defineStore('mysql', {
     // ---------- 连接管理 ----------
     /** 建立连接并自动加载表列表；失败时抛出（组件可捕获展示） */
     async connect(config: MySqlConnection): Promise<void> {
+      // 连接上下文即将变更：在途旧连接/旧库的异步响应（查询、表加载等）即刻过期
+      bumpConnGen()
       // 已连接时先断开旧连接（切换语义，与 connectSaved 一致）：
       // 避免直接覆盖 connId 导致后端旧连接池/事务独占连接滞留注册表
       if (this.connId) await this.disconnect()
@@ -207,6 +249,8 @@ export const useMysqlStore = defineStore('mysql', {
     async disconnect(): Promise<void> {
       const id = this.connId
       if (!id) return
+      // 连接已断开：在途旧请求（查询/表加载）的响应一律过期丢弃
+      bumpConnGen()
       try {
         await mysqlDisconnect(id)
       } finally {
@@ -364,12 +408,15 @@ export const useMysqlStore = defineStore('mysql', {
     },
 
     // ---------- 表列表 ----------
-    /** 拉取当前库的全部表信息（表名/行数/引擎/注释） */
+    /** 拉取当前库的全部表信息（表名/行数/引擎/注释）；连接/库已切换的滞留响应丢弃 */
     async loadTables(): Promise<void> {
       if (!this.connId) throw new Error('未连接 MySQL')
+      const token = connGen
       this.tablesLoading = true
       try {
-        this.tables = await mysqlListTables(this.connId)
+        const tables = await mysqlListTables(this.connId)
+        if (token !== connGen) return // 连接/库已切换：丢弃陈旧表列表
+        this.tables = tables
       } finally {
         this.tablesLoading = false
       }
@@ -377,24 +424,78 @@ export const useMysqlStore = defineStore('mysql', {
 
     // ---------- 查询 ----------
     /**
-     * 只读查询（SELECT 类语句，分页）。结果写入 lastResult。
+     * 只读查询（SELECT 类语句，分页）。结果在仍为「当前」时写入 lastResult。
      * page 从 1 开始；pageSize 为每页行数。
+     *
+     * resultToken：调用方发起查询的序号（MysqlDataGrid 把 querySeq 传入）。
+     * 仅当 resultToken 仍是最近一次登记（即本次查询未被更新的查询覆盖）且连接/库
+     * 未切换时才写 lastResult 并正常返回；过期响应当作失败短路（不写 lastResult、
+     * 不污染 queryError、不弹过期错误的 toast），由 grid 层按失败丢弃，防止慢的旧
+     * 查询覆盖新结果导致表格显示过期数据 / 编辑解析错表。
      */
-    async query(sql: string, page: number, pageSize: number): Promise<MySqlQueryResult> {
+    async query(
+      sql: string,
+      page: number,
+      pageSize: number,
+      resultToken?: number,
+    ): Promise<MySqlQueryResult> {
       if (!this.connId) throw new Error('未连接 MySQL')
+      // 登记本次查询代际：仅最新者写 lastResult（按实际发起顺序裁决，非完成顺序）
+      if (resultToken !== undefined) latestQueryToken = resultToken
+      const ctxToken = connGen
       this.queryLoading = true
       this.queryError = ''
+      // 本次响应是否已过期：连接/库已切换，或已有更新的查询在途/完成
+      const stale = (): boolean =>
+        ctxToken !== connGen || (resultToken !== undefined && resultToken !== latestQueryToken)
       try {
         const result = await mysqlQuery(this.connId, sql, page, pageSize)
+        if (stale()) throw new StaleResultError()
         this.lastResult = result
         return result
       } catch (err) {
+        // 过期响应（无论实际成败）：静默丢弃，不写 queryError、不弹 toast
+        if (stale()) throw err
         const msg = errText(err)
         this.queryError = msg
         useUiStore().toast(msg, 'error')
         throw err
       } finally {
         this.queryLoading = false
+      }
+    },
+
+    /**
+     * 切换默认数据库（后端 mysql_db_switch 重建连接池并返回新 conn_id）。
+     *
+     * 统一入口（工作台树双击 / 查找结果打开 / 查询 Tab「指定数据库」 / 命令列 use /
+     * 工作台库下拉均走本动作，不再直接调 mysqlDbSwitch + 手动替换 connId）：
+     * - 入口即递增连接代际：在途旧查询 / 旧表加载 / 旧切库结果全部过期
+     * - 并发快速连点（如树双击去重、命令列连发）：仅最后一次切换回写——过期切换
+     *   不覆盖 connId、成功不回写表列表、失败不弹错（旧池已断导致的必然失败静默丢弃）
+     * - 返回是否本次生效（false = 已被更新的切换接管，调用方勿再更新本地状态/toast）
+     *
+     * ⚠️ 行为说明：切库成功后清空 lastResult / tables / queryError（沿用 disconnect 的清空
+     *   方向，仅保留连接本身）——旧库结果不停留、也不可再编辑；grid 侧另有 connId watch
+     *   同步清空查询区/待提交集/预览管道等会话态，之后需用户重新查询才出该库结果。
+     */
+    async switchDb(name: string): Promise<boolean> {
+      const oldId = this.connId
+      if (!oldId || !name) return false
+      // 先递增代际：从此刻起旧连接/旧库的在途响应全部过期
+      const token = ++connGen
+      try {
+        const newId = await mysqlDbSwitch(oldId, name)
+        if (token !== connGen) return false // 更新的切换已接管：放弃本次回写
+        this.connId = newId
+        this.tables = []
+        this.lastResult = null // 旧库结果立即失效：杜绝其滞留期间以新 connId 对新库误发编辑/删除
+        this.queryError = ''
+        await this.loadTables()
+        return true
+      } catch (err) {
+        if (token !== connGen) return false // 过期切换失败静默（旧池已断等）
+        throw err
       }
     },
 

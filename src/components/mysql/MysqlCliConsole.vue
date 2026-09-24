@@ -34,14 +34,13 @@
  *
  * 深色控制台：mysql> 提示符 + 上下键历史 + ASCII 表格输出（CJK 双列宽对齐）。
  * 任意语句走 mysqlCliExec（不做 COUNT 包装/分页，SHOW/DESC/EXPLAIN 均可）；
- * 内置命令 exit/quit（关闭 Tab）、clear（清屏）、help、use <库名>（走 mysqlDbSwitch
- * 重建连接池，连接默认库全局生效，工作台 connId watch 自动同步）。
+ * 内置命令 exit/quit（关闭 Tab）、clear（清屏）、help、use <库名>（走
+ * store.switchDb 重建连接池，连接代际守卫，连接默认库全局生效）。
  * 与 MySQL 工作台共享连接（store.connId），关闭本 Tab 不断开连接。
  */
 import { nextTick, onMounted, ref, watch } from 'vue'
 import { useMysqlStore } from '@/stores/mysql'
 import { mysqlCliExec } from '@/api/mysql'
-import { mysqlDbSwitch } from '@/api/mysqlDb'
 import { friendlyError } from '@/utils/errors'
 
 const emit = defineEmits<{ (e: 'exit'): void }>()
@@ -175,7 +174,8 @@ async function runLine(raw: string): Promise<void> {
       push('info', HELP_TEXT)
       return
     }
-    // use <库名> → 切库（重建连接池，连接默认库全局生效；工作台 connId watch 自动同步）
+    // use <库名> → 切库（统一走 store.switchDb：重建连接池 + 连接代际守卫；
+    // 失败由外层 catch 提示；未生效（已被其它入口接管）则不更新本地显示）
     const useMatch = line.match(/^use\s+(.+?)\s*;?$/i)
     if (useMatch) {
       const dbName = useMatch[1].replace(/`/g, '').trim()
@@ -183,11 +183,8 @@ async function runLine(raw: string): Promise<void> {
         push('error', 'ERROR 请输入库名，如 use mydb')
         return
       }
-      const newId = await mysqlDbSwitch(connId, dbName)
-      store.connId = newId
-      store.tables = []
-      await store.loadTables()
-      store.queryError = ''
+      const applied = await store.switchDb(dbName)
+      if (!applied) return
       currentDb.value = dbName
       push('info', 'Database changed')
       return
