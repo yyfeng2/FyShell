@@ -355,10 +355,26 @@ async fn with_savepoint(conn: &mut Conn, imp: &MySqlImportOptions) -> Result<u64
     }
 }
 
-/// 导入执行主体：读取文件并按格式分发
+/// 文本解码探测：UTF-8 合法则直接按 UTF-8；否则视为 GBK/GB18030 用 encoding_rs 解码
+/// （GBK 为 GB18030 子集，解码器覆盖两类文件；Windows 导出的中文 CSV / 含中文注释的
+/// SQL 文件是常见场景，原 read_to_string 对 GBK 必失败）。
+/// 引入 encoding_rs 的理由：GBK->UTF-8 依赖完整映射表，手写不可行且易错；encoding_rs
+/// 为纯 Rust 标准实现（无进程外转换），零额外传递依赖，本项目桌面工具场景成熟可靠。
+fn decode_text(bytes: &[u8]) -> String {
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => {
+            let (cow, _, _) = encoding_rs::GB18030.decode(bytes);
+            cow.into_owned()
+        }
+    }
+}
+
+/// 导入执行主体：二进制读取文件并按格式分发（编码探测见 decode_text）
 async fn do_import(conn: &mut Conn, imp: &MySqlImportOptions) -> Result<u64, AppError> {
-    let content = std::fs::read_to_string(&imp.file_path)
+    let raw = std::fs::read(&imp.file_path)
         .map_err(|e| AppError::general(format!("读取导入文件失败: {e}")))?;
+    let content = decode_text(&raw);
     match imp.format {
         MySqlImportFormat::Csv => import_csv(conn, imp, &content).await,
         MySqlImportFormat::Sql => import_sql(conn, imp, &content).await,
@@ -491,6 +507,12 @@ fn parse_csv(content: &str) -> Result<Vec<Vec<Option<String>>>, AppError> {
                     quoted = false;
                 }
                 '\n' => {
+                    // 空行（无任何字段与内容）不产生记录：导出文件末尾的
+                    // 多余空行不应变成一条空记录写入。区分空值行（如 ",,"，
+                    // row 非空）与真正空行（row/field 全空）。
+                    if row.is_empty() && field.is_empty() && !quoted {
+                        continue;
+                    }
                     row.push(end_field(&mut field, quoted));
                     quoted = false;
                     records.push(std::mem::take(&mut row));
@@ -522,7 +544,7 @@ fn end_field(field: &mut String, quoted: bool) -> Option<String> {
 }
 
 /// 按分号拆分 SQL 语句（简化状态机：跳过单引号/双引号字面量内的分号，
-/// 以及 -- 行注释与 /* 块注释 */ 内的内容），返回去除首尾空白的语句列表。
+/// 以及 -/`#` 行注释与 /* 块注释 */ 内的内容），返回去除首尾空白的语句列表。
 ///
 /// 简化说明：`--` 无需后随空格即视为注释起始，属可接受的边界情况，
 /// mysqldump 产物与前端 SQL 编辑器通常不产生此类输入。
@@ -619,6 +641,11 @@ fn split_sql_statements(content: &str) -> Vec<String> {
                 } else {
                     current.push(c);
                 }
+            }
+            // MySQL 单行注释 #...（# 后无需空格），与 -- 一致进入行注释；
+            // 字符串字面量内的 # 已由上方 in_single/in_double 状态规避
+            '#' => {
+                in_line_comment = true;
             }
             ';' => {
                 let trimmed = current.trim();

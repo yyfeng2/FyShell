@@ -14,8 +14,9 @@
 //! 目标端写入一律取池连接；传输/同步中途出错不回滚已写入的批次
 //! （目标表可由 recreate 重新传输覆盖，属桌面工具可接受语义）。
 
+use mysql_async::consts::ColumnType;
 use mysql_async::prelude::*;
-use mysql_async::Conn;
+use mysql_async::{Column, Conn, Value};
 use rand::Rng;
 use rand::SeedableRng;
 
@@ -55,6 +56,69 @@ fn quote_value(value: &str) -> String {
     format!("'{}'", value.replace('\\', "\\\\").replace('\'', "''"))
 }
 
+/// 单元格值：文本（String）或二进制（原始字节）。NULL 用 None 表示。
+/// 二进制列字节无损保存（不再经 UTF-8 lossy 转换损坏），写回时以 `X'hex'`
+/// 二进制字面量精确保真；文本/数值列与既有契约一致。
+#[derive(Clone, Debug, PartialEq)]
+enum Cell {
+    Text(String),
+    Bin(Vec<u8>),
+}
+
+/// 判断结果集列是否为二进制通道。
+///
+/// 仅当列类型属「字节类」（BLOB/TEXT 系、CHAR/BINARY 的 MYSQL_TYPE_STRING、
+/// VARCHAR/VARBINARY 的 MYSQL_TYPE_VAR_STRING、BIT）且字符集号为 binary（63）时
+/// 才按原始字节读取。TEXT/VARCHAR 列虽在协议上可能是 BLOB/STRING 类型，但字符集
+/// 为 utf8mb4(255)/latin1(8) 等文本字符集，不命中——多字节中文不受影响；数值/日期
+/// 列类型不在字节类中，同样不受影响。
+///
+/// pub(crate)：services::mysql 的查询展示链路复用本口径（BLOB 列 hex 化下发），
+/// 保证传输/查询两处二进制判定一致。
+pub(crate) fn is_binary_column(col: &Column) -> bool {
+    use ColumnType::*;
+    let byte_like = matches!(
+        col.column_type(),
+        MYSQL_TYPE_TINY_BLOB
+            | MYSQL_TYPE_MEDIUM_BLOB
+            | MYSQL_TYPE_LONG_BLOB
+            | MYSQL_TYPE_BLOB
+            | MYSQL_TYPE_STRING
+            | MYSQL_TYPE_VAR_STRING
+            | MYSQL_TYPE_BIT
+    );
+    byte_like && col.character_set() == 63
+}
+
+/// 二进制字节 -> SQL 字面量：`X'hex'`（MySQL 二进制字符串字面量），字节精确还原
+fn quote_bin(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(2 + bytes.len() * 2 + 1);
+    s.push_str("X'");
+    for b in bytes {
+        s.push_str(&format!("{b:02X}"));
+    }
+    s.push('\'');
+    s
+}
+
+/// Cell -> SQL 值字面量：NULL -> NULL，文本 quote_value，二进制 quote_bin
+fn cell_to_sql(cell: Option<&Cell>) -> String {
+    match cell {
+        Some(Cell::Text(s)) => quote_value(s),
+        Some(Cell::Bin(b)) => quote_bin(b),
+        None => "NULL".to_string(),
+    }
+}
+
+/// Cell -> 契约字符串表示（比对键/样例展示用）：二进制以 `X'hex'` 形式展示
+fn cell_to_display(cell: Option<&Cell>) -> String {
+    match cell {
+        Some(Cell::Text(s)) => s.clone(),
+        Some(Cell::Bin(b)) => quote_bin(b),
+        None => String::new(),
+    }
+}
+
 /// 取连接：优先复用事务内独占连接，否则从池中取
 /// 返回 `bool` 表示是否来自事务连接；事务连接用完需 `give_tx_conn` 放回。
 async fn take_tx_or_pool(conn_id: &str) -> Result<(Conn, bool), AppError> {
@@ -66,7 +130,8 @@ async fn take_tx_or_pool(conn_id: &str) -> Result<(Conn, bool), AppError> {
     Ok((conn, false))
 }
 
-/// 执行 SELECT 并收集全部行（列按位置，None = NULL），同时返回列名列表
+/// 执行 SELECT 并收集全部行（列按位置，None = NULL），同时返回列名列表。
+/// 仅用于纯文本元数据查询（information_schema 等），结果集无二进制列。
 async fn collect_rows(
     conn: &mut Conn,
     sql: &str,
@@ -89,12 +154,73 @@ async fn collect_rows(
     Ok((columns, rows))
 }
 
-/// 行数据 -> SQL 值元组列表（NULL -> NULL 字面量）
-fn row_to_values(row: &[Option<String>]) -> String {
-    let cells: Vec<String> = row
-        .iter()
-        .map(|c| c.as_deref().map(quote_value).unwrap_or_else(|| "NULL".into()))
-        .collect();
+/// 类型化行收集：按结果集列元信息区分二进制/文本列。
+/// 返回列名 + 行（每格 Option<Cell>，None = NULL）；文本/数值列与 collect_rows 等价，
+/// 二进制列保存原始字节（写回经 `X'hex'` 精确还原，不再被 UTF-8 lossy 损坏）。
+async fn collect_rows_typed(
+    conn: &mut Conn,
+    sql: &str,
+) -> Result<(Vec<String>, Vec<Vec<Option<Cell>>>), AppError> {
+    let mut result = conn.query_iter(sql).await.map_err(mysql_err)?;
+    let bin_flags: Vec<bool> = result
+        .columns()
+        .map(|cols| cols.iter().map(|c| is_binary_column(c)).collect())
+        .unwrap_or_default();
+    let columns: Vec<String> = result
+        .columns()
+        .map(|cols| cols.iter().map(|c| c.name_str().into_owned()).collect())
+        .unwrap_or_default();
+    let mut rows = Vec::new();
+    while let Some(mut row) = result.next().await.map_err(mysql_err)? {
+        let len = row.columns().len();
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            let cell = if bin_flags.get(i).copied().unwrap_or(false) {
+                // 二进制列：保持原始字节
+                match row.take::<Option<Value>, _>(i).flatten() {
+                    Some(Value::Bytes(b)) => Some(Cell::Bin(b)),
+                    // 理论上二进制列只会取到 Bytes 或 NULL，其余兜底走文本
+                    Some(value) => value_to_string_text(value).map(Cell::Text),
+                    None => None,
+                }
+            } else {
+                // 文本/数值列：沿用旧契约转 Option<String>
+                row.take::<Option<String>, _>(i).flatten().map(Cell::Text)
+            };
+            out.push(cell);
+        }
+        rows.push(out);
+    }
+    result.drop_result().await.map_err(mysql_err)?;
+    Ok((columns, rows))
+}
+
+/// Option<Value> -> Option<String>（NULL -> None；Bytes 按 UTF-8 lossy，
+/// 仅供非二进制列兜底使用）
+fn value_to_string_text(value: Value) -> Option<String> {
+    match value {
+        Value::NULL => None,
+        Value::Bytes(b) => Some(String::from_utf8_lossy(&b).into_owned()),
+        Value::Int(i) => Some(i.to_string()),
+        Value::UInt(u) => Some(u.to_string()),
+        Value::Float(f) => Some(f.to_string()),
+        Value::Double(d) => Some(d.to_string()),
+        Value::Date(y, mo, d, h, mi, s, us) => {
+            let micro = if us == 0 { String::new() } else { format!(".{us:06}") };
+            Some(format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}{micro}"))
+        }
+        Value::Time(neg, days, h, m, s, us) => {
+            let hours = days * 24 + h as u32;
+            let sign = if neg { "-" } else { "" };
+            let micro = if us == 0 { String::new() } else { format!(".{us:06}") };
+            Some(format!("{sign}{hours:03}:{m:02}:{s:02}{micro}"))
+        }
+    }
+}
+
+/// 行数据 -> SQL 值元组列表（NULL -> NULL 字面量；二进制列走 X'hex'）
+fn row_to_values(row: &[Option<Cell>]) -> String {
+    let cells: Vec<String> = row.iter().map(|c| cell_to_sql(c.as_ref())).collect();
     format!("({})", cells.join(", "))
 }
 
@@ -243,16 +369,19 @@ async fn do_transfer(
     Ok(results)
 }
 
-/// 复制单表数据：SELECT 源 -> 每 100 行多值 INSERT 目标
+/// 复制单表数据：SELECT 源 -> 每 100 行多值 INSERT 目标。
 ///
-/// 列名取自源端结果集（与 SELECT * 顺序一致），NULL 直接写 NULL 字面量。
+/// 列名取自源端结果集（与 SELECT * 顺序一致），NULL 直接写 NULL 字面量；
+/// BLOB/二进制列经 Cell 保持原始字节，写回 `X'hex'` 精确还原。
+/// 单事务包裹：任一批失败整体回滚，避免半截数据（目标端池连接无用户事务）。
 async fn copy_rows(
     src: &mut Conn,
     dst: &mut Conn,
     src_qualified: &str,
     dst_qualified: &str,
 ) -> Result<u64, AppError> {
-    let (columns, rows) = collect_rows(src, &format!("SELECT * FROM {src_qualified}")).await?;
+    let (columns, rows) =
+        collect_rows_typed(src, &format!("SELECT * FROM {src_qualified}")).await?;
     if rows.is_empty() {
         return Ok(0);
     }
@@ -261,6 +390,7 @@ async fn copy_rows(
         .map(|c| format!("`{c}`"))
         .collect::<Vec<_>>()
         .join(", ");
+    dst.query_drop("START TRANSACTION").await.map_err(mysql_err)?;
     let mut total = 0u64;
     for batch in rows.chunks(100) {
         let values = batch
@@ -269,13 +399,45 @@ async fn copy_rows(
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!("INSERT INTO {dst_qualified} ({col_list}) VALUES {values}");
-        dst.query_drop(&sql).await.map_err(mysql_err)?;
+        if let Err(e) = dst.query_drop(&sql).await {
+            let _ = dst.query_drop("ROLLBACK").await;
+            return Err(mysql_err(e));
+        }
         total += batch.len() as u64;
     }
+    dst.query_drop("COMMIT").await.map_err(mysql_err)?;
     Ok(total)
 }
 
 // ---------------- 数据生成 ----------------
+
+/// 写路径事务开启语句：用户显式事务内用 SAVEPOINT（不破坏其事务），
+/// 无用户事务时开隐式事务（START TRANSACTION）
+fn tx_begin(from_user_tx: bool) -> &'static str {
+    if from_user_tx {
+        "SAVEPOINT _fyshell_write"
+    } else {
+        "START TRANSACTION"
+    }
+}
+
+/// 写路径事务提交语句
+fn tx_commit(from_user_tx: bool) -> &'static str {
+    if from_user_tx {
+        "RELEASE SAVEPOINT _fyshell_write"
+    } else {
+        "COMMIT"
+    }
+}
+
+/// 写路径事务回滚语句
+fn tx_rollback(from_user_tx: bool) -> &'static str {
+    if from_user_tx {
+        "ROLLBACK TO SAVEPOINT _fyshell_write"
+    } else {
+        "ROLLBACK"
+    }
+}
 
 /// data_generate：单表按列规则批量生成测试数据
 ///
@@ -311,7 +473,7 @@ pub async fn data_generate(conn_id: &str, opts: &MySqlGenerateOptions) -> Result
     }
 
     let (mut conn, from_tx) = take_tx_or_pool(conn_id).await?;
-    let outcome = do_generate(&mut conn, opts, &table).await;
+    let outcome = do_generate(&mut conn, opts, &table, from_tx).await;
     if from_tx {
         give_tx_conn(conn_id, conn);
     }
@@ -319,10 +481,14 @@ pub async fn data_generate(conn_id: &str, opts: &MySqlGenerateOptions) -> Result
 }
 
 /// 数据生成主体（拆出以便错误早退时仍归还事务连接）
+///
+/// TRUNCATE（DDL）在事务包裹外先执行（隐式提交不可回滚）；INSERT 段单事务包裹，
+/// 任一批失败整体回滚，避免数据生成到一半留下残次记录。
 async fn do_generate(
     conn: &mut Conn,
     opts: &MySqlGenerateOptions,
     table: &str,
+    from_tx: bool,
 ) -> Result<u64, AppError> {
     // 实际列清单（当前连接的当前库上下文；表名已校验无反引号）
     let meta_sql = format!(
@@ -354,6 +520,9 @@ async fn do_generate(
     let col_list = rule_columns(opts);
     // StdRng（Send）：Tauri command 的 future 须跨 await 持有 rng，ThreadRng 非 Send
     let mut rng = rand::rngs::StdRng::from_entropy();
+
+    // INSERT 段单事务包裹（TRUNCATE 为 DDL 已在上方隐式提交，不在事务内）
+    conn.query_drop(tx_begin(from_tx)).await.map_err(mysql_err)?;
     let mut total = 0u64;
 
     // 每 100 行一条多值 INSERT
@@ -372,7 +541,13 @@ async fn do_generate(
                 "INSERT INTO {} ({}) VALUES {}",
                 table_qualified, col_list, batch.join(", ")
             );
-            conn.query_drop(&sql).await.map_err(mysql_err)?;
+            match conn.query_drop(&sql).await {
+                Ok(()) => {}
+                Err(e) => {
+                    let _ = conn.query_drop(tx_rollback(from_tx)).await;
+                    return Err(mysql_err(e));
+                }
+            }
             total += batch.len() as u64;
             batch.clear();
         }
@@ -382,9 +557,16 @@ async fn do_generate(
             "INSERT INTO {} ({}) VALUES {}",
             table_qualified, col_list, batch.join(", ")
         );
-        conn.query_drop(&sql).await.map_err(mysql_err)?;
+        match conn.query_drop(&sql).await {
+            Ok(()) => {}
+            Err(e) => {
+                let _ = conn.query_drop(tx_rollback(from_tx)).await;
+                return Err(mysql_err(e));
+            }
+        }
         total += batch.len() as u64;
     }
+    conn.query_drop(tx_commit(from_tx)).await.map_err(mysql_err)?;
     Ok(total)
 }
 
@@ -400,6 +582,8 @@ fn rule_columns(opts: &MySqlGenerateOptions) -> String {
 /// 按列规则生成单格值（null_ratio 命中输出 NULL）
 fn generate_value(rule: &MySqlGenerateColumnRule, rng: &mut rand::rngs::StdRng) -> String {
     if let Some(ratio) = rule.null_ratio {
+        // 规范化到 0-100：越界值按 100（恒 NULL）、0 保持不产生 NULL
+        let ratio = ratio.min(100);
         if ratio > 0 && rng.gen_range(0..100) < ratio {
             return "NULL".to_string();
         }
@@ -412,7 +596,11 @@ fn generate_value(rule: &MySqlGenerateColumnRule, rng: &mut rand::rngs::StdRng) 
             let hi = (max as i64).max(lo);
             rng.gen_range(lo..=hi).to_string()
         }
-        "decimal" => format!("{:.2}", rng.gen_range(min..=max)),
+        "decimal" => {
+            // min>max 时退化为 [min, min]（与 int 分支同款防护，避免空区间 panic）
+            let hi = if max < min { min } else { max };
+            format!("{:.2}", rng.gen_range(min..=hi))
+        }
         "string" => {
             let len = rule.length.unwrap_or(8).max(1) as usize;
             random_string(rng, len)
@@ -538,8 +726,9 @@ async fn do_data_sync(
         quote_db(&opts.target_db),
         quote_table(&opts.target_table)?
     );
-    let (src_cols, src_rows) = collect_rows(src, &src_sql).await?;
-    let (dst_cols, dst_rows) = collect_rows(dst, &dst_sql).await?;
+    // 双侧全量拉取（类型化：BLOB/二进制列保持原始字节，写回精确还原）
+    let (src_cols, src_rows) = collect_rows_typed(src, &src_sql).await?;
+    let (dst_cols, dst_rows) = collect_rows_typed(dst, &dst_sql).await?;
     // 列序必须完全一致（同列名同顺序）：行值按源列序写入目标列清单，
     // 顺序不同会写错列，直接拒绝并引导用户先走结构同步
     if src_cols != dst_cols {
@@ -551,17 +740,17 @@ async fn do_data_sync(
     let key_idx_dst = key_indices(&dst_cols, &dst_keys)?;
 
     // 3. PK 元组比对：仅源有 / 仅目标有 / 两端都有但非主键列不一致
-    let dst_map: std::collections::HashMap<String, Vec<Option<String>>> = dst_rows
+    let dst_map: std::collections::HashMap<String, Vec<Option<Cell>>> = dst_rows
         .iter()
         .map(|row| (tuple_key(row, &key_idx_dst), row.clone()))
         .collect();
-    let src_map: std::collections::HashMap<String, Vec<Option<String>>> = src_rows
+    let src_map: std::collections::HashMap<String, Vec<Option<Cell>>> = src_rows
         .iter()
         .map(|row| (tuple_key(row, &key_idx_src), row.clone()))
         .collect();
 
-    let mut only_source: Vec<Vec<Option<String>>> = Vec::new();
-    let mut changed: Vec<Vec<Option<String>>> = Vec::new();
+    let mut only_source: Vec<Vec<Option<Cell>>> = Vec::new();
+    let mut changed: Vec<Vec<Option<Cell>>> = Vec::new();
     for row in &src_rows {
         let key = tuple_key(row, &key_idx_src);
         match dst_map.get(&key) {
@@ -573,7 +762,7 @@ async fn do_data_sync(
             }
         }
     }
-    let mut only_target: Vec<Vec<Option<String>>> = Vec::new();
+    let mut only_target: Vec<Vec<Option<Cell>>> = Vec::new();
     for row in &dst_rows {
         if !src_map.contains_key(&tuple_key(row, &key_idx_dst)) {
             only_target.push(row.clone());
@@ -594,7 +783,8 @@ async fn do_data_sync(
         return Ok(outcome);
     }
 
-    // 4. 应用（目标端）：缺失行 INSERT / 多余行 DELETE / 不一致行 REPLACE
+    // 4. 应用（目标端）：缺失行 INSERT / 多余行 DELETE / 不一致行 REPLACE。
+    //    目标端为池连接（无用户事务），单事务包裹：任一批失败整体回滚，避免半截数据。
     let dst_qualified = format!("{}.{}", quote_db(&opts.target_db), quote_table(&opts.target_table)?);
     let dst_col_list = dst_cols
         .iter()
@@ -602,6 +792,43 @@ async fn do_data_sync(
         .collect::<Vec<_>>()
         .join(", ");
 
+    dst.query_drop("START TRANSACTION").await.map_err(mysql_err)?;
+    let applied = apply_sync(
+        dst,
+        opts,
+        &only_source,
+        &only_target,
+        &changed,
+        &src_keys,
+        &key_idx_dst,
+        &dst_qualified,
+        &dst_col_list,
+    )
+    .await;
+    match applied {
+        Ok(()) => {
+            dst.query_drop("COMMIT").await.map_err(mysql_err)?;
+        }
+        Err(e) => {
+            let _ = dst.query_drop("ROLLBACK").await;
+            return Err(e);
+        }
+    }
+    Ok(outcome)
+}
+
+/// 同步写路径：应用 INSERT / DELETE / REPLACE（处于调用方已开启的事务内）
+async fn apply_sync(
+    dst: &mut Conn,
+    opts: &MySqlDataSyncOptions,
+    only_source: &[Vec<Option<Cell>>],
+    only_target: &[Vec<Option<Cell>>],
+    changed: &[Vec<Option<Cell>>],
+    src_keys: &[String],
+    key_idx_dst: &[usize],
+    dst_qualified: &str,
+    dst_col_list: &str,
+) -> Result<(), AppError> {
     if opts.insert_missing && !only_source.is_empty() {
         for batch in only_source.chunks(100) {
             let values = batch
@@ -621,17 +848,14 @@ async fn do_data_sync(
             let conds: Vec<String> = batch
                 .iter()
                 .map(|row| {
-                    // 主键列按 key_idx_dst 顺序对齐 src_keys（主键一致已校验）
+                    // 主键列按 key_idx_dst 顺序对齐 src_keys（主键一致已校验）；
+                    // 二进制主键走 X'hex' 字面量，与写入侧同编码保证精确匹配
                     let parts: Vec<String> = key_idx_dst
                         .iter()
                         .enumerate()
                         .map(|(i, col_idx)| {
-                            let value = row
-                                .get(*col_idx)
-                                .cloned()
-                                .flatten()
-                                .unwrap_or_default();
-                            format!("`{}` = {}", src_keys[i], quote_value(&value))
+                            let cell = row.get(*col_idx).and_then(Option::as_ref);
+                            format!("`{}` = {}", src_keys[i], cell_to_sql(cell))
                         })
                         .collect();
                     parts.join(" AND ")
@@ -659,7 +883,7 @@ async fn do_data_sync(
             .map_err(mysql_err)?;
         }
     }
-    Ok(outcome)
+    Ok(())
 }
 
 /// 读表主键列（KEY_COLUMN_USAGE，CONSTRAINT_NAME='PRIMARY'，按列序）
@@ -693,17 +917,28 @@ fn key_indices(all: &[String], keys: &[String]) -> Result<Vec<usize>, AppError> 
         .collect()
 }
 
+/// Cell -> 主键元组键片段（多列以 \x00 分隔，避免值内分隔符歧义）；
+/// 二进制主键以 `X'hex'` 确定性编码，两侧同字节 -> 同键
+fn cell_key_part(cell: Option<&Cell>) -> String {
+    match cell {
+        Some(Cell::Text(s)) => s.clone(),
+        Some(Cell::Bin(b)) => quote_bin(b),
+        None => String::new(),
+    }
+}
+
 /// 行 -> 主键元组键（多列以 \x00 分隔，避免值内分隔符歧义）
-fn tuple_key(row: &[Option<String>], key_idx: &[usize]) -> String {
+fn tuple_key(row: &[Option<Cell>], key_idx: &[usize]) -> String {
     key_idx
         .iter()
-        .map(|i| row.get(*i).cloned().flatten().unwrap_or_default())
+        .map(|i| cell_key_part(row.get(*i).and_then(Option::as_ref)))
         .collect::<Vec<_>>()
         .join("\x00")
 }
 
-/// 两端行内容一致性（跳过主键列逐列比对；列数不同视为不一致，引导走结构同步）
-fn same_row(src: &[Option<String>], dst: &[Option<String>], key_idx: &[usize]) -> bool {
+/// 两端行内容一致性（跳过主键列逐列比对；列数不同视为不一致，引导走结构同步）。
+/// Cell 派生 PartialEq：文本按字符串、二进制按字节（两端列型一致，等价同构）
+fn same_row(src: &[Option<Cell>], dst: &[Option<Cell>], key_idx: &[usize]) -> bool {
     if src.len() != dst.len() {
         return false;
     }
@@ -718,14 +953,14 @@ fn same_row(src: &[Option<String>], dst: &[Option<String>], key_idx: &[usize]) -
     true
 }
 
-/// 差异样例：仅保留主键值（按主键列序，限 20 条）
-fn sample_keys(rows: &[Vec<Option<String>>], key_idx: &[usize]) -> Vec<Vec<String>> {
+/// 差异样例：仅保留主键值（按主键列序，限 20 条）；二进制主键以 X'hex' 展示
+fn sample_keys(rows: &[Vec<Option<Cell>>], key_idx: &[usize]) -> Vec<Vec<String>> {
     rows.iter()
         .take(20)
         .map(|row| {
             key_idx
                 .iter()
-                .map(|i| row.get(*i).cloned().flatten().unwrap_or_default())
+                .map(|i| cell_to_display(row.get(*i).and_then(Option::as_ref)))
                 .collect()
         })
         .collect()

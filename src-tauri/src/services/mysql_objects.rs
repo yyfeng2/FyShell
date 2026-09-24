@@ -277,6 +277,25 @@ pub async fn object_save(
     outcome
 }
 
+/// 取对象既有 DDL（DROP 前备份用；对象不存在或读取失败返回 None，不阻塞保存）
+async fn fetch_old_ddl(conn: &mut Conn, kind: MySqlObjectKind, quoted: &str) -> Option<String> {
+    let stmt = format!("SHOW CREATE {} {quoted}", keyword(kind));
+    let mut result = conn.query_iter(stmt.as_str()).await.ok()?;
+    let cols: Vec<String> = result
+        .columns()
+        .map(|cols| cols.iter().map(|c| c.name_str().into_owned()).collect())
+        .unwrap_or_default();
+    let mut sql_text = None;
+    if let Some(mut row) = result.next().await.ok()? {
+        let idx = cols.iter().position(|c| is_ddl_column(c));
+        if let Some(i) = idx {
+            sql_text = row.take::<Option<String>, _>(i).flatten();
+        }
+    }
+    let _ = result.drop_result().await;
+    sql_text
+}
+
 /// 保存主体（拆出以便错误后仍归还事务连接）
 async fn do_save(
     conn: &mut Conn,
@@ -285,30 +304,49 @@ async fn do_save(
     quoted: &str,
     create_sql: &str,
 ) -> Result<(), AppError> {
-    // 视图：用户 DDL 已为 CREATE OR REPLACE 时直接替换，免 DROP；
-    // 普通 CREATE VIEW 及其余对象均先 DROP IF EXISTS
-    let drop_sql = match kind {
-        MySqlObjectKind::View => {
-            if lowered.starts_with("or replace") {
-                None
-            } else {
-                Some(format!("DROP VIEW IF EXISTS {quoted}"))
-            }
-        }
-        MySqlObjectKind::Function => Some(format!("DROP FUNCTION IF EXISTS {quoted}")),
-        MySqlObjectKind::Procedure => Some(format!("DROP PROCEDURE IF EXISTS {quoted}")),
-        MySqlObjectKind::Trigger => Some(format!("DROP TRIGGER IF EXISTS {quoted}")),
-        MySqlObjectKind::Event => Some(format!("DROP EVENT IF EXISTS {quoted}")),
-    };
-    if let Some(drop_sql) = drop_sql {
-        conn.query_drop(drop_sql).await.map_err(mysql_err)?;
+    // 视图且用户 DDL 已为 CREATE OR REPLACE：服务器端原子替换，免 DROP，
+    // 失败不破坏原视图
+    if kind == MySqlObjectKind::View && lowered.starts_with("or replace") {
+        let result = conn.query_iter(create_sql).await.map_err(mysql_err)?;
+        result.drop_result().await.map_err(mysql_err)?;
+        return Ok(());
     }
+
+    // 其余对象无 CREATE OR REPLACE 语法，只能 DROP + CREATE。
+    // MySQL DDL 隐式提交（无事务可回滚）：若先 DROP 后 CREATE 失败，旧对象将丢失。
+    // 因此 DROP 前先备份旧定义（SHOW CREATE），CREATE 失败时自动恢复原对象——
+    // 尽力保证「要么新对象生效，要么原对象保留」。
+    let old_ddl = fetch_old_ddl(conn, kind, quoted).await;
+    let drop_sql = match kind {
+        MySqlObjectKind::View => format!("DROP VIEW IF EXISTS {quoted}"),
+        MySqlObjectKind::Function => format!("DROP FUNCTION IF EXISTS {quoted}"),
+        MySqlObjectKind::Procedure => format!("DROP PROCEDURE IF EXISTS {quoted}"),
+        MySqlObjectKind::Trigger => format!("DROP TRIGGER IF EXISTS {quoted}"),
+        MySqlObjectKind::Event => format!("DROP EVENT IF EXISTS {quoted}"),
+    };
+    conn.query_drop(drop_sql).await.map_err(mysql_err)?;
 
     // 执行新 CREATE（文本协议单条语句；触发器体的 BEGIN...END 无需 DELIMITER，
     // DELIMITER 是 mysql CLI 客户端概念，整段 DDL 一次下发即可）
-    let result = conn.query_iter(create_sql).await.map_err(mysql_err)?;
-    result.drop_result().await.map_err(mysql_err)?;
-    Ok(())
+    match conn.query_iter(create_sql).await {
+        Ok(result) => {
+            result.drop_result().await.map_err(mysql_err)?;
+            Ok(())
+        }
+        Err(e) => {
+            // CREATE 失败：用旧定义尽力恢复原对象（保证「创建失败不丢原对象」）
+            let restore_msg = match &old_ddl {
+                Some(old) => match conn.query_drop(old.as_str()).await {
+                    Ok(_) => "已用旧定义恢复原对象".to_string(),
+                    Err(re) => format!("原对象恢复失败（旧定义执行报错: {re}）"),
+                },
+                None => "原对象此前不存在或旧定义读取失败，无法恢复".to_string(),
+            };
+            Err(AppError::general(format!(
+                "保存对象失败: {e}。{restore_msg}。注意：MySQL DDL 隐式提交、不参与事务回滚，对象替换无法整体回滚。"
+            )))
+        }
+    }
 }
 
 /// mysql_object_drop：按类别删除对象（DROP ... IF EXISTS）

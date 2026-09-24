@@ -18,6 +18,9 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::models::mysql::{MySqlConnection, MySqlQueryResult, MySqlTableInfo};
+// 二进制列判定复用 mysql_tools 口径（character_set()==63）——查询展示链路与
+// 传输/同步写回链路共享同一定义，BLOB/VARBINARY/BINARY/BIT 列 hex 化下发
+use crate::services::mysql_tools::is_binary_column;
 
 /// 连接池注册表：connection_id -> Pool
 static POOLS: OnceLock<Mutex<HashMap<String, Pool>>> = OnceLock::new();
@@ -241,9 +244,10 @@ async fn do_list_tables(conn: &mut Conn, db: Option<&str>) -> Result<Vec<MySqlTa
         let count_sql = tables
             .iter()
             .map(|t| {
+                // 库名与表名统一做反引号转义（``），防特殊库名/表名注入或语法错误
                 format!(
                     "SELECT COUNT(*) FROM `{}`.`{}`",
-                    schema,
+                    schema.replace('`', "``"),
                     t.name.replace('`', "``")
                 )
             })
@@ -341,6 +345,12 @@ async fn do_query(
         .columns()
         .map(|cols| cols.iter().map(|c| c.name_str().into_owned()).collect())
         .unwrap_or_default();
+    // 二进制列标记：BLOB/VARBINARY/BINARY/BIT 列 hex 化展示（字节无损可辨识），
+    // utf8mb4/latin1 的 TEXT/VARCHAR、数值/日期列走原文本路径不受影响
+    let bin_flags: Vec<bool> = result
+        .columns()
+        .map(|cols| cols.iter().map(|c| is_binary_column(c)).collect())
+        .unwrap_or_default();
 
     let mut rows: Vec<Vec<Option<String>>> = Vec::new();
     while let Some(mut row) = result.next().await.map_err(mysql_err)? {
@@ -348,7 +358,13 @@ async fn do_query(
         for i in 0..col_names.len() {
             // take::<Option<Value>> 承接 NULL（None），再统一转字符串
             let value = row.take::<Option<Value>, _>(i).flatten();
-            out.push(value.and_then(value_to_string));
+            out.push(value.and_then(|v| {
+                if bin_flags.get(i).copied().unwrap_or(false) {
+                    bin_value_to_string(v)
+                } else {
+                    value_to_string(v)
+                }
+            }));
         }
         rows.push(out);
     }
@@ -427,13 +443,24 @@ async fn do_cli_exec(conn: &mut Conn, sql: &str) -> Result<MySqlQueryResult, App
         .columns()
         .map(|cols| cols.iter().map(|c| c.name_str().into_owned()).collect())
         .unwrap_or_default();
+    // 二进制列标记（与 do_query 同口径）：BLOB 等列 hex 化展示，避免 lossy 乱码
+    let bin_flags: Vec<bool> = result
+        .columns()
+        .map(|cols| cols.iter().map(|c| is_binary_column(c)).collect())
+        .unwrap_or_default();
     let mut rows: Vec<Vec<Option<String>>> = Vec::new();
     while let Some(mut row) = result.next().await.map_err(mysql_err)? {
         let mut out = Vec::with_capacity(col_names.len());
         for i in 0..col_names.len() {
             // take::<Option<Value>> 承接 NULL（None），再统一转字符串
             let value = row.take::<Option<Value>, _>(i).flatten();
-            out.push(value.and_then(value_to_string));
+            out.push(value.and_then(|v| {
+                if bin_flags.get(i).copied().unwrap_or(false) {
+                    bin_value_to_string(v)
+                } else {
+                    value_to_string(v)
+                }
+            }));
         }
         rows.push(out);
         if rows.len() >= MAX_ROWS {
@@ -566,4 +593,25 @@ fn value_to_string(value: Value) -> Option<String> {
             Some(format!("{sign}{hours:03}:{m:02}:{s:02}{micro}"))
         }
     }
+}
+
+/// 二进制列值 -> 契约的 Option<String>：Bytes 转 `0x<HEX>`（字节无损可辨识，
+/// 替代 from_utf8_lossy 乱码）；NULL -> None；其余变体兜底走文本路径
+/// （二进制列按协议只会取到 Bytes 或 NULL，其余变体不应出现）。
+fn bin_value_to_string(value: Value) -> Option<String> {
+    match value {
+        Value::Bytes(b) => Some(format!("0x{}", hex_encode(&b))),
+        other => value_to_string(other),
+    }
+}
+
+/// 字节数组 -> 大写 HEX 字符串（避免为单一用途引入 hex crate）
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push(HEX[(b >> 4) as usize] as char);
+        s.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    s
 }

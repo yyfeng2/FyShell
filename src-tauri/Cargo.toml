@@ -46,6 +46,8 @@ uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 # 数据生成随机值（数据传输/生成工具）
 rand = "0.8"
+# CSV/SQL 导入文本解码（GBK/GB18030 探测器，Windows 导出中文文件常见）
+encoding_rs = "0.8"
 # 本地终端 PTY（wezterm 系：Windows ConPTY / macOS/Linux 原生 PTY）
 portable-pty = "0.8"
 

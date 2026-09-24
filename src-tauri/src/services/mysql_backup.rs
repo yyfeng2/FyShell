@@ -8,8 +8,11 @@
 //! - 可选 SELECT 全量拉取生成多值 INSERT（每 100 行一条）；
 //! - 文件头部写 `-- FyShell backup` 注释与时间戳；std::fs::write 覆盖写入。
 //!
-//! 还原：读文件按分号拆分逐条执行（跳过字符串字面量与注释内的分号），
-//! 全程事务包裹（用户显式事务内用 SAVEPOINT，否则 START TRANSACTION）。
+//! 还原：读文件按分号拆分逐条执行（跳过字符串字面量与注释内的分号）。
+//! 原子性诚实化：MySQL DDL（CREATE/ALTER/DROP 等）隐式提交、无法回滚——
+//! 纯 DML 脚本才整体包事务（用户显式事务内用 SAVEPOINT，否则 START TRANSACTION）；
+//! 含 DDL 的脚本保持语句原始顺序流式执行、仅把「连续的纯 DML 段」各自包独立事务，
+//! 失败时如实报错（已执行到第 N 条 + 已隐式提交部分不可回滚）。
 //!
 //! 自动运行（本轮范围）：保存任务配置 + 立即运行 + 运行历史。
 //! 真实定时调度（cron）不在本轮范围，后续版本接入；档案持久化用 SQLite
@@ -78,8 +81,8 @@ fn value_to_string(value: Value) -> Option<String> {
 }
 
 /// 按分号拆分 SQL 语句（简化状态机：跳过单引号/双引号字面量内的分号，
-/// 以及 -- 行注释与 /* 块注释 */ 内的内容），返回去除首尾空白的语句列表。
-/// 与 services/mysql_io.rs 的 split_sql_statements 同款实现。
+/// 以及 --/`#` 行注释与 /* 块注释 */ 内的内容），返回去除首尾空白的语句列表。
+/// 与 services/mysql_io.rs 的 split_sql_statements 同款实现（含 `#` 单行注释剥离）。
 fn split_sql_statements(content: &str) -> Vec<String> {
     let mut statements = Vec::new();
     let mut current = String::new();
@@ -173,6 +176,10 @@ fn split_sql_statements(content: &str) -> Vec<String> {
                 } else {
                     current.push(c);
                 }
+            }
+            // MySQL 单行注释 #...（与 -- 一致；字符串字面量内的 # 已由上方状态规避）
+            '#' => {
+                in_line_comment = true;
             }
             ';' => {
                 let trimmed = current.trim();
@@ -367,9 +374,18 @@ async fn append_table_data(
 }
 
 /// mysql_restore：读文件按分号拆分逐条执行（参照 mysql_io 的 SQL 导入状态机拆分），
-/// 全程事务包裹，保证原子性。confirmed 流程与 mysql_io 的 replace 一致：
+/// 返回总受影响行数。confirmed 流程与 mysql_io 的 replace 一致：
 /// 覆盖确认由前端负责，后端直接执行（该参数仅作语义兼容，None/Some 均执行）。
-/// 返回总受影响行数。
+///
+/// 原子性诚实化：MySQL 的 CREATE/ALTER/DROP 等 DDL 会隐式提交，ROLLBACK 无法撤销，
+/// 因此：
+///  - 纯 DML 脚本：无活跃事务时 START TRANSACTION 整段包裹（失败整体回滚）；
+///    用户显式事务内用 SAVEPOINT 包裹（失败仅回滚到保存点）；
+///  - 含 DDL 脚本：保持语句原始顺序流式执行，仅把「连续的纯 DML 段」各自包
+///    独立事务（遇到 DDL/隐式提交语句先 COMMIT 已开的段事务、再事务外执行该句）——
+///    保留 mysqldump 中 SET FOREIGN_KEY_CHECKS 等语句的原始时序，规避重排导致的
+///    FK violation。中途失败时如实报错——提示已执行到第几条、
+///    以及 DDL 等已隐式提交的部分不可回滚。
 pub async fn restore(
     conn_id: &str,
     file_path: &str,
@@ -383,36 +399,6 @@ pub async fn restore(
     if !std::path::Path::new(file_path).exists() {
         return Err(AppError::general(format!("还原文件不存在: {file_path}")));
     }
-
-    // 用户显式事务内：SAVEPOINT 包裹，失败仅回滚到保存点、不影响用户事务其余内容
-    if let Some(mut conn) = take_tx_conn(conn_id) {
-        let outcome = with_savepoint(&mut conn, file_path).await;
-        give_tx_conn(conn_id, conn);
-        return outcome;
-    }
-
-    // 无活跃事务：START TRANSACTION 包裹整批，任一条失败整体 ROLLBACK
-    let mut conn = pool_of(conn_id)?.get_conn().await.map_err(mysql_err)?;
-    if let Err(e) = conn.query_drop("START TRANSACTION").await {
-        // START TRANSACTION 失败时事务未开，无需回滚，连接随 drop 归还池
-        return Err(mysql_err(e));
-    }
-    let rows_total = do_restore(&mut conn, file_path).await;
-    match rows_total {
-        Ok(rows_total) => {
-            conn.query_drop("COMMIT").await.map_err(mysql_err)?;
-            Ok(rows_total)
-        }
-        Err(e) => {
-            // 任一条语句失败：回滚整批（隐式事务保证原子性）
-            let _ = conn.query_drop("ROLLBACK").await;
-            Err(e)
-        }
-    }
-}
-
-/// 还原执行主体：读取文件、按分号拆分并逐条执行，rows_total 取总受影响行数
-async fn do_restore(conn: &mut Conn, file_path: &str) -> Result<u64, AppError> {
     let content = std::fs::read_to_string(file_path)
         .map_err(|e| AppError::general(format!("读取还原文件失败: {e}")))?;
     let statements = split_sql_statements(&content);
@@ -421,31 +407,140 @@ async fn do_restore(conn: &mut Conn, file_path: &str) -> Result<u64, AppError> {
             "还原文件中未找到可执行的 SQL 语句: {file_path}"
         )));
     }
+    let contains_ddl = statements.iter().any(|s| is_implicit_commit_stmt(s));
+
+    let tx_conn = take_tx_conn(conn_id);
+    let from_tx = tx_conn.is_some();
+    let mut conn = match tx_conn {
+        Some(conn) => conn,
+        None => pool_of(conn_id)?.get_conn().await.map_err(mysql_err)?,
+    };
+    let outcome = if contains_ddl {
+        // 含 DDL：隐式提交使整段事务回滚不可能，诚实化执行（DDL 外、DML 独立事务）
+        restore_with_ddl(&mut conn, &statements).await
+    } else if from_tx {
+        // 用户显式事务内（纯 DML）：SAVEPOINT 包裹，失败仅回滚到保存点
+        with_savepoint(&mut conn, &statements).await
+    } else {
+        // 纯 DML 无活跃事务：START TRANSACTION 整段原子
+        restore_in_tx(&mut conn, &statements).await
+    };
+    if from_tx {
+        give_tx_conn(conn_id, conn);
+    }
+    outcome
+}
+
+/// 执行单条语句并返回受影响行数（错误原始抛出，由调用方按语境包装）
+async fn exec_statement_raw(conn: &mut Conn, stmt: &str) -> Result<u64, mysql_async::Error> {
+    let result = conn.query_iter(stmt).await?;
+    let affected = result.affected_rows();
+    result.drop_result().await?;
+    Ok(affected)
+}
+
+/// 逐条执行纯 DML 语句（调用方已负责事务包裹），返回总受影响行数。
+/// 失败时如实报告已执行到第几条。
+async fn run_statements(conn: &mut Conn, statements: &[String]) -> Result<u64, AppError> {
     let mut rows_total = 0u64;
     for (idx, stmt) in statements.iter().enumerate() {
-        let result = match conn.query_iter(stmt.as_str()).await {
-            Ok(result) => result,
+        match exec_statement_raw(conn, stmt).await {
+            Ok(affected) => rows_total += affected,
             Err(e) => {
                 return Err(AppError::general(format!(
                     "还原第 {} 条语句失败: {e}",
                     idx + 1
                 )));
             }
-        };
-        let affected = result.affected_rows();
-        // 消费剩余结果集/清理语句
-        result.drop_result().await.map_err(mysql_err)?;
-        rows_total += affected;
+        }
     }
     Ok(rows_total)
 }
 
-/// 用户事务内：SAVEPOINT 包裹本次还原，失败 ROLLBACK TO SAVEPOINT，成功 RELEASE
-async fn with_savepoint(conn: &mut Conn, file_path: &str) -> Result<u64, AppError> {
+/// 还原执行（含 DDL 脚本）：保持语句原始顺序流式执行，仅把「连续的纯 DML 段」
+/// 各自包独立事务（START TRANSACTION ... COMMIT）。
+///
+/// 背景：mysqldump 产物中 SET FOREIGN_KEY_CHECKS=0（数据段头部）与
+/// SET FOREIGN_KEY_CHECKS=@OLD（文件尾部）同为隐式提交类语句——若按「全 DDL
+/// 先执行、全 DML 后执行」重排，@OLD 还原会被提前到 DML 段之前执行，DML 段以
+/// FK_CHECKS=1 跑，含环形外键/交错序数据的 dump 必然 FK violation。故不分组重排：
+/// - DDL/隐式提交类语句（SET/LOCK/UNLOCK/CREATE 等）：先 COMMIT 已打开的 DML
+///   段事务，再事务外按原位置执行（即执行即固化，无法回滚）；
+/// - DML 语句：连续段起始处自动 START TRANSACTION，段内共享同一事务，失败
+///   ROLLBACK 仅回滚本段（此前隐式提交的部分保留）；
+/// 相对顺序与原始脚本完全一致，同时规避 FK_CHECKS / LOCK 失序。
+async fn restore_with_ddl(conn: &mut Conn, statements: &[String]) -> Result<u64, AppError> {
+    let mut rows_total = 0u64;
+    let mut in_tx = false; // 当前是否处于某个连续 DML 段的独立事务中
+
+    for (idx, stmt) in statements.iter().enumerate() {
+        if is_implicit_commit_stmt(stmt) {
+            // 隐式提交类语句：先提交已打开的 DML 段事务，再事务外执行本句
+            if in_tx {
+                conn.query_drop("COMMIT").await.map_err(mysql_err)?;
+                in_tx = false;
+            }
+            match exec_statement_raw(conn, stmt).await {
+                Ok(affected) => rows_total += affected,
+                Err(e) => {
+                    return Err(AppError::general(format!(
+                        "还原第 {} 条语句失败: {e}。注意：该语句为 DDL/隐式提交类，\
+                         MySQL 不参与事务回滚，此前已隐式提交的语句不可撤销",
+                        idx + 1
+                    )));
+                }
+            }
+        } else {
+            // DML 语句：不在事务中则开新事务（每个连续 DML 段各一个独立事务）
+            if !in_tx {
+                conn.query_drop("START TRANSACTION").await.map_err(mysql_err)?;
+                in_tx = true;
+            }
+            match exec_statement_raw(conn, stmt).await {
+                Ok(affected) => rows_total += affected,
+                Err(e) => {
+                    let _ = conn.query_drop("ROLLBACK").await;
+                    return Err(AppError::general(format!(
+                        "还原第 {} 条语句失败（本段 DML 已回滚）: {e}。\
+                         注意：脚本中此前已隐式提交的语句不可回滚",
+                        idx + 1
+                    )));
+                }
+            }
+        }
+    }
+    // 收尾：提交最后一个 DML 段（若脚本以 DML 结尾）
+    if in_tx {
+        conn.query_drop("COMMIT").await.map_err(mysql_err)?;
+    }
+    Ok(rows_total)
+}
+
+/// 无活跃事务且纯 DML：START TRANSACTION 整段包裹，成功 COMMIT、失败整体 ROLLBACK
+async fn restore_in_tx(conn: &mut Conn, statements: &[String]) -> Result<u64, AppError> {
+    if let Err(e) = conn.query_drop("START TRANSACTION").await {
+        // START TRANSACTION 失败时事务未开，无需回滚，连接随 drop 归还池
+        return Err(mysql_err(e));
+    }
+    match run_statements(conn, statements).await {
+        Ok(rows_total) => {
+            conn.query_drop("COMMIT").await.map_err(mysql_err)?;
+            Ok(rows_total)
+        }
+        Err(e) => {
+            // 纯 DML 任一条失败：整体回滚（事务内语句可回滚）
+            let _ = conn.query_drop("ROLLBACK").await;
+            Err(e)
+        }
+    }
+}
+
+/// 用户事务内（纯 DML）：SAVEPOINT 包裹本次还原，失败 ROLLBACK TO SAVEPOINT，成功 RELEASE
+async fn with_savepoint(conn: &mut Conn, statements: &[String]) -> Result<u64, AppError> {
     conn.query_drop("SAVEPOINT _fyshell_restore")
         .await
         .map_err(mysql_err)?;
-    match do_restore(conn, file_path).await {
+    match run_statements(conn, statements).await {
         Ok(rows_total) => {
             conn.query_drop("RELEASE SAVEPOINT _fyshell_restore")
                 .await
@@ -457,6 +552,40 @@ async fn with_savepoint(conn: &mut Conn, file_path: &str) -> Result<u64, AppErro
             Err(e)
         }
     }
+}
+
+/// 语句是否为 DDL/DCL 等隐式提交类（MySQL 此类语句执行即提交当前事务、不可回滚）。
+/// 取语句首关键字（去掉 `/*!` 版本注释前缀）；保守涵盖常见隐式提交关键字：
+/// CREATE/ALTER/DROP/TRUNCATE/RENAME/GRANT/REVOKE/SET/LOCK/UNLOCK/USE 等。
+fn is_implicit_commit_stmt(stmt: &str) -> bool {
+    let first = stmt
+        .trim_start()
+        .split_whitespace()
+        .next()
+        .unwrap_or("");
+    let kw = first.trim_start_matches("/*!").to_ascii_lowercase();
+    matches!(
+        kw.as_str(),
+        "create"
+            | "alter"
+            | "drop"
+            | "truncate"
+            | "rename"
+            | "grant"
+            | "revoke"
+            | "set"
+            | "lock"
+            | "unlock"
+            | "use"
+            | "call"
+            | "install"
+            | "uninstall"
+            | "flush"
+            | "reset"
+            | "analyze"
+            | "optimize"
+            | "repair"
+    )
 }
 
 // ---------------------------------------------------------------------------
