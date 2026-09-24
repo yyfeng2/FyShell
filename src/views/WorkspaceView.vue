@@ -2779,10 +2779,8 @@ onMounted(async () => {
     } else {
       ui.toast('未找到对应会话，无法自动打开终端', 'warning')
     }
-  } else if (tabs.value.length === 0) {
-    // 默认打开本地终端（主窗口启动且无任何标签时）
-    openLocalTerminal()
   }
+  // 主窗口启动（无 ?session 参数）保持欢迎页，不自动开本地终端（用户 2026-09-24 指令）
 })
 
 onUnmounted(() => {
