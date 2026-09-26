@@ -126,10 +126,10 @@
         <template #default="{ item }">
           <div
             class="file-pane__row"
-            :class="{ 'file-pane__row--selected': selectedName === asEntry(item).name }"
+            :class="{ 'file-pane__row--selected': isSelected(asEntry(item).name) }"
             :draggable="!disabled && !loading"
             @dragstart="onDragStart($event, asEntry(item))"
-            @click="select(asEntry(item))"
+            @click="onRowClick(asEntry(item), $event)"
             @dblclick="openEntry(asEntry(item))"
             @contextmenu.stop.prevent="openMenu($event, asEntry(item))"
           >
@@ -384,8 +384,9 @@ function notify(message: string): void {
 const currentPath = computed(() => props.path || DEFAULT_PATH[props.side])
 const isRoot = computed(() => isRootPath(props.side, currentPath.value))
 
-/** 当前选中条目名（单选；空串表示未选中） */
-const selectedName = ref('')
+/** 当前选中条目名集合（Ctrl/Shift 多选；空集表示未选中）。Shift 区间以 anchorName 为锚点 */
+const selectedNames = ref<Set<string>>(new Set())
+let anchorName: string | null = null
 
 /** 目录加载序号：快速切换路径/连接时丢弃过期响应（防止慢的旧目录覆盖新目录/错弹错误） */
 let loadSeq = 0
@@ -441,7 +442,7 @@ watch(
   () => [currentPath.value, props.sessionId, props.side, props.disabled],
   () => {
     pathInput.value = currentPath.value
-    selectedName.value = ''
+    clearSelection()
     void load()
   },
   { immediate: true },
@@ -475,11 +476,69 @@ const sorted = computed(() => {
   return list
 })
 
-// ---------- 选择与打开 ----------
+// ---------- 选择与多选（Ctrl/Shift 批量，WinSCP 惯例） ----------
 
-function select(entry: FileEntry): void {
-  selectedName.value = entry.name
+function isSelected(name: string): boolean {
+  return selectedNames.value.has(name)
 }
+
+/** 整体替换选中集（并更新区间锚点） */
+function setSelection(names: string[]): void {
+  selectedNames.value = new Set(names)
+  anchorName = names.length === 1 ? names[0] : null
+}
+
+function clearSelection(): void {
+  selectedNames.value = new Set()
+  anchorName = null
+}
+
+/** 切换单项选中（Ctrl/无修饰键共用路径，切换后以该项为新锚点） */
+function toggleSelect(entry: FileEntry): void {
+  const set = new Set(selectedNames.value)
+  if (set.has(entry.name)) {
+    set.delete(entry.name)
+    anchorName = entry.name // 二次点击取消时仍以该项为后续 Shift 锚点（主流管理器惯例）
+  } else {
+    set.add(entry.name)
+    anchorName = entry.name
+  }
+  selectedNames.value = set
+}
+
+/**
+ * Shift 区间选择：从锚点（最近一次单选/点击项）到当前项，按当前排序顺序闭区间全选。
+ * 无锚点时降级为单选当前项（首次 Shift 无意义）。
+ */
+function rangeSelect(entry: FileEntry): void {
+  const list = sorted.value
+  if (!anchorName) {
+    setSelection([entry.name])
+    return
+  }
+  const from = list.findIndex((e) => e.name === anchorName)
+  const to = list.findIndex((e) => e.name === entry.name)
+  const names = (from >= 0 && to >= 0 ? list.slice(Math.min(from, to), Math.max(from, to) + 1) : [entry])
+    .map((e) => e.name)
+  setSelection(names)
+}
+
+/**
+ * 行点击：Ctrl/Meta 切换、Shift 区间、普通点击单选（WinSCP 同键行为）。
+ * 返回当前选中集合并更新锚点。
+ */
+function onRowClick(entry: FileEntry, event: MouseEvent): void {
+  if (event.shiftKey) {
+    rangeSelect(entry)
+  } else if (event.ctrlKey || event.metaKey) {
+    toggleSelect(entry)
+  } else {
+    setSelection([entry.name])
+  }
+}
+
+/** 全体选中条目（按当前排序顺序；供批量传输/拖拽取数） */
+const selectedEntries = computed(() => sorted.value.filter((e) => isSelected(e.name)))
 
 function openEntry(entry: FileEntry): void {
   if (entry.is_dir) {
@@ -502,8 +561,9 @@ const menu = reactive({
 
 function openMenu(event: MouseEvent, entry: FileEntry | null): void {
   if (props.disabled) return
+  // 右键语义（WinSCP 惯例）：右击已选中条目保留整组多选；右击未选中条目则替换为单选该项
+  if (entry && !isSelected(entry.name)) setSelection([entry.name])
   menu.entry = entry
-  if (entry) selectedName.value = entry.name
   menu.x = event.clientX
   menu.y = event.clientY
   menu.visible = true
@@ -514,8 +574,15 @@ const canTransfer = computed(() => props.side === 'remote' || !!props.sessionId)
 
 function actionTransfer(): void {
   menu.visible = false
-  if (!menu.entry || !canTransfer.value) return
-  emit('transfer-request', [{ ...menu.entry }])
+  if (!canTransfer.value) return
+  // 批量传输：优先携带全部选中条目；无选中时回退右键目标单条目
+  const targets = selectedEntries.value.length
+    ? selectedEntries.value
+    : menu.entry
+      ? [{ ...menu.entry }]
+      : []
+  if (!targets.length) return
+  emit('transfer-request', targets)
 }
 
 // ---------- 将终端定位到当前目录（仅远程侧） ----------
@@ -833,10 +900,12 @@ function onDrop(event: DragEvent): void {
 const dragMime = 'application/x-fyshell-entries'
 function onDragStart(event: DragEvent, entry: FileEntry): void {
   if (props.disabled || !event.dataTransfer) return
-  selectedName.value = entry.name // 统一选中态，作为拖拽视觉锚点
+  // 批量拖拽：当前项已在多选中时携带全部选中项；否则仅拖该项（并单选它以锚定视觉）
+  const dragging = isSelected(entry.name) ? selectedEntries.value : [entry]
+  if (dragging.length) setSelection(dragging.map((e) => e.name))
   event.dataTransfer.setData(
     dragMime,
-    JSON.stringify({ from: props.side, entries: [{ ...entry }] }),
+    JSON.stringify({ from: props.side, entries: dragging.map((e) => ({ ...e })) }),
   )
   event.dataTransfer.effectAllowed = 'copyMove'
 }

@@ -70,6 +70,8 @@ const emit = defineEmits<{
   (e: 'remote-path-change', path: string): void
   (e: 'update:localPath', path: string): void
   (e: 'update:remotePath', path: string): void
+  /** 有任务入队（上传/下载）：通知父级自动打开传输队列 Tab 展示实时进度 */
+  (e: 'transfer-started'): void
 }>()
 
 const transfer = useTransferStore()
@@ -168,7 +170,9 @@ async function handleTransfer(entries: FileEntry[], from: PaneSide): Promise<voi
         await transfer.enqueueDownload(props.sessionId, sourcePath, targetPath)
       }
     }
-    notify(`已入队 ${entries.length} 个${to === 'remote' ? '上传' : '下载'}任务，可在传输队列查看进度`)
+    notify(`已入队 ${entries.length} 个${to === 'remote' ? '上传' : '下载'}任务`)
+    // 实时进度反馈：请求父级打开/激活传输队列 Tab（上次修复前进度只藏在队列 Tab，上传后看不到）
+    emit('transfer-started')
   } catch (e) {
     notify(errText(e))
   }

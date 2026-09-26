@@ -226,6 +226,10 @@ where
         truncate_remote(&remote, resume_offset, "续传截断").await?;
         // 从已传偏移继续写
         remote.seek(SeekFrom::Start(resume_offset)).await.map_err(sftp_err)?;
+        // 关键：本地文件同样 seek 到续传偏移再读——否则从文件头读会把整个
+        // 本地文件追加到远端残留之后（远端大小变成 resume_offset + local_size），
+        // 进度也会虚高到 sum；只有起点对齐，续传才是「补传尾部」语义
+        local.seek(SeekFrom::Start(resume_offset)).await?;
     }
 
     let mut buf = vec![0u8; CHUNK_SIZE];

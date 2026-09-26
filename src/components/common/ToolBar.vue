@@ -37,6 +37,8 @@ const emit = defineEmits<{
   (e: 'search'): void
   (e: 'transfer'): void
   (e: 'sftp'): void
+  /** 请求新建独立 SFTP 会话（SFTP 下拉菜单项：打开新建会话表单并预设类型=SFTP） */
+  (e: 'sftp-new'): void
   (e: 'db-transfer'): void
   (e: 'db-generate'): void
   (e: 'db-sync'): void
@@ -145,12 +147,31 @@ function onContextMenu(e: MouseEvent): void {
           <span>传输</span>
         </span>
       </v-btn>
-      <v-btn variant="text" title="SFTP 文件传输" class="toolbar__titled" @click="emit('sftp')">
-        <span class="toolbar__titled__body">
-          <v-icon icon="mdi-folder-swap-outline" />
-          <span>传文件</span>
-        </span>
-      </v-btn>
+      <!-- SFTP 下拉：独立会话（新建 SFTP 会话）与快捷双栏（绑定最近终端）二选一 -->
+      <v-menu location="bottom" :close-on-content-click="true">
+        <template #activator="{ props: sftpAct }">
+          <v-btn v-bind="sftpAct" variant="text" title="SFTP 文件传输" class="toolbar__titled">
+            <span class="toolbar__titled__body">
+              <v-icon icon="mdi-folder-swap-outline" />
+              <span>传文件</span>
+            </span>
+          </v-btn>
+        </template>
+        <v-list density="compact" class="toolbar__menu">
+          <v-list-item
+            prepend-icon="mdi-plus"
+            title="新建 SFTP 会话…"
+            subtitle="以独立会话连接并打开双栏"
+            @click="emit('sftp-new')"
+          />
+          <v-list-item
+            prepend-icon="mdi-folder-swap-outline"
+            title="快捷双栏"
+            subtitle="绑定最近打开的终端会话"
+            @click="emit('sftp')"
+          />
+        </v-list>
+      </v-menu>
     </template>
     <!-- 数据库工具组（仿 Navicat）：仅 MySQL 已连接时出现，断开隐藏 -->
     <template v-if="props.dbTools">
