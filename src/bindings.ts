@@ -56,6 +56,10 @@ export const commands = {
 	sftpRename: (id: string, oldPath: string, newPath: string) => __TAURI_INVOKE<null>("sftp_rename", { id, oldPath, newPath }),
 	/**  设置文件/目录权限（chmod）：`mode` 为八进制语义数值（如 0o644 = 420） */
 	sftpChmod: (id: string, path: string, mode: number) => __TAURI_INVOKE<null>("sftp_chmod", { id, path, mode }),
+	/**  读取远程文件内容为 UTF-8 文本（文本编辑用；≤2MB，非 UTF-8/二进制报错） */
+	sftpReadText: (id: string, path: string) => __TAURI_INVOKE<string>("sftp_read_text", { id, path }),
+	/**  写回远程文件内容（全量 TRUNCATE 覆盖，UTF-8）——文本编辑保存 */
+	sftpWriteText: (id: string, path: string, content: string) => __TAURI_INVOKE<null>("sftp_write_text", { id, path, content }),
 	/**  入队上传，进度走 Channel（返回含 id 的任务快照，前端可凭其取消） */
 	sftpUpload: (id: string, localPath: string, remotePath: string, onProgress: Channel<TransferTask>) => __TAURI_INVOKE<TransferTask>("sftp_upload", { id, localPath, remotePath, onProgress }),
 	/**  入队下载，进度走 Channel */

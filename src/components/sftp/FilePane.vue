@@ -176,6 +176,13 @@
         <v-list-item @click="actionMkdir">
           <v-list-item-title>新建文件夹</v-list-item-title>
         </v-list-item>
+        <!-- 编辑（WinSCP 语义）：仅远程窗格的文件；双击文本文件同样进入 -->
+        <v-list-item
+          v-if="side === 'remote' && menu.entry && !menu.entry.is_dir"
+          @click="actionEdit"
+        >
+          <v-list-item-title>编辑</v-list-item-title>
+        </v-list-item>
         <v-list-item :disabled="!menu.entry" @click="actionRename">
           <v-list-item-title>重命名</v-list-item-title>
         </v-list-item>
@@ -302,6 +309,14 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- 远程文件文本编辑器（双击/右键「编辑」打开，保存后刷新列表） -->
+    <RemoteTextEditorDialog
+      v-model="editorOpen"
+      :session-id="props.sessionId"
+      :path="editorPath"
+      @saved="refresh"
+    />
   </div>
 </template>
 
@@ -332,6 +347,7 @@ import {
 import type { SftpFavorite } from '@/api/types'
 import { friendlyError } from '@/utils/errors'
 import EmptyState from '@/components/common/EmptyState.vue'
+import RemoteTextEditorDialog from './RemoteTextEditorDialog.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -545,9 +561,33 @@ function openEntry(entry: FileEntry): void {
     emit('update:path', joinPath(props.side, currentPath.value, entry.name))
     return
   }
-  // 文件双击暂无打开能力，给出友好反馈，避免零反馈
+  // 远程文件双击进入文本编辑器（WinSCP 语义）；本地文件暂无打开能力，给出友好反馈
+  if (props.side === 'remote') {
+    openEditor(entry.name)
+    return
+  }
   errorMsg.value = `暂不支持打开文件「${entry.name}」`
   snackbar.value = true
+}
+
+// ---------- 远程文件文本编辑（WinSCP 语义：右键「编辑」+ 双击文本文件） ----------
+
+/** 编辑器打开状态与目标远程文件绝对路径 */
+const editorOpen = ref(false)
+const editorPath = ref('')
+
+/** 按文件名打开编辑器（路径取当前目录 + 文件名，仅远程侧） */
+function openEditor(name: string): void {
+  if (props.side !== 'remote' || !props.sessionId) return
+  editorPath.value = joinPath('remote', currentPath.value, name)
+  editorOpen.value = true
+}
+
+/** 右键「编辑」：关闭菜单后打开目标文件（menu.entry 已确保为远程文件） */
+function actionEdit(): void {
+  if (!menu.entry) return
+  menu.visible = false
+  openEditor(menu.entry.name)
 }
 
 // ---------- 右键菜单 ----------

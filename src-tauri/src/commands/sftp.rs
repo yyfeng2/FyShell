@@ -66,6 +66,29 @@ pub async fn sftp_chmod(
     sftp_service::chmod(&state, &id, &path, mode).await
 }
 
+/// 读取远程文件内容为 UTF-8 文本（文本编辑用；≤2MB，非 UTF-8/二进制报错）
+#[tauri::command]
+#[specta::specta]
+pub async fn sftp_read_text(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+) -> Result<String, AppError> {
+    sftp_service::read_text(&state, &id, &path).await
+}
+
+/// 写回远程文件内容（全量 TRUNCATE 覆盖，UTF-8）——文本编辑保存
+#[tauri::command]
+#[specta::specta]
+pub async fn sftp_write_text(
+    state: State<'_, AppState>,
+    id: String,
+    path: String,
+    content: String,
+) -> Result<(), AppError> {
+    sftp_service::write_text(&state, &id, &path, &content).await
+}
+
 /// SFTP 收藏路径列表（按收藏时间倒序）
 #[tauri::command]
 #[specta::specta]

@@ -41,6 +41,23 @@ export function sftpChmod(id: string, path: string, mode: number): Promise<void>
   return invoke<void>('sftp_chmod', { id, path, mode });
 }
 
+/**
+ * 读取远程文件内容为 UTF-8 文本（文本编辑用）。
+ * 超过 2MB 或非 UTF-8（二进制/含 NUL/其它编码）时后端报错，前端提示改用下载。
+ */
+export function sftpReadText(id: string, path: string): Promise<string> {
+  return invoke<string>('sftp_read_text', { id, path });
+}
+
+/** 写回远程文件内容（全量 TRUNCATE 覆盖，UTF-8）——文本编辑保存 */
+export function sftpWriteText(
+  id: string,
+  path: string,
+  content: string,
+): Promise<void> {
+  return invoke<void>('sftp_write_text', { id, path, content });
+}
+
 /** 收藏路径列表（按收藏时间倒序） */
 export function sftpFavoriteList(): Promise<SftpFavorite[]> {
   return invoke<SftpFavorite[]>('sftp_favorite_list');

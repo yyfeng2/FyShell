@@ -325,3 +325,67 @@ where
     progress(transferred, total);
     Ok(())
 }
+
+/// 远程文件文本编辑上限：超限视为过大（避免超大文件灌入编辑器/前端）
+const EDIT_MAX_BYTES: u64 = 2 * 1024 * 1024;
+
+/// 读取远程文件内容为 UTF-8 文本（文本编辑用）。
+///
+/// 大小硬上限 2MB（metadata 预检 + 读取途中累计双保险）；内容非 UTF-8
+/// （二进制 / 含 NUL / 其它编码）时如实报错引导下载，不静默替换字符——
+/// correctness-first：宁可拒绝，不做有损解码。
+pub async fn read_text(
+    state: &AppState,
+    id: &str,
+    path: &str,
+) -> Result<String, AppError> {
+    let sftp = open_sftp(state, id).await?;
+
+    // 大小预检：超大文件不读入内存（metadata 失败按 IO 错误如实上报）
+    if let Some(size) = sftp.metadata(path).await.map_err(sftp_err)?.size {
+        if size > EDIT_MAX_BYTES {
+            return Err(AppError::general(format!(
+                "文件过大（{} 字节），超过编辑上限 2MB，请下载后编辑",
+                size
+            )));
+        }
+    }
+
+    let mut remote = sftp.open(path).await.map_err(sftp_err)?;
+    let mut buf = Vec::with_capacity(64 * 1024);
+    let mut chunk = [0u8; CHUNK_SIZE];
+    loop {
+        let n = remote.read(&mut chunk).await.map_err(sftp_err)?;
+        if n == 0 {
+            break;
+        }
+        // 途中累计超限（metadata 与读取之间的竞态/服务端 size 缺失）兜底报错
+        if buf.len() + n > EDIT_MAX_BYTES as usize {
+            return Err(AppError::general(
+                "文件过大（超过 2MB 编辑上限），请下载后编辑",
+            ));
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+
+    // 严格 UTF-8 校验：非 UTF-8（二进制/含 NUL/异文字编码）拒绝编辑，引导改用下载
+    String::from_utf8(buf)
+        .map_err(|_| AppError::general("文件不是 UTF-8 文本（可能为二进制或其它编码），无法编辑"))
+}
+
+/// 写回远程文件内容（全量 TRUNCATE 覆盖，UTF-8 语义）——文本编辑保存。
+pub async fn write_text(
+    state: &AppState,
+    id: &str,
+    path: &str,
+    content: &str,
+) -> Result<(), AppError> {
+    let sftp = open_sftp(state, id).await?;
+    let mut remote = sftp
+        .open_with_flags(path, OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::TRUNCATE)
+        .await
+        .map_err(sftp_err)?;
+    remote.write_all(content.as_bytes()).await.map_err(sftp_err)?;
+    let _ = remote.sync_all().await; // fsync 失败不视为失败（与 upload_file 一致）
+    Ok(())
+}
