@@ -19,7 +19,7 @@
         "minWidth": 960,
         "minHeight": 600,
         "center": true,
-        "additionalBrowserArgs": "--remote-debugging-port=9222"
+        "additionalBrowserArgs": "--noerrdialogs"
       }
     ],
     "security": {
