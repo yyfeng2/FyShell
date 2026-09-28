@@ -76,6 +76,11 @@ export interface UseXtermOptions {
    * 多窗格/后台标签等场景会因盲抢焦点打断输入，交由上层自行决定。
    */
   autoFocus?: boolean
+  /**
+   * 实时 cwd 回调：解析终端输出中的 OSC 7（`ESC ] 7 ; <uri> ST|BEL`）后回调绝对路径，
+   * 供「SFTP 快捷双栏」打开时定位到 SSH 终端当前目录。不传则跳过解析（零开销）。
+   */
+  onCwd?: (path: string) => void
 }
 
 /** 规范化编码名：TextDecoder 只认标准标签，未知标签回退 UTF-8 */
@@ -458,6 +463,54 @@ export function useXterm(options: UseXtermOptions = {}) {
     // SSH 选项联动：关键词高亮重扫（防抖）+ 登录提示符自动响应
     scheduleKeywordScan()
     checkLoginPrompt(decoded)
+    checkOsc7Cwd(decoded)
+  }
+
+  /** OSC 7（cwd 通知）增量解析缓冲：序列可能被 TCP 分段拆到相邻 batch */
+  let osc7Buffer = ''
+
+  /** 解析 OSC 7 URI → 绝对路径：file://host/path → /path；裸路径原样百分比解码返回 */
+  function parseOsc7Path(raw: string): string | null {
+    if (!raw.trim()) return null
+    try {
+      let path = raw.trim()
+      if (path.startsWith('file://')) {
+        const rest = path.slice('file://'.length) // host/path 或 /path
+        const slash = rest.indexOf('/')
+        path = slash >= 0 ? rest.slice(slash) : `/${rest}`
+      }
+      path = decodeURIComponent(path)
+      // Windows 服务端（OpenSSH on Windows）的 OSC 7 形如 /C:/Users/..：去前导斜杠还原盘符路径
+      if (/^\/?[A-Za-z]:(\\|\/)/.test(path)) path = path.replace(/^\//, '')
+      return path || null
+    } catch {
+      return null
+    }
+  }
+
+  /** 扫描 OSC 7（`ESC ] 7 ; <uri> ST|BEL`，ST=`ESC \`）并上报 cwd（跨 batch 缓冲拼回拆分序列） */
+  function checkOsc7Cwd(decoded: string): void {
+    const onCwd = options.onCwd
+    if (!onCwd) return
+    osc7Buffer += decoded
+    // 长度上限防无限增长（正常一条 OSC 7 很短；溢出时保留尾部继续尝试）
+    if (osc7Buffer.length > 8192) osc7Buffer = osc7Buffer.slice(-1024)
+    const MARK = '\x1b]7;'
+    const i = osc7Buffer.lastIndexOf(MARK)
+    if (i < 0) return
+    const start = i + MARK.length
+    const endSt = osc7Buffer.indexOf('\x1b\\', start)
+    const endBel = osc7Buffer.indexOf('\x07', start)
+    const end = endSt >= 0 && endBel >= 0 ? Math.min(endSt, endBel) : endSt >= 0 ? endSt : endBel
+    if (end < 0) {
+      // 序列残缺（终止符未到）：从标记起保留尾部，等下次 append 补齐
+      osc7Buffer = osc7Buffer.slice(i)
+      return
+    }
+    const raw = osc7Buffer.slice(start, end)
+    osc7Buffer = '' // 已消费本条，清理避免重复扫描
+    const path = parseOsc7Path(raw)
+    if (path) onCwd(path)
   }
 
   /** 初始化终端（容器必须已挂载） */

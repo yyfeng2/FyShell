@@ -6,7 +6,7 @@
     @update:model-value="onDialogChange"
   >
     <v-card>
-      <v-card-title class="text-h6">ZMODEM 传输</v-card-title>
+      <v-card-title class="text-h6">rz/sz 文件传输</v-card-title>
       <v-divider />
       <!-- 会话级错误（如选择器打开失败）：对话框内可见提示 -->
       <v-alert
@@ -54,7 +54,7 @@
       <!-- 传输中：进度条 -->
       <template v-else-if="mode === 'progress'">
         <v-card-text>
-          <div class="zmodem-file" :title="active?.file_name">
+          <div class="rzsz-file" :title="active?.file_name">
             {{ active?.file_name }}
           </div>
           <v-progress-linear
@@ -64,7 +64,7 @@
             height="6"
             color="primary"
           />
-          <div class="zmodem-size text-body-2">
+          <div class="rzsz-size text-body-2">
             {{ sizeLabel }}
           </div>
         </v-card-text>
@@ -77,7 +77,7 @@
       <!-- 失败：错误信息 + 手动关闭 -->
       <template v-else>
         <v-card-text>
-          <p class="text-body-2 mb-0 zmodem-error">{{ ended?.message }}</p>
+          <p class="text-body-2 mb-0 rzsz-error">{{ ended?.message }}</p>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -92,30 +92,30 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { open } from '@tauri-apps/plugin-dialog'
 import {
-  listenZmodemEnd,
-  listenZmodemProgress,
-  listenZmodemStart,
-  zmodemRespond,
+  listenRzszEnd,
+  listenRzszProgress,
+  listenRzszStart,
+  rzszRespond,
 } from '@/api/ssh'
 import { friendlyError as errText } from '@/utils/errors'
 
-/** zmodem-start 事件 payload（与后端契约同名同构） */
-interface ZmodemStartPayload {
+/** rzsz-start 事件 payload（与后端契约同名同构） */
+interface RzszStartPayload {
   key: string
   /** 识别的传输方向：recv=对端 sz（选保存目录）/ send=对端 rz（选上传文件）/ null=无法识别 */
   direction: 'recv' | 'send' | null
 }
 
-/** zmodem-progress 事件 payload */
-interface ZmodemProgressPayload {
+/** rzsz-progress 事件 payload */
+interface RzszProgressPayload {
   key: string
   file_name: string
   transferred: number
   total: number
 }
 
-/** zmodem-end 事件 payload */
-interface ZmodemEndPayload {
+/** rzsz-end 事件 payload */
+interface RzszEndPayload {
   key: string
   ok: boolean
   message: string
@@ -125,11 +125,11 @@ interface ZmodemEndPayload {
 type DialogMode = 'idle' | 'picking' | 'choose' | 'progress' | 'failed'
 
 /** 待选择的请求队列（连续多次 rz/sz 时排队） */
-const pending = ref<ZmodemStartPayload[]>([])
+const pending = ref<RzszStartPayload[]>([])
 /** 当前进行中的传输（进度展示） */
-const active = ref<ZmodemProgressPayload | null>(null)
+const active = ref<RzszProgressPayload | null>(null)
 /** 上一次失败的信息 */
-const ended = ref<ZmodemEndPayload | null>(null)
+const ended = ref<RzszEndPayload | null>(null)
 const mode = ref<DialogMode>('idle')
 /** 对话框内展示的会话级错误（如选择器打开失败） */
 const dialogError = ref('')
@@ -231,10 +231,10 @@ async function respond(
 ): Promise<void> {
   pending.value = pending.value.filter((p) => p.key !== key)
   try {
-    await zmodemRespond(key, action, localPath)
+    await rzszRespond(key, action, localPath)
   } catch (e) {
     // 任务已结束/清理（key 不在会话表，如超时自动取消）：不进入进度态
-    console.warn('[zmodem] zmodem_respond 失败:', e)
+    console.warn('[rzsz] rzsz_respond 失败:', e)
     presentNext()
     return
   }
@@ -252,7 +252,7 @@ function onDialogChange(value: boolean): void {
   if (!value) {
     if (mode.value === 'choose' && current.value) {
       const key = current.value.key
-      void zmodemRespond(key, 'cancel', '')
+      void rzszRespond(key, 'cancel', '')
       pending.value = pending.value.filter((p) => p.key !== key)
       presentNext()
     } else if (mode.value === 'failed') {
@@ -268,7 +268,7 @@ function dismiss(): void {
 }
 
 onMounted(() => {
-  void listenZmodemStart((payload) => {
+  void listenRzszStart((payload) => {
     // 去重：同一连接的重复提示只保留一条
     if (!pending.value.some((p) => p.key === payload.key)) {
       pending.value.push(payload)
@@ -280,14 +280,14 @@ onMounted(() => {
   }).then((unlistenStart) => {
     unlistenFns.push(unlistenStart)
   })
-  void listenZmodemProgress((payload) => {
+  void listenRzszProgress((payload) => {
     if (active.value && active.value.key === payload.key) {
       active.value = payload
     }
   }).then((unlistenProgress) => {
     unlistenFns.push(unlistenProgress)
   })
-  void listenZmodemEnd((payload) => {
+  void listenRzszEnd((payload) => {
     // 同 key 的待选请求一并清理（如对话框开着时会话断开自动取消）
     pending.value = pending.value.filter((p) => p.key !== payload.key)
     if (active.value?.key === payload.key) {
@@ -321,7 +321,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.zmodem-file {
+.rzsz-file {
   font-size: 12px;
   font-weight: bold;
   margin-bottom: 8px;
@@ -331,12 +331,12 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.zmodem-size {
+.rzsz-size {
   margin-top: 8px;
   color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
-.zmodem-error {
+.rzsz-error {
   word-break: break-all;
 }
 

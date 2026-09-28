@@ -95,6 +95,10 @@ pub struct SessionConfig {
     /// 最后修改时间（Unix 秒；serde default：老数据缺该字段时反序列化为 0，向后兼容）
     #[serde(default)]
     pub updated_at: i64,
+    /// 手工排序序号（0 = 未手工排序，按名称兜底；同级同类内参与者按此值升序）。
+    /// serde default：老数据缺该字段时反序列化为 0，向后兼容。
+    #[serde(default)]
+    pub sort_order: u32,
 }
 
 /// 会话树文件夹
@@ -106,6 +110,26 @@ pub struct SessionFolder {
     pub name: String,
     /// 父文件夹（None = 根级）
     pub parent_id: Option<String>,
+    /// 手工排序序号（0 = 未手工排序，按名称兜底）
+    #[serde(default)]
+    pub sort_order: u32,
+}
+
+/// 导航树批量重排项（拖拽归类/排序的持久化载荷）
+///
+/// kind 区分文件夹/会话；parent_id 为其新父级（None = 根级）；
+/// order 为该父级下同类节点中的顺序号（从 1 开始递增，由前端重建）。
+/// 字段遵循项目 snake_case 约定（与 SessionNode 等一致）。
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
+pub struct NodeReorderItem {
+    /// "folder" | "session"
+    pub kind: String,
+    /// 节点 id（文件夹或会话）
+    pub id: String,
+    /// 新父级（文件夹 id；None = 根级）
+    pub parent_id: Option<String>,
+    /// 同级同类内顺序号（从 1 开始）
+    pub order: u32,
 }
 
 /// 会话树节点：文件夹或会话（契约第 1 节）

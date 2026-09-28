@@ -89,6 +89,8 @@ export const useTerminalStore = defineStore('terminal', () => {
   const sessionError = ref<Record<string, string>>({})
   /** 连接成功闪光（key = session_id）：连接成功瞬间标签闪绿，1.5s 后恢复原色 */
   const sessionFlash = ref<Record<string, boolean>>({})
+  /** 各 SSH 会话实时 cwd（key = connId，来源终端 OSC 7 解析；SFTP「快捷双栏」定位用） */
+  const sessionCwd = ref<Record<string, string>>({})
 
   /** 活动标签（computed） */
   const activeTab = computed<TerminalTab | null>(
@@ -193,7 +195,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     }
   }
 
-  /** 清理单个会话的前端侧缓存（写入器/历史/状态/类型） */
+  /** 清理单个会话的前端侧缓存（写入器/历史/状态/类型/cwd） */
   function cleanupSession(sessionId: string): void {
     outputWriters.delete(sessionId)
     outputHistory.delete(sessionId)
@@ -201,11 +203,22 @@ export const useTerminalStore = defineStore('terminal', () => {
     delete sessionStatus.value[sessionId]
     delete sessionError.value[sessionId]
     delete sessionFlash.value[sessionId]
+    delete sessionCwd.value[sessionId]
   }
 
   /** 查询会话传输类型（byte-stream 终端读写路由用，默认 ssh） */
   function sessionTypeOf(sessionId: string): SessionType {
     return sessionTypes.get(sessionId) ?? 'ssh'
+  }
+
+  /** 记录会话实时 cwd（终端 OSC 7 解析回调；断开重连后 shell 重新上报覆盖旧值） */
+  function setSessionCwd(sessionId: string, path: string): void {
+    sessionCwd.value[sessionId] = path
+  }
+
+  /** 取会话最新 cwd（无记录返回空串，调用方按内部默认路径退避） */
+  function getSessionCwd(sessionId: string): string {
+    return sessionCwd.value[sessionId] ?? ''
   }
 
   /**
@@ -453,9 +466,11 @@ export const useTerminalStore = defineStore('terminal', () => {
     sessionStatus,
     sessionError,
     sessionFlash,
+    sessionCwd,
     // getter
     isConnected,
     sessionTypeOf,
+    getSessionCwd,
     // 动作
     openTerminal,
     connectSession,
@@ -469,6 +484,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     bindPaneWriter,
     writeTerminal,
     writeToSession,
+    setSessionCwd,
 
     resizeTerminal,
   }

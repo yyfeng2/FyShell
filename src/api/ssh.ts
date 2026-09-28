@@ -9,9 +9,9 @@ import { createChannel } from './channels';
 import type {
   HostkeyPromptEvent,
   SessionStatusEvent,
-  ZmodemEndEvent,
-  ZmodemProgressEvent,
-  ZmodemStartEvent,
+  RzszEndEvent,
+  RzszProgressEvent,
+  RzszStartEvent,
 } from './types';
 
 /** SSH 终端输出块：Rust 侧 Vec<u8> 序列化后为数字数组（可能被包装为 Uint8Array） */
@@ -91,39 +91,39 @@ export function listenHostkeyPrompt(
   );
 }
 
-/** ZMODEM 传输用户选择回传（收到 zmodem-start 事件后由前端调用）：
+/** rz/sz 传输用户选择回传（收到 rzsz-start 事件后由前端调用）：
  *  action = "recv"（localPath 为保存目录）/ "send"（localPath 为本地文件）/ "cancel" */
-export function zmodemRespond(
+export function rzszRespond(
   key: string,
   action: 'recv' | 'send' | 'cancel',
   localPath: string,
 ): Promise<void> {
-  return invoke<void>('zmodem_respond', { key, action, localPath: localPath });
+  return invoke<void>('rzsz_respond', { key, action, localPath: localPath });
 }
 
-/** 订阅 `zmodem-start` 事件（终端 ZMODEM 传输请求弹层） */
-export function listenZmodemStart(
-  handler: (event: ZmodemStartEvent) => void,
+/** 订阅 `rzsz-start` 事件（终端 rz/sz 传输请求弹层） */
+export function listenRzszStart(
+  handler: (event: RzszStartEvent) => void,
 ): Promise<UnlistenFn> {
-  return listen<ZmodemStartEvent>('zmodem-start', (event) =>
+  return listen<RzszStartEvent>('rzsz-start', (event) =>
     handler(event.payload),
   );
 }
 
-/** 订阅 `zmodem-progress` 事件（ZMODEM 传输进度） */
-export function listenZmodemProgress(
-  handler: (event: ZmodemProgressEvent) => void,
+/** 订阅 `rzsz-progress` 事件（rz/sz 传输进度） */
+export function listenRzszProgress(
+  handler: (event: RzszProgressEvent) => void,
 ): Promise<UnlistenFn> {
-  return listen<ZmodemProgressEvent>('zmodem-progress', (event) =>
+  return listen<RzszProgressEvent>('rzsz-progress', (event) =>
     handler(event.payload),
   );
 }
 
-/** 订阅 `zmodem-end` 事件（ZMODEM 传输结束） */
-export function listenZmodemEnd(
-  handler: (event: ZmodemEndEvent) => void,
+/** 订阅 `rzsz-end` 事件（rz/sz 传输结束） */
+export function listenRzszEnd(
+  handler: (event: RzszEndEvent) => void,
 ): Promise<UnlistenFn> {
-  return listen<ZmodemEndEvent>('zmodem-end', (event) =>
+  return listen<RzszEndEvent>('rzsz-end', (event) =>
     handler(event.payload),
   );
 }

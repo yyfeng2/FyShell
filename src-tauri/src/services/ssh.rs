@@ -84,7 +84,7 @@ pub struct SshSessionHandle {
 }
 
 /// 写转发任务的消息：键盘输入或终端 resize
-/// pub(crate)：zmodem 服务复用同一写路径回传协议字节
+/// pub(crate)：rzsz 服务复用同一写路径回传协议字节
 pub(crate) enum SshWriteMsg {
     /// 键盘输入字节流
     Data(Vec<u8>),
@@ -399,7 +399,7 @@ async fn authenticate(
 /// ANSI 解析交给 xterm.js；流结束（Eof/Close/断开）时由 Handler::disconnected 推送断开状态。
 /// 会话日志开启时同步追加落盘（P1，write_log 未启用时立即返回）。
 ///
-/// ZMODEM：输出流中出现 ZRQINIT 哨兵（**\x18B）时切到 ZMODEM 模式——
+/// rz/sz 传输：输出流中出现 ZRQINIT 哨兵（**\x18B）时切到 rz/sz 模式——
 /// 输出整块改道到传输任务管道（不写 xterm），任务结束移除条目后恢复常规转发。
 async fn read_loop(
     session_id: String,
@@ -410,9 +410,9 @@ async fn read_loop(
     write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>,
 ) {
     let mut buf: Vec<u8> = Vec::with_capacity(READ_BATCH_BYTES);
-    let mut first_chunk = true;
     loop {
         // 有积压数据时限时等待（超时即冲刷）；空缓冲时无限等待
+        let mut flush_all = false;
         let msg = if buf.is_empty() {
             read_half.wait().await
         } else {
@@ -421,15 +421,14 @@ async fn read_loop(
             {
                 Ok(msg) => msg,
                 // 超时：视为无消息，走下方冲刷分支
-                Err(_) => None,
+                Err(_) => {
+                    flush_all = true;
+                    None
+                }
             }
         };
         match msg {
             Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
-                if first_chunk {
-                    first_chunk = false;
-                    eprintln!("[ssh] {} first output chunk: {} bytes", session_id, data.len());
-                }
                 buf.extend_from_slice(&data);
             }
             Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) => break,
@@ -444,9 +443,9 @@ async fn read_loop(
             continue;
         }
 
-        // ZMODEM 传输中：输出整块改道到传输任务管道（不写 xterm/日志）。
+        // rz/sz 传输中：输出整块改道到传输任务管道（不写 xterm/日志）。
         // 发送失败（任务刚好退出）时本块回落到常规终端输出（如传输完成后的提示符）
-        if let Some(pipe_tx) = zmodem_pipe_tx(&app, &key) {
+        if let Some(pipe_tx) = rzsz_pipe_tx(&app, &key) {
             let chunk = std::mem::take(&mut buf);
             match pipe_tx.send(chunk) {
                 Ok(()) => continue,
@@ -458,8 +457,8 @@ async fn read_loop(
             }
         }
 
-        // 哨兵检测：输出流出现 ZRQINIT → 启动 ZMODEM 传输（sz/rz 公共起始）
-        if let Some(pos) = find_zmodem_sentinel(&buf) {
+        // 哨兵检测：输出流出现 ZRQINIT → 启动 rz/sz 传输（sz/rz 公共起始）
+        if let Some(pos) = find_rzsz_sentinel(&buf) {
             let tail = buf.split_off(pos);
             let head = std::mem::take(&mut buf);
             // 哨兵前内容（回显等）照常显示终端
@@ -468,12 +467,15 @@ async fn read_loop(
                 break;
             }
             let state = app.state::<AppState>();
-            crate::services::zmodem::start(&app, &state, &key, tail, write_tx.clone());
+            crate::services::rzsz::start(&app, &state, &key, tail, write_tx.clone());
             continue;
         }
 
-        // 常规冲刷：部分哨兵滞留尾部时扣留等下一批（防跨批漏检）
-        let hold = partial_sentinel_len(&buf);
+        // 常规冲刷：部分哨兵滞留尾部时扣留等下一批（防跨批漏检）。
+        // 超时冲刷例外：流已空闲超过冲刷延迟，滞留的部分哨兵前缀（如单个 `*`，
+        // 恰为 rz/sz 哨兵首字节）不会再立即补全，继续扣留会让回显无限期
+        // 不显示——直接全量冲刷。真实 rz/sz 哨兵由 sz/rz 连续发送，不受影响
+        let hold = if flush_all { 0 } else { partial_sentinel_len(&buf) };
         let cut = buf.len() - hold;
         if cut == 0 {
             continue;
@@ -492,28 +494,28 @@ async fn read_loop(
     }
 }
 
-/// ZMODEM hex 帧头哨兵：ZPAD ZPAD ZDLE 'B'（sz/rz 输出帧的公共起始）
-pub(crate) const ZMODEM_SENTINEL: [u8; 4] = [b'*', b'*', 0x18, b'B'];
+/// rz/sz hex 帧头哨兵：ZPAD ZPAD ZDLE 'B'（sz/rz 输出帧的公共起始）
+pub(crate) const RZSZ_SENTINEL: [u8; 4] = [b'*', b'*', 0x18, b'B'];
 
-/// 在缓冲区中查找 ZMODEM 哨兵的起始位置
-pub(crate) fn find_zmodem_sentinel(buf: &[u8]) -> Option<usize> {
-    buf.windows(ZMODEM_SENTINEL.len())
-        .position(|w| w == ZMODEM_SENTINEL)
+/// 在缓冲区中查找 rz/sz 哨兵的起始位置
+pub(crate) fn find_rzsz_sentinel(buf: &[u8]) -> Option<usize> {
+    buf.windows(RZSZ_SENTINEL.len())
+        .position(|w| w == RZSZ_SENTINEL)
 }
 
 /// 缓冲区尾部是哨兵前缀（部分匹配）的最长字节数，无则 0
 fn partial_sentinel_len(buf: &[u8]) -> usize {
-    (1..ZMODEM_SENTINEL.len())
+    (1..RZSZ_SENTINEL.len())
         .rev()
-        .find(|&n| buf.ends_with(&ZMODEM_SENTINEL[..n]))
+        .find(|&n| buf.ends_with(&RZSZ_SENTINEL[..n]))
         .unwrap_or(0)
 }
 
-/// 查询当前会话的 ZMODEM 数据管道（传输进行中时 Some）
-fn zmodem_pipe_tx(app: &AppHandle, key: &str) -> Option<std::sync::mpsc::Sender<Vec<u8>>> {
+/// 查询当前会话的 rz/sz 数据管道（传输进行中时 Some）
+fn rzsz_pipe_tx(app: &AppHandle, key: &str) -> Option<std::sync::mpsc::Sender<Vec<u8>>> {
     let state = app.state::<AppState>();
     state
-        .zmodem_sessions
+        .rzsz_sessions
         .lock()
         .ok()
         .and_then(|guard| guard.get(key).map(|entry| entry.pipe_tx.clone()))
@@ -863,9 +865,9 @@ pub fn disconnect(state: &AppState, app: &tauri::AppHandle, id: &str) {
     if let Ok(mut pending) = state.pending_hostkey.lock() {
         pending.remove(id);
     }
-    // 清理进行中的 ZMODEM 传输（若有），任务经管道 Disconnected 退出并恢复终端
-    if let Ok(mut zmodem) = state.zmodem_sessions.lock() {
-        zmodem.remove(id);
+    // 清理进行中的 rz/sz 传输（若有），任务经管道 Disconnected 退出并恢复终端
+    if let Ok(mut rzsz) = state.rzsz_sessions.lock() {
+        rzsz.remove(id);
     }
 }
 

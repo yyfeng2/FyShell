@@ -31,10 +31,10 @@ pub struct AppState {
     /// 会话配置持久化存储（SQLite，内部自带 Mutex<Connection>，方法为同步签名）
     pub config_store: crate::services::config_store::ConfigStore,
 
-    /// 进行中的终端 ZMODEM 传输（rz/sz），key = 连接路由键（每标签唯一）。
+    /// 进行中的终端 rz/sz 文件传输，key = 连接路由键（每标签唯一）。
     /// read_loop 检测到 ZRQINIT 哨兵时写入（输出改道到条目里的管道），
     /// 传输任务结束时移除（读循环恢复常规转发）。
-    pub zmodem_sessions: Mutex<HashMap<String, crate::services::zmodem::ZmodemEntry>>,
+    pub rzsz_sessions: Mutex<HashMap<String, crate::services::rzsz::RzszEntry>>,
 }
 
 impl AppState {
@@ -50,7 +50,7 @@ impl AppState {
             telnet_sessions: Mutex::new(HashMap::new()),
             serial_sessions: Mutex::new(HashMap::new()),
             config_store,
-            zmodem_sessions: Mutex::new(HashMap::new()),
+            rzsz_sessions: Mutex::new(HashMap::new()),
         }
     }
 }

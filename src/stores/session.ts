@@ -1,6 +1,13 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { sessionDelete, sessionList, sessionSave, folderSave } from '@/api/session'
+import {
+  sessionDelete,
+  sessionList,
+  sessionSave,
+  folderSave,
+  sessionReorder,
+  type NodeReorderItem,
+} from '@/api/session'
 
 /**
  * 与 IPC 契约（docs/ipc-contracts.md §1）同名同构的数据模型。
@@ -35,12 +42,16 @@ export interface SessionConfig {
   description?: string | null
   /** 最后修改时间（Unix 秒；Rust 侧保存时覆盖，前端不传） */
   updated_at?: number
+  /** 手工排序序号（0=未手工排序按名称兜底；拖拽改序后持久化，同类同级内升序展示） */
+  sort_order?: number
 }
 
 export interface SessionFolder {
   id: string
   name: string
   parent_id: string | null
+  /** 手工排序序号（0=未手工排序按名称兜底；拖拽改序后持久化） */
+  sort_order?: number
 }
 
 /** session_list 返回的树形节点（契约 §2：文件夹+会话混合节点） */
@@ -129,10 +140,13 @@ function matchNodes(nodes: SessionNode[], keyword: string): SessionNode[] {
   return walk(nodes)
 }
 
-/** 星标置顶：星标会话 → 文件夹 → 普通会话，同层级按名称排序 */
+/** 星标置顶：星标会话 → 文件夹 → 普通会话；同类同层按（sort_order ?? 0）→ 名称排序 */
 function sortByStar(nodes: SessionNode[], starred: string[]): SessionNode[] {
   const rank = (n: SessionNode): number => (starred.includes(n.id) ? 0 : isFolderNode(n) ? 1 : 2)
-  return [...nodes].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'zh'))
+  const ord = (n: SessionNode): number => nodeConfig(n)?.sort_order ?? 0
+  return [...nodes].sort(
+    (a, b) => rank(a) - rank(b) || ord(a) - ord(b) || a.name.localeCompare(b.name, 'zh'),
+  )
 }
 
 const STARRED_KEY = 'fyshell.starred-sessions'
@@ -244,6 +258,12 @@ export const useSessionStore = defineStore('session', () => {
     return saved
   }
 
+  /** 导航树批量重排（拖拽归类/排序）：调用 session_reorder，成功后刷新树 */
+  async function reorder(items: NodeReorderItem[]): Promise<void> {
+    await sessionReorder(items)
+    await load()
+  }
+
   function toggleStar(id: string): void {
     const idx = starredIds.value.indexOf(id)
     if (idx >= 0) starredIds.value.splice(idx, 1)
@@ -267,6 +287,7 @@ export const useSessionStore = defineStore('session', () => {
     save,
     remove,
     saveFolder,
+    reorder,
     toggleStar,
     isStarred,
   }

@@ -42,6 +42,10 @@ const xterm = useXterm({
   onResize: (dims) => {
     terminalStore.resizeTerminal(props.sessionId, dims.cols, dims.rows)
   },
+  onCwd: (path) => {
+    // 终端 OSC 7 实时 cwd：记到 store，供「SFTP 快捷双栏」打开时定位远程栏
+    terminalStore.setSessionCwd(props.sessionId, path)
+  },
 })
 
 // 模板 ref 绑定：ref="containerRef" 需要 setup 作用域存在同名 ref，

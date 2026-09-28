@@ -23,6 +23,8 @@ export const commands = {
 	sessionTest: (config: SessionConfig) => __TAURI_INVOKE<TestResult>("session_test", { config }),
 	/**  保存文件夹（新文件夹生成 id） */
 	folderSave: (folder: SessionFolder) => __TAURI_INVOKE<SessionFolder>("folder_save", { folder }),
+	/**  导航树批量重排（拖拽归类/排序）：folders/sessions 父级与顺序一次事务更新 */
+	sessionReorder: (items: NodeReorderItem[]) => __TAURI_INVOKE<null>("session_reorder", { items }),
 	/**
 	 *  建立 SSH 连接并打开 PTY/shell；终端输出流走 Channel（契约：`ssh_connect(id, onOutput)`）。
 	 *  conn_id：多标签同会话独立连接的路由键（Xshell 行为：每个标签一条独立连接）。
@@ -40,11 +42,11 @@ export const commands = {
 	 */
 	sshHostkeyAccept: (id: string, accept: boolean) => __TAURI_INVOKE<null>("ssh_hostkey_accept", { id, accept }),
 	/**
-	 *  终端 ZMODEM 传输（rz/sz）的用户选择回传：收到 zmodem-start 事件后
+	 *  终端 rz/sz 文件传输的用户选择回传：收到 rzsz-start 事件后
 	 *  前端弹对话框，用户选择接收（local_path 为保存目录）/ 发送（local_path
 	 *  为本地文件）/ 取消后调用本命令，选择经响应通道传给传输任务。
 	 */
-	zmodemRespond: (key: string, action: string, localPath: string) => __TAURI_INVOKE<null>("zmodem_respond", { key, action, localPath }),
+	rzszRespond: (key: string, action: string, localPath: string) => __TAURI_INVOKE<null>("rzsz_respond", { key, action, localPath }),
 	debugLog: (message: string) => __TAURI_INVOKE<void>("debug_log", { message }),
 	/**  目录列表：`Vec<FileEntry>` */
 	sftpList: (id: string, path: string) => __TAURI_INVOKE<FileEntry[]>("sftp_list", { id, path }),
@@ -979,6 +981,24 @@ export type MySqlUserInfo = {
 	comment: string,
 };
 
+/**
+ *  导航树批量重排项（拖拽归类/排序的持久化载荷）
+ * 
+ *  kind 区分文件夹/会话；parent_id 为其新父级（None = 根级）；
+ *  order 为该父级下同类节点中的顺序号（从 1 开始递增，由前端重建）。
+ *  字段遵循项目 snake_case 约定（与 SessionNode 等一致）。
+ */
+export type NodeReorderItem = {
+	/**  "folder" | "session" */
+	kind: string,
+	/**  节点 id（文件夹或会话） */
+	id: string,
+	/**  新父级（文件夹 id；None = 根级） */
+	parent_id: string | null,
+	/**  同级同类内顺序号（从 1 开始） */
+	order: number,
+};
+
 /**  快捷命令（契约第 5.1 节） */
 export type QuickCommand = {
 	/**  uuid v4 */
@@ -1086,6 +1106,11 @@ export type SessionConfig = {
 	description?: string | null,
 	/**  最后修改时间（Unix 秒；serde default：老数据缺该字段时反序列化为 0，向后兼容） */
 	updated_at?: number,
+	/**
+	 *  手工排序序号（0 = 未手工排序，按名称兜底；同级同类内参与者按此值升序）。
+	 *  serde default：老数据缺该字段时反序列化为 0，向后兼容。
+	 */
+	sort_order?: number,
 };
 
 /**  会话树文件夹 */
@@ -1096,6 +1121,8 @@ export type SessionFolder = {
 	name: string,
 	/**  父文件夹（None = 根级） */
 	parent_id: string | null,
+	/**  手工排序序号（0 = 未手工排序，按名称兜底） */
+	sort_order?: number,
 };
 
 /**

@@ -26,7 +26,7 @@ import AddressBar from '@/components/common/AddressBar.vue'
 import QuickCommandBar from '@/components/common/QuickCommandBar.vue'
 import SessionForm from '@/components/ssh/session/SessionForm.vue'
 import HostkeyDialog from '@/components/ssh/terminal/HostkeyDialog.vue'
-import ZmodemDialog from '@/components/ssh/terminal/ZmodemDialog.vue'
+import RzszDialog from '@/components/ssh/terminal/RzszDialog.vue'
 import TerminalPane from '@/components/ssh/terminal/TerminalPane.vue'
 import ComposeBar from '@/components/ssh/terminal/ComposeBar.vue'
 import DualPane from '@/components/sftp/DualPane.vue'
@@ -53,7 +53,7 @@ import { friendlyError } from '@/utils/errors'
 import { useRedisStore } from '@/stores/redis'
 import { mysqlDbList, mysqlDbDrop } from '@/api/mysqlDb'
 import { mysqlListTables, mysqlQuery } from '@/api/mysql'
-import { sessionList, sessionClone } from '@/api/session'
+import { sessionList, sessionClone, sessionReorder, type NodeReorderItem } from '@/api/session'
 import { transferList } from '@/api/sftp'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore, type FontFamilyStyle } from '@/stores/settings'
@@ -93,6 +93,8 @@ interface SessionNode {
     encoding?: string
     session_type?: string | null
   } & Record<string, unknown>
+  /** 手工排序序号（后端持久化：0=未手工排序按名称兜底；拖拽改序后按它重排展示） */
+  sort_order?: number
 }
 
 /** 工作区 Tab（终端 / 传输 / SFTP 双栏 / 隧道 / 快捷命令 / MySQL / Redis / 命令列界面 / 查询九类） */
@@ -316,17 +318,26 @@ function normalizeTreeNodes(raw: unknown): SessionNode[] {
     const isFolder =
       r.kind === 'folder' || r.kind === 'Folder' || r.is_folder === true || Array.isArray(r.children)
     if (isFolder) {
-      const node: SessionNode = { id, name: String(r.name ?? ''), is_folder: true, children: [] }
+      const node: SessionNode = {
+        id,
+        name: String(r.name ?? ''),
+        is_folder: true,
+        children: [],
+        // 排序号：0=未手工排序（列表仅一次拖拽即可进入受管排序）
+        sort_order: Number(r.sort_order) || 0,
+      }
       nodes.push(node)
       byId.set(id, node)
       folderParents.set(id, (r.parent_id as string | null) ?? null)
     } else {
       // 会话节点：config 挂载优先，缺失时节点本身即配置（平铺）
+      const cfg = (r.config ?? r) as Record<string, unknown>
       const node: SessionNode = {
         id,
         name: String(r.name ?? ''),
         is_folder: false,
-        config: (r.config ?? r) as SessionNode['config'],
+        config: cfg as SessionNode['config'],
+        sort_order: Number(cfg.sort_order) || 0,
       }
       nodes.push(node)
       byId.set(id, node)
@@ -676,6 +687,185 @@ function findNode(list: SessionNode[], id: string): SessionNode | null {
   return null
 }
 
+/** 在树中查找节点父文件夹（无父 = 根级，返回 null） */
+function findParentFolder(list: SessionNode[], id: string): SessionNode | null {
+  for (const n of list) {
+    if (n.children?.some((c) => c.id === id)) return n
+    const hit = findParentFolder(n.children ?? [], id)
+    if (hit) return hit
+  }
+  return null
+}
+
+// ---------------- 树拖拽（会话/文件夹归类与同层排序，顺序持久化） ----------------
+
+/** 拖放参与判定：仅会话/文件夹行可拖、可真落点；db 叶子/已存连接/分区头/分隔线/数据库会话不参与 */
+function isReorderable(node: FlatNode): boolean {
+  if (node.isSection || node.isSeparator || node.isDbLeaf || node.isSavedConn) return false
+  // 数据库/Redis 会话行（数据库分区内无文件夹可见，拖拽无归类意义，排除）
+  if (!node.isFolder && node.isMysql) return false
+  return true
+}
+
+/** 拖拽源（{id,kind}，仅会话/文件夹行发起） */
+const dragSource = ref<{ id: string; kind: 'folder' | 'session' } | null>(null)
+/** 悬停落点：目标行 id + 位置（into=移入文件夹 / before-after=插入其左右） */
+const dropTarget = ref<{ id: string; position: 'into' | 'before' | 'after' } | null>(null)
+/**
+ * 手动指针拖拽基态（HTML5 draggable 在 WebView2 走 OLE 系统拖放集成，OS 级鼠标拖动
+ * 不触发 dragstart/drop——树节点真实鼠标拖不动即此根因；弃用 HTML5 DnD，改 pointer
+ * 事件 + 6px 阈值 + setPointerCapture 手动实现，与 FlexTabs 标签拖拽先例一致 0386eeb）
+ */
+const pDrag = ref<{ node: FlatNode; startX: number; startY: number; moved: boolean } | null>(null)
+/** 判为「开始拖动」的最小位移（px），低于阈值视为点击不劫持 */
+const DRAG_THRESHOLD = 6
+
+/** 行 pointerdown：仅左键参与，记录拖动基态并捕获指针（后续 move/up 均收回到本行） */
+function onTreePointerDown(node: FlatNode, e: PointerEvent): void {
+  if (!isReorderable(node) || e.button !== 0) return
+  dragSource.value = { id: node.id, kind: node.isFolder ? 'folder' : 'session' }
+  pDrag.value = { node, startX: e.clientX, startY: e.clientY, moved: false }
+  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+}
+
+/** 树容器 pointermove：越过阈值后进入拖动态，实时计算悬停行与落点位置 */
+function onTreePointerMove(e: PointerEvent): void {
+  const d = pDrag.value
+  if (!d) return
+  if (!d.moved && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < DRAG_THRESHOLD) return
+  if (!d.moved) {
+    // 首次越过阈值：锁定拖动态（此处不 preventDefault，避免影响后续 click 判定前移）
+    d.moved = true
+  }
+  computeTreeDropTarget(e.clientX, e.clientY)
+}
+
+/** 拖拽结束/取消清理（pointerup / pointercancel 均可触发，幂等） */
+function clearTreeDrag(): void {
+  pDrag.value = null
+  dragSource.value = null
+  dropTarget.value = null
+}
+
+/** 拖拽后抑制随 pointerup 而来的 click（真实按下-抬起同元素会合成 click，防排序完即误开会话） */
+const suppressTreeClickUntil = ref(0)
+
+/** 行/容器 pointerup：真实拖过 → 落点执行；未拖过 → 视作普通点击清基态 */
+function endTreePointerDrag(e: PointerEvent): void {
+  const d = pDrag.value
+  if (d?.moved) {
+    suppressTreeClickUntil.value = Date.now() + 500
+    void applyTreeDrop()
+  } else {
+    clearTreeDrag()
+  }
+}
+
+/** 由指针坐标定位悬停行与落点位置（elementFromPoint 穿透 setPointerCapture 的元素遮蔽） */
+function computeTreeDropTarget(clientX: number, clientY: number): void {
+  if (!dragSource.value) return
+  const hit = document.elementFromPoint(clientX, clientY)
+  const el = hit?.closest<HTMLElement>('[data-node-id]') ?? null
+  const node = el ? flatNodes.value.find((n) => n.id === el.dataset.nodeId) : undefined
+  if (!el || !node || !isReorderable(node)) {
+    // 悬停空白/不可落处：清空落点（drop 时按「根级追加」兜底处理）
+    dropTarget.value = null
+    return
+  }
+  const rect = el.getBoundingClientRect()
+  const frac = (clientY - rect.top) / rect.height
+  let position: 'into' | 'before' | 'after'
+  if (node.isFolder) {
+    // 文件夹行：上下 25% 为 before/after（跨文件夹排序），中部移入文件夹
+    position = frac < 0.25 ? 'before' : frac > 0.75 ? 'after' : 'into'
+  } else {
+    // 会话行：上下半区分 before/after（会话为叶子不可移入）
+    position = frac < 0.5 ? 'before' : 'after'
+  }
+  dropTarget.value = { id: node.id, position }
+}
+
+/** 某父级下的同类兄弟（父为 null = 根级；按当前树展示顺序返回） */
+function siblingsOf(parent: SessionNode | null, kind: 'folder' | 'session'): SessionNode[] {
+  const list = parent ? parent.children ?? [] : nodes.value
+  return list.filter((n) => n.is_folder === (kind === 'folder'))
+}
+
+/**
+ * 树容器 drop：按悬停落点解析目标父级与同类插入位 → 防环 → 重建受影响的
+ * 父集合（源父 + 目标父，可能不同）各自同类顺序号（1..n）→ session_reorder 持久化 → 刷树。
+ * 兼容「文件夹恒在会话上方」惯例：跨类落点自动夹到对应块边缘。
+ */
+async function applyTreeDrop(): Promise<void> {
+  const src = dragSource.value
+  if (!src) return
+  const target = dropTarget.value ?? null
+  clearTreeDrag()
+
+  // 解析目标父级 + 同类插入位
+  let targetParent: SessionNode | null = null
+  let insertIndex = 0
+
+  if (target && target.position === 'into') {
+    const folder = findNode(nodes.value, target.id)
+    if (!folder?.children) return
+    targetParent = folder
+    insertIndex = siblingsOf(folder, src.kind).length // append 与该文件夹内同类块末尾
+  } else if (target) {
+    const targetNode = findNode(nodes.value, target.id)
+    if (!targetNode) return
+    targetParent = findParentFolder(nodes.value, target.id)
+    const sameKind = targetNode.is_folder === (src.kind === 'folder')
+    if (sameKind) {
+      const group = siblingsOf(targetParent, src.kind).filter((n) => n.id !== src.id)
+      const idx = group.findIndex((n) => n.id === target.id)
+      insertIndex = target.position === 'before' ? idx : idx + 1
+    } else if (src.kind === 'folder') {
+      insertIndex = siblingsOf(targetParent, 'folder').filter((n) => n.id !== src.id).length
+    } else {
+      insertIndex = 0 // 会话块起始
+    }
+  } else {
+    insertIndex = siblingsOf(null, src.kind).length // 空白落点：根级追加
+  }
+
+  // 防环：文件夹不能拖入自身或其后代（沿目标父链上行，遇到源 id 即成环）
+  if (src.kind === 'folder') {
+    let cur = targetParent
+    while (cur) {
+      if (cur.id === src.id) {
+        ui.toast('不能把文件夹拖入自身或其子文件夹', 'error')
+        return
+      }
+      cur = findParentFolder(nodes.value, cur.id)
+    }
+  }
+
+  // 持久化：目标父集合重排（含源插入）+ 源父 ≠ 目标父时源父剩余同类重排
+  const items: NodeReorderItem[] = []
+  const inline = (parent: SessionNode | null): void => {
+    const ids = siblingsOf(parent, src.kind)
+      .map((n) => n.id)
+      .filter((nid) => nid !== src.id)
+    if (parent === targetParent) {
+      ids.splice(Math.min(insertIndex, ids.length), 0, src.id)
+    }
+    const parentId = parent ? parent.id : null
+    ids.forEach((nid, i) => items.push({ kind: src.kind, id: nid, parent_id: parentId, order: i + 1 }))
+  }
+  inline(targetParent)
+  const srcParent = findParentFolder(nodes.value, src.id)
+  if (srcParent !== targetParent) inline(srcParent)
+
+  if (!items.length) return
+  try {
+    await sessionReorder(items)
+    await loadTree()
+  } catch (err) {
+    ui.toast(friendlyError(err), 'error')
+  }
+}
+
 function toggleFolder(id: string): void {
   const set = new Set(expanded.value)
   if (set.has(id)) {
@@ -803,6 +993,11 @@ function openDbWorkspaceFromNode(node: FlatNode): void {
 }
 
 function onNodeClick(node: FlatNode): void {
+  // pointer 拖拽后的合成 click 抑制（拖拽排序不应误触连接/展开）
+  if (suppressTreeClickUntil.value && Date.now() < suppressTreeClickUntil.value) {
+    suppressTreeClickUntil.value = 0
+    return
+  }
   // 分区头：单击折叠/展开
   if (node.isSection) {
     const set = new Set(openSections.value)
@@ -1633,6 +1828,8 @@ const ioIncludeCreateTable = ref(false)
 const tabs = ref<WorkTab[]>([])
 const activeId = ref<string | null>(null)
 const activeTab = computed(() => tabs.value.find((t) => t.id === activeId.value) ?? null)
+/** SFTP 双栏远程栏路径（按 Tab id 持有）：打开时注入绑定终端 cwd，导航后继续跟随该 Tab */
+const sftpRemotePaths = ref<Record<string, string>>({})
 
 // ---------------- 地址栏 ----------------
 
@@ -1921,7 +2118,8 @@ function openTransferTab(): void {
   activeId.value = tab.id
 }
 
-/** 打开 SFTP 双栏 Tab（单例，P0）：本地/远程双栏文件传输（绑定最近终端会话，独立 SFTP 会话 Tab 不参与单例判定） */
+/** 打开 SFTP 双栏 Tab（单例，P0）：本地/远程双栏文件传输（绑定最近终端会话，独立 SFTP 会话 Tab 不参与单例判定）。
+    远程栏初始路径 = 绑定 SSH 终端的实时 cwd（终端 OSC 7 追踪，无记录则留空走 DualPane 内部默认） */
 function openSftpTab(): void {
   const existing = tabs.value.find((t) => t.type === 'sftp' && !t.sessionId)
   if (existing) {
@@ -1929,6 +2127,8 @@ function openSftpTab(): void {
     return
   }
   const tab: WorkTab = { id: genTabId(), type: 'sftp', title: 'SFTP 文件传输' }
+  const boundKey = lastTerminalSession.value?.id
+  sftpRemotePaths.value[tab.id] = boundKey ? terminalStore.getSessionCwd(boundKey) : ''
   tabs.value.push(tab)
   activeId.value = tab.id
 }
@@ -2067,6 +2267,8 @@ function closeTab(id: string): void {
   if (closed?.type === 'sftp' && closed.connId) {
     void terminalStore.closeBySessionId(closed.connId)
   }
+  // 清理 SFTP Tab 的远程栏路径记录（按 Tab id 持有，关闭即释放）
+  delete sftpRemotePaths.value[id]
   // MySQL/Redis 工作台 Tab 关闭即断开（与右键"关闭连接"行为一致，驱动树中历史库灰化）
   if (closed?.type === 'mysql') {
     void useMysqlStore().disconnect()
@@ -3022,7 +3224,14 @@ onUnmounted(() => {
             @click="clearSearch"
           />
         </div>
-        <div class="workspace__tree" role="tree" aria-label="会话列表">
+        <div
+          class="workspace__tree"
+          role="tree"
+          aria-label="会话列表"
+          @pointermove="onTreePointerMove"
+          @pointerup="endTreePointerDrag"
+          @pointercancel="clearTreeDrag"
+        >
           <template v-for="node in flatNodes" :key="node.id">
             <!-- 分区虚线分隔（SSH 服务 / 数据库服务） -->
             <div v-if="node.isSeparator" class="workspace__tree-sep" />
@@ -3036,11 +3245,19 @@ onUnmounted(() => {
                 'workspace__tree-node--session': !node.isFolder,
                 'workspace__tree-node--section': node.isSection,
                 'workspace__tree-node--grey': !!node.grey,
+                'workspace__tree-node--drop-into':
+                  dropTarget?.id === node.id && dropTarget.position === 'into',
+                'workspace__tree-node--drop-before':
+                  dropTarget?.id === node.id && dropTarget.position === 'before',
+                'workspace__tree-node--drop-after':
+                  dropTarget?.id === node.id && dropTarget.position === 'after',
               }"
-              :style="{ paddingLeft: `${8 + node.depth * 20}px` }"
+              :data-node-id="node.id"
+              :style="{ paddingLeft: `${8 + node.depth * 20}px`, touchAction: 'none' }"
               @click="onNodeClick(node)"
               @keydown="onNodeKeydown(node, $event)"
               @contextmenu.prevent="onTreeContextmenu(node, $event)"
+              @pointerdown="onTreePointerDown(node, $event)"
             >
               <!-- 可展开行收缩箭头：host 行切换库列表、文件夹行切换子级（@click.stop 不触发连接） -->
               <v-icon
@@ -3336,6 +3553,8 @@ onUnmounted(() => {
               v-else-if="tab.type === 'sftp'"
               :session-id="sftpPaneSessionId(tab)"
               :session-name="tab.sessionId ? tab.title : lastTerminalSessionName"
+              :remote-path="sftpRemotePaths[tab.id] ?? ''"
+              @update:remotePath="(p: string) => (sftpRemotePaths[tab.id] = p)"
               @remote-path-change="(p: string) => (currentPath = p)"
               @transfer-started="openTransferTab"
             />
@@ -3517,8 +3736,8 @@ onUnmounted(() => {
     <!-- HostKey 首次确认弹层（连接新主机时 Rust 侧挂起等待确认，必须挂载） -->
     <HostkeyDialog />
 
-    <!-- 终端 ZMODEM 传输弹层（rz/sz 触发，必须挂载） -->
-    <ZmodemDialog />
+    <!-- 终端 rz/sz 传输弹层（rz/sz 触发，必须挂载） -->
+    <RzszDialog />
   </div>
 </template>
 
@@ -3702,6 +3921,20 @@ onUnmounted(() => {
 .workspace__node--selected {
   background: var(--fy-select-bg);
   box-shadow: inset 2px 0 0 rgb(var(--v-theme-primary));
+}
+
+/* 拖拽落点高亮（会话树拖拽改序）：移入文件夹 = 整行描边底色；before/after = 上下 2px 指示线 */
+.workspace__tree-node--drop-into {
+  background: rgba(var(--v-theme-primary), 0.12);
+  box-shadow: inset 0 0 0 1px rgb(var(--v-theme-primary));
+}
+
+.workspace__tree-node--drop-before {
+  box-shadow: inset 0 2px 0 0 rgb(var(--v-theme-primary));
+}
+
+.workspace__tree-node--drop-after {
+  box-shadow: inset 0 -2px 0 0 rgb(var(--v-theme-primary));
 }
 
 .workspace__node-name {

@@ -158,17 +158,18 @@ function onContextMenu(e: MouseEvent): void {
           </v-btn>
         </template>
         <v-list density="compact" class="toolbar__menu">
+          <!-- 快捷双栏置首（高频入口）：绑定最近终端，远程栏自动落在其实时目录 -->
+          <v-list-item
+            prepend-icon="mdi-folder-swap-outline"
+            title="快捷双栏"
+            subtitle="绑定最近打开的终端会话，定位其当前目录"
+            @click="emit('sftp')"
+          />
           <v-list-item
             prepend-icon="mdi-plus"
             title="新建 SFTP 会话…"
             subtitle="以独立会话连接并打开双栏"
             @click="emit('sftp-new')"
-          />
-          <v-list-item
-            prepend-icon="mdi-folder-swap-outline"
-            title="快捷双栏"
-            subtitle="绑定最近打开的终端会话"
-            @click="emit('sftp')"
           />
         </v-list>
       </v-menu>

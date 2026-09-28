@@ -76,35 +76,35 @@ pub fn ssh_hostkey_accept(id: String, accept: bool, state: State<'_, AppState>) 
     }
 }
 
-/// 终端 ZMODEM 传输（rz/sz）的用户选择回传：收到 zmodem-start 事件后
+/// 终端 rz/sz 文件传输的用户选择回传：收到 rzsz-start 事件后
 /// 前端弹对话框，用户选择接收（local_path 为保存目录）/ 发送（local_path
 /// 为本地文件）/ 取消后调用本命令，选择经响应通道传给传输任务。
 #[tauri::command]
 #[specta::specta]
-pub fn zmodem_respond(
+pub fn rzsz_respond(
     key: String,
     action: String,
     local_path: String,
     state: State<'_, AppState>,
 ) -> Result<(), AppError> {
     let choice = match action.as_str() {
-        "recv" => crate::services::zmodem::ZmodemChoice::Recv { dir: local_path },
-        "send" => crate::services::zmodem::ZmodemChoice::Send { path: local_path },
-        "cancel" => crate::services::zmodem::ZmodemChoice::Cancel,
-        other => return Err(AppError::general(format!("未知的 ZMODEM 操作: {other}"))),
+        "recv" => crate::services::rzsz::RzszChoice::Recv { dir: local_path },
+        "send" => crate::services::rzsz::RzszChoice::Send { path: local_path },
+        "cancel" => crate::services::rzsz::RzszChoice::Cancel,
+        other => return Err(AppError::general(format!("未知的 rz/sz 操作: {other}"))),
     };
     let respond_tx = state
-        .zmodem_sessions
+        .rzsz_sessions
         .lock()
         .map_err(|_| AppError::general("全局状态锁被污染"))?
         .get(&key)
         .map(|entry| entry.respond_tx.clone());
     match respond_tx {
         Some(tx) => {
-            // 任务刚结束时 send 失败无碍（zmodem-end 事件紧随其后）
+            // 任务刚结束时 send 失败无碍（rzsz-end 事件紧随其后）
             let _ = tx.send(choice);
             Ok(())
         }
-        None => Err(AppError::general(format!("连接 {key} 没有进行中的 ZMODEM 传输"))),
+        None => Err(AppError::general(format!("连接 {key} 没有进行中的 rz/sz 传输"))),
     }
 }

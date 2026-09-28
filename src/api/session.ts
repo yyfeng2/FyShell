@@ -41,3 +41,16 @@ export function sessionClone(id: string): Promise<SessionConfig> {
 export function folderSave(folder: SessionFolder): Promise<SessionFolder> {
   return invoke<SessionFolder>('folder_save', { folder });
 }
+
+/** 导航树批量重排载荷（拖拽归类/排序）：kind 区分文件夹/会话，parent_id 为新父级（None=根级），order 为同类顺序号 */
+export interface NodeReorderItem {
+  kind: 'folder' | 'session';
+  id: string;
+  parent_id: string | null;
+  order: number;
+}
+
+/** 导航树批量重排（拖拽归类/排序，Rust 侧单事务持久化，父级与顺序一次更新） */
+export function sessionReorder(items: NodeReorderItem[]): Promise<void> {
+  return invoke<void>('session_reorder', { items });
+}

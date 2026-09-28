@@ -67,9 +67,6 @@ specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 redis = { version = "1.7.0", features = ["tokio-comp"] }
 
-# 终端 ZMODEM 传输（rz/sz 命令）：调用方驱动状态机，I/O 全部由本应用接管
-zmodem2 = "0.7"
-
 [profile.release]
 strip = true
 lto = true

@@ -6,7 +6,7 @@
 use tauri::State;
 
 use crate::error::AppError;
-use crate::models::session::{AuthType, SessionConfig, SessionFolder, SessionNode};
+use crate::models::session::{AuthType, NodeReorderItem, SessionConfig, SessionFolder, SessionNode};
 use crate::state::AppState;
 
 /// 会话/文件夹树（扁平：文件夹+会话混合节点，前端按 folderId/parentId 组树）
@@ -104,6 +104,27 @@ pub async fn session_test(
             message: format!("连接失败 {hop_note}: {e}"),
         }),
     }
+}
+
+/// 导航树批量重排（拖拽归类/排序）：folders/sessions 父级与顺序一次事务更新
+#[tauri::command]
+#[specta::specta]
+pub fn session_reorder(
+    state: State<'_, AppState>,
+    items: Vec<NodeReorderItem>,
+) -> Result<(), AppError> {
+    if items.is_empty() {
+        return Err(AppError::general("重排项不能为空"));
+    }
+    for item in &items {
+        if item.id.trim().is_empty() {
+            return Err(AppError::general("重排项 id 不能为空"));
+        }
+        if item.kind != "folder" && item.kind != "session" {
+            return Err(AppError::general(format!("未知节点类型 {}", item.kind)));
+        }
+    }
+    state.config_store.reorder_nodes(&items)
 }
 
 /// 保存文件夹（新文件夹生成 id）

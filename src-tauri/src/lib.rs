@@ -56,13 +56,14 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::session::session_delete,
             commands::session::session_test,
             commands::session::folder_save,
+            commands::session::session_reorder,
             // SSH 终端（commands/ssh.rs）
             commands::ssh::ssh_connect,
             commands::ssh::ssh_disconnect,
             commands::ssh::ssh_write,
             commands::ssh::ssh_resize,
             commands::ssh::ssh_hostkey_accept,
-            commands::ssh::zmodem_respond,
+            commands::ssh::rzsz_respond,
             // 前端诊断日志（临时调试用）
             commands::debug::debug_log,
             // SFTP 传输（commands/sftp.rs）
@@ -272,13 +273,14 @@ pub fn run() {
             commands::session::session_delete,
             commands::session::session_test,
             commands::session::folder_save,
+            commands::session::session_reorder,
             // SSH 终端（commands/ssh.rs）
             commands::ssh::ssh_connect,
             commands::ssh::ssh_disconnect,
             commands::ssh::ssh_write,
             commands::ssh::ssh_resize,
             commands::ssh::ssh_hostkey_accept,
-            commands::ssh::zmodem_respond,
+            commands::ssh::rzsz_respond,
             // 前端诊断日志（临时调试用）
             commands::debug::debug_log,
             // SFTP 传输（commands/sftp.rs）

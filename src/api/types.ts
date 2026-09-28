@@ -87,24 +87,24 @@ export interface TransferStatusEvent {
   task: TransferTask;
 }
 
-/** `zmodem-start` 事件：检测到 ZMODEM hex 帧头哨兵；用户选择后调 zmodemRespond(key, action, localPath) */
-export interface ZmodemStartEvent {
+/** `rzsz-start` 事件：检测到 rz/sz hex 帧头哨兵；用户选择后调 rzszRespond(key, action, localPath) */
+export interface RzszStartEvent {
   /** 连接路由键（多标签同会话独立连接时每标签唯一） */
   key: string;
   /** 识别的传输方向："recv"=对端 sz（选保存目录）/ "send"=对端 rz（选上传文件）/ null=无法识别（弹层手选） */
   direction: 'recv' | 'send' | null;
 }
 
-/** `zmodem-progress` 事件：ZMODEM 传输进度 */
-export interface ZmodemProgressEvent {
+/** `rzsz-progress` 事件：rz/sz 传输进度 */
+export interface RzszProgressEvent {
   key: string;
   file_name: string;
   transferred: number;
   total: number;
 }
 
-/** `zmodem-end` 事件：ZMODEM 传输结束（成功/失败/取消） */
-export interface ZmodemEndEvent {
+/** `rzsz-end` 事件：rz/sz 传输结束（成功/失败/取消） */
+export interface RzszEndEvent {
   key: string;
   ok: boolean;
   message: string;

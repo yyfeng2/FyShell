@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection};
 
 use crate::error::AppError;
-use crate::models::session::{SessionConfig, SessionFolder, SessionNode};
+use crate::models::session::{NodeReorderItem, SessionConfig, SessionFolder, SessionNode};
 
 /// 主密码哈希迭代轮数：P0 简单实现（FNV-1a 迭代拉伸 + 随机盐），
 /// 正式版建议替换为 argon2（需在 Cargo.toml 追加依赖）
@@ -109,6 +109,25 @@ impl ConfigStore {
         }
         // 迁移加列前已存在的行 updated_at 为 NULL，回填 0 保持数据一致
         conn.execute("UPDATE sessions SET updated_at = 0 WHERE updated_at IS NULL", [])?;
+        // 手工排序序号列（导航树拖拽排序持久化；"duplicate column name" 说明新库已含该列，忽略）
+        match conn.execute(
+            "ALTER TABLE sessions ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            [],
+        ) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") => {}
+            Err(e) => return Err(e.into()),
+        }
+        match conn.execute(
+            "ALTER TABLE folders ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0",
+            [],
+        ) {
+            Ok(_) => {}
+            Err(rusqlite::Error::SqliteFailure(_, Some(msg)))
+                if msg.contains("duplicate column name") => {}
+            Err(e) => return Err(e.into()),
+        }
         Ok(())
     }
 
@@ -132,14 +151,19 @@ impl ConfigStore {
             .filter(|f| !f.is_empty())
             .map(str::to_lowercase);
 
-        // 全量加载文件夹到内存，用于祖先链追溯
-        let mut stmt = conn.prepare("SELECT id, name, parent_id FROM folders")?;
+        // 全量加载文件夹到内存，用于祖先链追溯（按手工排序号，其次名称）
+        let mut stmt =
+            conn.prepare("SELECT id, name, parent_id, sort_order FROM folders ORDER BY sort_order, name")?;
         let all_folders: Vec<SessionFolder> = stmt
             .query_map([], |row| {
                 Ok(SessionFolder {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     parent_id: row.get(2)?,
+                    sort_order: {
+                        let s: i64 = row.get(3)?;
+                        s as u32
+                    },
                 })
             })?
             .collect::<Result<_, _>>()?;
@@ -153,7 +177,7 @@ impl ConfigStore {
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
                         encoding, color, keepalive_interval, profile_id, session_type,
-                        serial_port, baud_rate, description, updated_at
+                        serial_port, baud_rate, description, updated_at, sort_order
                  FROM sessions
                  WHERE name LIKE ?1 OR host LIKE ?1",
             )?;
@@ -194,8 +218,8 @@ impl ConfigStore {
             let mut stmt = conn.prepare_cached(
                 "SELECT id, name, folder_id, host, port, username, auth_type,
                         encoding, color, keepalive_interval, profile_id, session_type,
-                        serial_port, baud_rate, description, updated_at
-                 FROM sessions ORDER BY name",
+                        serial_port, baud_rate, description, updated_at, sort_order
+                 FROM sessions ORDER BY sort_order, name",
             )?;
             let sessions: Vec<SessionConfig> = stmt
                 .query_map([], row_to_session)?
@@ -212,7 +236,7 @@ impl ConfigStore {
         let mut stmt = conn.prepare_cached(
             "SELECT id, name, folder_id, host, port, username, auth_type,
                     encoding, color, keepalive_interval, profile_id, session_type,
-                    serial_port, baud_rate, description, updated_at
+                    serial_port, baud_rate, description, updated_at, sort_order
              FROM sessions WHERE id = ?1",
         )?;
         let mut rows = stmt.query_map([id], row_to_session)?;
@@ -232,11 +256,30 @@ impl ConfigStore {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0);
+        // 排序守卫：手工排序过的父级（该父级已有 sort_order>0 子项）里新建/保存子项时，
+        // sort_order=0（未赋值默认）会因 ORDER BY sort_order,name 排到最顶——改为同类序列
+        // 末尾追加（max+1），保持「新项出现在文件夹底部」直觉；未受管父级保持 0 按名称兜底。
+        let mut sort_order = config.sort_order as i64;
+        if sort_order == 0 {
+            let parent_managed: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM sessions WHERE folder_id = ?1 AND sort_order > 0)",
+                [&config.folder_id],
+                |r| r.get(0),
+            )?;
+            if parent_managed {
+                let max: Option<i64> = conn.query_row(
+                    "SELECT MAX(sort_order) FROM sessions WHERE folder_id = ?1",
+                    [&config.folder_id],
+                    |r| r.get(0),
+                )?;
+                sort_order = max.unwrap_or(0) + 1;
+            }
+        }
         conn.execute(
             "INSERT INTO sessions (id, name, folder_id, host, port, username, auth_type,
                                    encoding, color, keepalive_interval, profile_id, session_type,
-                                   serial_port, baud_rate, description, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                                   serial_port, baud_rate, description, updated_at, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
                  folder_id = excluded.folder_id,
@@ -252,7 +295,8 @@ impl ConfigStore {
                  serial_port = excluded.serial_port,
                  baud_rate = excluded.baud_rate,
                  description = excluded.description,
-                 updated_at = excluded.updated_at",
+                 updated_at = excluded.updated_at,
+                 sort_order = excluded.sort_order",
             params![
                 config.id,
                 config.name,
@@ -270,6 +314,7 @@ impl ConfigStore {
                 config.baud_rate,
                 config.description,
                 updated_at,
+                sort_order,
             ],
         )?;
         Ok(())
@@ -287,12 +332,30 @@ impl ConfigStore {
     /// 保存文件夹（按 id upsert）
     pub fn save_folder(&self, folder: &SessionFolder) -> Result<(), AppError> {
         let conn = self.lock();
+        // 排序守卫：受管父级（已有 sort_order>0 子文件夹）内新建文件夹同样末尾追加，见 save_session 注释
+        let mut sort_order = folder.sort_order as i64;
+        if sort_order == 0 {
+            let parent_managed: bool = conn.query_row(
+                "SELECT EXISTS(SELECT 1 FROM folders WHERE parent_id = ?1 AND sort_order > 0)",
+                [&folder.parent_id],
+                |r| r.get(0),
+            )?;
+            if parent_managed {
+                let max: Option<i64> = conn.query_row(
+                    "SELECT MAX(sort_order) FROM folders WHERE parent_id = ?1",
+                    [&folder.parent_id],
+                    |r| r.get(0),
+                )?;
+                sort_order = max.unwrap_or(0) + 1;
+            }
+        }
         conn.execute(
-            "INSERT INTO folders (id, name, parent_id) VALUES (?1, ?2, ?3)
+            "INSERT INTO folders (id, name, parent_id, sort_order) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(id) DO UPDATE SET
                  name = excluded.name,
-                 parent_id = excluded.parent_id",
-            params![folder.id, folder.name, folder.parent_id],
+                 parent_id = excluded.parent_id,
+                 sort_order = excluded.sort_order",
+            params![folder.id, folder.name, folder.parent_id, sort_order],
         )?;
         Ok(())
     }
@@ -328,6 +391,64 @@ impl ConfigStore {
         for fid in &to_delete {
             stmt.execute([fid])?;
         }
+        Ok(())
+    }
+
+    // ---------- 树重排（拖拽归类/排序持久化） ----------
+
+    /// 批量重排节点（单事务原子提交）
+    ///
+    /// 前端按「受影响父集合」重建有序 id 列表后整体下发：folder 项更新父级+顺序，
+    /// session 项更新所属文件夹+顺序。对 folder 项做轻量防环——新父链上行若回到自身
+    /// id 即成环（文件夹不能拖进自身或后代），整体回滚报错。
+    pub fn reorder_nodes(&self, items: &[NodeReorderItem]) -> Result<(), AppError> {
+        let conn = self.lock();
+        let tx = conn.unchecked_transaction()?;
+
+        for item in items {
+            match item.kind.as_str() {
+                "folder" => {
+                    // 防环：沿新父链上行，命中自身 id 或层级过深即拒绝
+                    let mut current = item.parent_id.clone();
+                    let mut hops = 0usize;
+                    while let Some(cur) = current {
+                        if cur == item.id {
+                            return Err(AppError::general("不能把文件夹拖入自身或其子文件夹"));
+                        }
+                        if hops >= 64 {
+                            return Err(AppError::general("文件夹层级过深，拒绝移动"));
+                        }
+                        current = tx
+                            .query_row(
+                                "SELECT parent_id FROM folders WHERE id = ?1",
+                                [&cur],
+                                |r| r.get::<_, Option<String>>(0),
+                            )
+                            .unwrap_or(None)
+                            .filter(|s| !s.is_empty());
+                        hops += 1;
+                    }
+                    tx.execute(
+                        "UPDATE folders SET parent_id = ?1, sort_order = ?2 WHERE id = ?3",
+                        params![item.parent_id, item.order as i64, item.id],
+                    )?;
+                }
+                "session" => {
+                    tx.execute(
+                        "UPDATE sessions SET folder_id = ?1, sort_order = ?2 WHERE id = ?3",
+                        params![item.parent_id, item.order as i64, item.id],
+                    )?;
+                }
+                _ => {
+                    return Err(AppError::general(format!(
+                        "未知节点类型 {}",
+                        item.kind
+                    )))
+                }
+            }
+        }
+
+        tx.commit()?;
         Ok(())
     }
 
@@ -423,6 +544,11 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionConfig> {
             description: row.get("description")?,
             // 迁移加列前已存在的行该列为 NULL，直接读 i64 会报 InvalidColumnType
             updated_at: row.get::<_, Option<i64>>("updated_at")?.unwrap_or(0),
+            // 迁移补列时有 DEFAULT 0，直接读 i64 安全
+            sort_order: {
+                let s: i64 = row.get("sort_order")?;
+                s as u32
+            },
         })
 }
 
