@@ -19,7 +19,6 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # 框架
 tauri = { version = "2", features = ["tray-icon"] }
-tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
@@ -66,6 +65,17 @@ specta = { version = "=2.0.0-rc.25", features = ["serde_json"] }
 specta-typescript = "0.0.12"
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 redis = { version = "1.7.0", features = ["tokio-comp"] }
+
+# 自研 Windows 原生文件对话框（IFileDialog，替代前端 tauri-plugin-dialog 的 rz/sz 选文件）：
+# raw-window-handle 用于取主窗口 HWND（父窗口归属，模态对话框正确置顶）
+raw-window-handle = "0.6"
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61.3", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_UI_Shell",
+  "Win32_UI_WindowsAndMessaging",
+] }
 
 [profile.release]
 strip = true

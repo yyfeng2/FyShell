@@ -226,7 +226,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { open, save } from '@tauri-apps/plugin-dialog'
+import { localPickDialog, localSaveDialog } from '@/api/sftp'
 import {
   mysqlExport,
   mysqlImport,
@@ -309,25 +309,25 @@ const filePath = ref('')
 /** 各格式对应的文件扩展名（保存对话框默认文件名） */
 const EXT_BY_FORMAT: Record<string, string> = { csv: 'csv', json: 'json', sql: 'sql' }
 
-// ---------- 文件路径选择（Tauri dialog 插件） ----------
+// ---------- 文件路径选择（自研原生对话框） ----------
 
 /** 导出：保存对话框获取目标路径 */
 async function pickSavePath(): Promise<void> {
   const ext = EXT_BY_FORMAT[exportFormat.value] ?? 'csv'
-  const selected = await save({
+  const selected = await localSaveDialog(`export.${ext}`, {
     title: '选择导出保存路径',
-    defaultPath: `export.${ext}`,
-    filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+    filterName: ext.toUpperCase(),
+    extensions: [ext],
   })
   if (typeof selected === 'string') filePath.value = selected
 }
 
 /** 导入：打开对话框选择源文件（CSV/SQL 两种格式） */
 async function pickOpenPath(): Promise<void> {
-  const selected = await open({
+  const selected = await localPickDialog('send', {
     title: '选择导入文件',
-    multiple: false,
-    filters: [{ name: '数据文件', extensions: ['csv', 'sql'] }],
+    filterName: '数据文件',
+    extensions: ['csv', 'sql'],
   })
   if (typeof selected === 'string') filePath.value = selected
 }

@@ -74,6 +74,21 @@ export const commands = {
 	transferClear: () => __TAURI_INVOKE<null>("transfer_clear"),
 	/**  本地目录列表（供双栏左侧使用）；路径为 ".." 时返回上级目录列表 */
 	localList: (path: string) => __TAURI_INVOKE<FileEntry[]>("local_list", { path }),
+	/**
+	 *  本地文件系统起点列表（供内置文件选择器作为初始视图）：
+	 *  Windows 返回各盘符（name 形如 "C:"，前端拼 "C:/" 后调 local_list）；
+	 *  其他平台返回根 "/"。name 均以 is_dir=true 标记，语义与 local_list 一致。
+	 */
+	localListRoots: () => __TAURI_INVOKE<FileEntry[]>("local_list_roots"),
+	/**
+	 *  自研调用 Windows 原生文件对话框（IFileOpenDialog，即资源管理器选择器）：
+	 *  send=选单个文件 / recv=选目录；用户取消返回 None。
+	 * 
+	 *  不走任何第三方插件（替代 rz/sz 前端 @tauri-apps/plugin-dialog）：
+	 *  对话框经 run_on_main_thread 在主线程（有消息泵）模态展示，
+	 *  父窗口为主窗口，保证置顶与输入焦点正确。
+	 */
+	localPickDialog: (mode: string) => __TAURI_INVOKE<string | null>("local_pick_dialog", { mode }),
 	/**  本地新建文件夹（fe-sftp 双栏本地侧） */
 	localMkdir: (path: string) => __TAURI_INVOKE<null>("local_mkdir", { path }),
 	/**  本地重命名 */

@@ -138,3 +138,47 @@ export function transferClear(): Promise<void> {
 export function localList(path: string): Promise<FileEntry[]> {
   return invoke<FileEntry[]>('local_list', { path });
 }
+
+/** 本地文件系统起点列表（内置文件选择器初始视图）：Windows 各盘符 / 其他平台根 `/` */
+export function localListRoots(): Promise<FileEntry[]> {
+  return invoke<FileEntry[]>('local_list_roots');
+}
+
+/**
+ * 自研 Windows 原生文件对话框（资源管理器选择器）。
+ * send=选文件 / recv=选目录；用户取消返回 null。
+ * 不用 @tauri-apps/plugin-dialog（rz/sz 场景曾导致鼠标指针不显示）。
+ */
+export interface LocalDialogOptions {
+  /** 对话框标题 */
+  title?: string
+  /** 扩展名过滤组名（如「配色方案」） */
+  filterName?: string
+  /** 扩展名列表（如 ['json']） */
+  extensions?: string[]
+}
+
+export function localPickDialog(
+  mode: 'send' | 'recv',
+  opts?: LocalDialogOptions,
+): Promise<string | null> {
+  return invoke<string | null>('local_pick_dialog', {
+    mode,
+    title: opts?.title ?? null,
+    filterName: opts?.filterName ?? null,
+    filterExtensions: opts?.extensions ?? null,
+  })
+}
+
+/** 自研 Windows 原生保存对话框（IFileSaveDialog，带覆盖确认）；取消返回 null */
+export function localSaveDialog(
+  defaultPath: string,
+  opts?: LocalDialogOptions,
+): Promise<string | null> {
+  return invoke<string | null>('local_save_dialog', {
+    defaultPath,
+    title: opts?.title ?? null,
+    filterName: opts?.filterName ?? null,
+    filterExtensions: opts?.extensions ?? null,
+  })
+}

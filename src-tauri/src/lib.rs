@@ -80,6 +80,9 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::sftp::transfer_cancel,
             commands::sftp::transfer_clear,
             commands::sftp::local_list,
+            commands::sftp::local_list_roots,
+            commands::sftp::local_pick_dialog,
+            commands::sftp::local_save_dialog,
             commands::sftp::local_mkdir,
             commands::sftp::local_rename,
             commands::sftp::local_delete,
@@ -262,7 +265,7 @@ pub fn run() {
                 let _ = win.set_focus();
             }
         }))
-        .plugin(tauri_plugin_dialog::init())
+
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
@@ -297,6 +300,9 @@ pub fn run() {
             commands::sftp::transfer_cancel,
             commands::sftp::transfer_clear,
             commands::sftp::local_list,
+            commands::sftp::local_list_roots,
+            commands::sftp::local_pick_dialog,
+            commands::sftp::local_save_dialog,
             commands::sftp::local_mkdir,
             commands::sftp::local_rename,
             commands::sftp::local_delete,

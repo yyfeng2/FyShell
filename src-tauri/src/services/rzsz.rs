@@ -50,6 +50,40 @@ const CAN_ABORT: [u8; 8] = [0x18; 8];
 /// 持续累积时的内存上限，超限丢弃最老字节（协议重发机制会重新对齐）
 const LEFTOVER_MAX: usize = 64 * 1024;
 
+/// 帧级诊断日志：定位与真实 lrzsz 互通的握手问题。写临时目录 fyshell-rzsz.log
+/// （不经终端/管道，避免污染线协议）。仅传输期间产出，体积极小。
+fn diag(msg: &str) {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::temp_dir().join("fyshell-rzsz.log"))
+    {
+        let _ = writeln!(f, "#{n} {ts} {msg}");
+    }
+}
+
+/// 字节序列 hex 表示（截断到 max 字节，诊断日志用）
+fn hex_head(bytes: &[u8], max: usize) -> String {
+    let mut s = String::new();
+    for (i, b) in bytes.iter().take(max).enumerate() {
+        if i > 0 {
+            s.push(' ');
+        }
+        s.push_str(&format!("{b:02X}"));
+    }
+    if bytes.len() > max {
+        s.push_str(&format!(" …(+{})", bytes.len() - max));
+    }
+    s
+}
+
 /// 限制 leftover 容量：超出上限丢弃最老字节并告警，防止无界增长导致内存膨胀。
 /// 丢弃方向取最老（先入）字节——状态机始终在头部找帧同步，尾部待消费数据保留。
 fn cap_leftover(leftover: &mut Vec<u8>) {
@@ -215,6 +249,11 @@ fn run(
         Some(Direction::Send) => Some("send".to_string()),
         Some(Direction::Ignore) | None => None,
     };
+    diag(&format!(
+        "run: key={key} direction={direction_str:?} prelude={} [{}]",
+        prelude.len(),
+        hex_head(&prelude, 24)
+    ));
     let _ = app.emit(
         "rzsz-start",
         RzszStartEvent {
@@ -369,7 +408,23 @@ fn run_recv(
                         // 单文件完成：终值进度兜底推送
                         emit_progress(app, key, &file_name, transferred, total, &mut last_emit);
                     }
-                    Event::SessionCompleted => return Ok(()),
+                    Event::SessionCompleted => {
+                        // 事件先于 WriteWire 返回（poll 事件优先）：会话完成时
+                        // 状态机已排队 ZFIN 应答，直接 return 会让对端等应答
+                        // 悬挂、远端 tty 停留 raw 模式（终端卡死至对端超时）——
+                        // 必须先冲出收尾字节再返回
+                        loop {
+                            match receiver.poll() {
+                                Action::WriteWire(bytes) => {
+                                    let n = bytes.len();
+                                    write_to_wire(write_tx, bytes);
+                                    receiver.wire_written(n);
+                                }
+                                _ => break,
+                            }
+                        }
+                        return Ok(());
+                    }
                     Event::Aborted => return Err("rz/sz 传输已中止".into()),
                     // 接收方向不会收到 FileStarted（接收方专属事件）
                     Event::FileStarted(_) => {}
@@ -399,10 +454,22 @@ fn run_recv(
         match wait_pipe(pipe_rx) {
             PipeWait::Data(data) => {
                 idle_polls = 0;
+                diag(&format!(
+                    "recv: pipe 数据 {} 字节 [{}]",
+                    data.len(),
+                    hex_head(&data, 16)
+                ));
                 let mut buf = std::mem::take(&mut leftover);
                 buf.extend_from_slice(&data);
                 match receiver.submit_wire(&buf) {
                     Ok(consumed) if consumed < buf.len() => {
+                        diag(&format!(
+                            "recv: 喂入 {}/{} 状态={} 残余={}",
+                            consumed,
+                            buf.len(),
+                            receiver.state_name(),
+                            buf.len() - consumed
+                        ));
                         leftover = buf.split_off(consumed);
                         cap_leftover(&mut leftover);
                     }
@@ -491,8 +558,16 @@ fn run_send(
         Ok(n) => n,
         // 丢弃整批：split_off(prelude.len()) 后 leftover 为空（不滞留坏帧）
         Err(e) if is_crc_error(&e) => prelude.len(),
-        Err(e) => return Err(format!("rz/sz 协议错误: {e}")),
+        Err(e) => {
+            diag(&format!("send: submit_wire(prelude) Err: {e}"));
+            return Err(format!("rz/sz 协议错误: {e}"));
+        }
     };
+    diag(&format!(
+        "send: submit_wire(prelude) consumed={consumed}/{} 状态={}",
+        prelude.len(),
+        sender.state_name()
+    ));
     let mut leftover = prelude.split_off(consumed);
     cap_leftover(&mut leftover);
 
@@ -537,6 +612,10 @@ fn run_send(
                     if n == 0 {
                         return Err("文件读取提前结束".into());
                     }
+                    diag(&format!(
+                        "send: ReadFile offset={} 读 {n} 字节 → submit_file",
+                        offset.get()
+                    ));
                     transferred = u64::from(offset.get()) + n as u64;
                     if let Err(e) = sender.submit_file(&buf[..n]) {
                         return Err(format!("提交文件数据失败: {e}"));
@@ -545,6 +624,9 @@ fn run_send(
                 }
                 Action::Event(event) => match event {
                     Event::FileCompleted => {
+                        diag(&format!(
+                            "send: FileCompleted transferred={transferred}/{total}"
+                        ));
                         emit_progress(app, key, &file_name, transferred, total, &mut last_emit);
                         // 文件非空但 transferred==0：对端 ZSKIP 跳过了该文件
                         //（远端同名文件已存在且 rz 默认不覆盖）。finish() 在
@@ -557,6 +639,20 @@ fn run_send(
                         }
                     }
                     Event::SessionCompleted => {
+                        // 事件先于 WriteWire 返回（poll 事件优先）：会话完成时
+                        // 状态机已排队 OO 结束序列，直接 return 会让对端等 OO
+                        // 悬挂（远端 tty 停留 raw 模式致终端卡死）——先冲出
+                        // 收尾字节再返回
+                        loop {
+                            match sender.poll() {
+                                Action::WriteWire(bytes) => {
+                                    let n = bytes.len();
+                                    write_to_wire(write_tx, bytes);
+                                    sender.wire_written(n);
+                                }
+                                _ => break,
+                            }
+                        }
                         if skipped {
                             return Err(
                                 "对端跳过了该文件：同名文件已存在（远端 rz 默认不覆盖），可删除远端文件或让对端以 rz -y 运行后重试"
@@ -595,6 +691,12 @@ fn run_send(
         match wait_pipe(pipe_rx) {
             PipeWait::Data(data) => {
                 idle_polls = 0;
+                diag(&format!(
+                    "send: pipe 数据 {} 字节 [{}] 状态={}",
+                    data.len(),
+                    hex_head(&data, 16),
+                    sender.state_name()
+                ));
                 let mut buf = std::mem::take(&mut leftover);
                 buf.extend_from_slice(&data);
                 match sender.submit_wire(&buf) {
@@ -616,6 +718,10 @@ fn run_send(
             }
             PipeWait::Timeout => {
                 idle_polls += 1;
+                diag(&format!(
+                    "send: idle_poll={idle_polls}/{MAX_IDLE_POLLS} 状态={}",
+                    sender.state_name()
+                ));
                 if idle_polls >= MAX_IDLE_POLLS {
                     return Err("rz/sz 传输超时（链路无响应）".into());
                 }
@@ -658,6 +764,7 @@ fn write_to_wire(
     write_tx: &tokio::sync::mpsc::Sender<crate::services::ssh::SshWriteMsg>,
     bytes: &[u8],
 ) {
+    diag(&format!(">> wire: {} [{}]", bytes.len(), hex_head(bytes, 16)));
     match write_tx.try_send(crate::services::ssh::SshWriteMsg::Data(bytes.to_vec())) {
         Ok(()) => {}
         Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {

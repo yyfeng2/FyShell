@@ -8,7 +8,7 @@
  * 导入导出经 Rust 文件 IO + 前端 parseScheme 校验。
  */
 import { computed, ref, watch } from 'vue'
-import { open, save } from '@tauri-apps/plugin-dialog'
+import { localPickDialog, localSaveDialog } from '@/api/sftp'
 import { useColorSchemeStore } from '@/stores/colorScheme'
 import { useUiStore } from '@/stores/ui'
 import { commands } from '@/bindings'
@@ -114,9 +114,9 @@ const importing = ref(false)
 
 /** 导入：系统对话框选文件 → Rust 读 → parseScheme 校验 → upsert */
 async function importScheme(): Promise<void> {
-  const path = await open({
-    multiple: false,
-    filters: [{ name: '配色方案', extensions: ['json'] }],
+  const path = await localPickDialog('send', {
+    filterName: '配色方案',
+    extensions: ['json'],
   })
   if (typeof path !== 'string') return
   importing.value = true
@@ -144,9 +144,9 @@ const exporting = ref(false)
 async function exportScheme(): Promise<void> {
   const src = store.applied
   if (!src) return
-  const path = await save({
-    defaultPath: `${src.name}.json`,
-    filters: [{ name: '配色方案', extensions: ['json'] }],
+  const path = await localSaveDialog(`${src.name}.json`, {
+    filterName: '配色方案',
+    extensions: ['json'],
   })
   if (typeof path !== 'string') return
   exporting.value = true

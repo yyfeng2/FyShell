@@ -479,9 +479,8 @@
  */
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { getVersion } from '@tauri-apps/api/app'
-import { open } from '@tauri-apps/plugin-dialog'
 import { mysqlHistoryClear } from '@/api/mysqlConsole'
-import { transferClear } from '@/api/sftp'
+import { localPickDialog, transferClear } from '@/api/sftp'
 import { userDataClear } from '@/api/settings'
 import KeyMappingDialog from '@/components/common/KeyMappingDialog.vue'
 import { formatShortcutCombo, SETTING_KEYS, SHORTCUT_DEFAULTS, useSettingsStore, type ThemeMode, type MouseButtonAction } from '@/stores/settings'
@@ -666,10 +665,10 @@ function resetShortcuts(): void {
   captureError.value = ''
 }
 
-/** 目录选择按钮：@tauri-apps/plugin-dialog 目录选择，选中后立即生效 */
+/** 目录选择按钮：自研原生目录选择器，选中后立即生效 */
 async function pickDownloadDir(): Promise<void> {
   try {
-    const selected = await open({ directory: true, multiple: false, title: '选择默认下载目录' })
+    const selected = await localPickDialog('recv', { title: '选择默认下载目录' })
     if (typeof selected === 'string' && selected) {
       settings.setSftpDownloadDir(selected)
     }

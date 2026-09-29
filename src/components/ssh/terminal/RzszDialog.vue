@@ -8,22 +8,21 @@
     <v-card>
       <v-card-title class="text-h6">rz/sz 文件传输</v-card-title>
       <v-divider />
-      <!-- 会话级错误（如选择器打开失败）：对话框内可见提示 -->
-      <v-alert
-        v-if="dialogError"
-        type="error"
-        variant="tonal"
-        density="compact"
-        class="mx-4 mt-3"
-        >{{ dialogError }}</v-alert
-      >
 
-      <!-- 选择器打开中：系统选择器未出现/被错过时的可见反馈 -->
+      <!-- 原生对话框打开中：自研 IFileDialog 已弹出/被错过时的可见反馈与取消 -->
       <template v-if="mode === 'picking'">
         <v-card-text>
+          <v-alert
+            v-if="dialogError"
+            type="error"
+            variant="tonal"
+            density="compact"
+            class="mb-2"
+            >{{ dialogError }}</v-alert
+          >
           <p class="text-body-2 mb-0">
             正在等待选择{{ current?.direction === 'send' ? '要上传的文件' : '保存目录' }}…
-            若未弹出选择窗口，请直接取消后重试。
+            若未弹出选择窗口，请取消后重试。
           </p>
         </v-card-text>
         <v-card-actions>
@@ -42,10 +41,10 @@
         <v-card-actions>
           <v-spacer />
           <v-btn color="error" variant="text" @click="cancel">取消</v-btn>
-          <v-btn color="primary" variant="text" @click="pickRecvFile">
+          <v-btn color="primary" variant="text" @click="openNative('recv')">
             接收文件（对端 sz）…
           </v-btn>
-          <v-btn color="primary" variant="flat" @click="pickSendFile">
+          <v-btn color="primary" variant="flat" @click="openNative('send')">
             发送文件（对端 rz）…
           </v-btn>
         </v-card-actions>
@@ -74,10 +73,16 @@
         </v-card-actions>
       </template>
 
-      <!-- 失败：错误信息 + 手动关闭 -->
+      <!-- 结束：完成/失败信息 + 手动关闭（提示框显示任务完成，不自动关闭） -->
       <template v-else>
         <v-card-text>
-          <p class="text-body-2 mb-0 rzsz-error">{{ ended?.message }}</p>
+          <v-alert
+            :type="ended?.ok ? 'success' : 'error'"
+            variant="tonal"
+            density="compact"
+            class="mb-0 rzsz-error"
+            >{{ ended?.message }}</v-alert
+          >
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -90,7 +95,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { open } from '@tauri-apps/plugin-dialog'
+import { localPickDialog } from '@/api/sftp'
 import {
   listenRzszEnd,
   listenRzszProgress,
@@ -121,8 +126,8 @@ interface RzszEndPayload {
   message: string
 }
 
-/** 对话框模式：idle 隐藏 / picking 系统选择器打开中（对话框显示等待提示）/ choose 方向手选 / progress 传输中 / failed 失败 */
-type DialogMode = 'idle' | 'picking' | 'choose' | 'progress' | 'failed'
+/** 对话框模式：idle 隐藏 / picking 原生对话框打开中 / choose 方向手选 / progress 传输中 / ended 结束（完成或失败） */
+type DialogMode = 'idle' | 'picking' | 'choose' | 'progress' | 'ended'
 
 /** 待选择的请求队列（连续多次 rz/sz 时排队） */
 const pending = ref<RzszStartPayload[]>([])
@@ -131,11 +136,10 @@ const active = ref<RzszProgressPayload | null>(null)
 /** 上一次失败的信息 */
 const ended = ref<RzszEndPayload | null>(null)
 const mode = ref<DialogMode>('idle')
-/** 对话框内展示的会话级错误（如选择器打开失败） */
+/** 原生对话框等待期间的会话级错误（如调用失败，回退方向手选） */
 const dialogError = ref('')
 
-/** picking 期间对话框保持可见：选择器被错过/未出现时终端无任何输出的 60s
- * 等待窗内，这是用户唯一能看到的反馈（并可立即取消） */
+/** picking/传输期间对话框保持可见：防止误触终端；原生选择器由 Rust 自研模态弹出 */
 const show = computed(() => mode.value !== 'idle')
 const current = computed(() => pending.value[0] ?? null)
 
@@ -156,70 +160,96 @@ const sizeLabel = computed(() => {
   return a.total > 0 ? `${fmt(a.transferred)} / ${fmt(a.total)}` : fmt(a.transferred)
 })
 
-/** 呈现队首请求：方向已知时直接弹对应系统选择器，未知时弹三选手选 */
+/** 呈现队首请求：按方向弹自研原生对话框（recv=选保存目录 / send=选上传文件），
+ * 未知方向弹三选手选 */
 function presentNext(): void {
   const next = pending.value[0]
   if (!next) {
     mode.value = 'idle'
     return
   }
-  if (next.direction === 'recv') {
-    void pickRecvFile()
-  } else if (next.direction === 'send') {
-    void pickSendFile()
+  if (next.direction === 'send') {
+    openNative('send')
+  } else if (next.direction === 'recv') {
+    openNative('recv')
   } else {
     mode.value = 'choose'
   }
 }
 
-/** 接收文件：目录选择器，选中后回传 recv；取消选择视作放弃传输 */
-async function pickRecvFile(): Promise<void> {
+/**
+ * 调 Rust 自研 Windows 原生文件对话框（IFileDialog 系，资源管理器选择器）：
+ * send=选文件 / recv=选目录。取消返回 null 视作放弃；调用失败回退方向手选。
+ */
+function openNative(m: 'recv' | 'send'): void {
   const key = current.value?.key
   if (!key) return
   mode.value = 'picking'
   dialogError.value = ''
-  let dir: string | string[] | null
+  releasePointerResidue()
+  void localPickDialog(m)
+    .then((path) => {
+      // 等待期内可能已超时/断开（key 被清）：放弃本次
+      if (!pending.value.some((p) => p.key === key)) return
+      if (path) {
+        void respond(key, m, path)
+      } else {
+        void respond(key, 'cancel', '')
+      }
+    })
+    .catch((e) => {
+      dialogError.value = errText(e)
+      mode.value = 'choose'
+    })
+}
+
+/**
+ * 弹系统原生对话框前释放指针残留：会话树/标签拖拽使用 setPointerCapture，
+ * 若某元素在弹框瞬间仍持有捕获/锁定（pointerup 未达），原生框会继承
+ * 「指针被捕获」状态致鼠标不可见。此处幂等释放后即可正常显示。
+ */
+function releasePointerResidue(): void {
   try {
-    dir = await open({ directory: true, multiple: false, title: '选择保存目录' })
-  } catch (e) {
-    // 选择器异常（会话级错误）：对话框内提示并回退三选手选
-    dialogError.value = errText(e)
-    mode.value = 'choose'
-    return
+    document.exitPointerLock?.()
+  } catch {
+    /* noop */
   }
-  if (typeof dir === 'string') {
-    await respond(key, 'recv', dir)
-  } else {
-    await respond(key, 'cancel', '')
+  const root = document.body ?? document.documentElement
+  const all = root.querySelectorAll('*')
+  for (let i = 0; i < all.length; i++) {
+    const el = all[i] as HTMLElement
+    if (!el.hasPointerCapture) continue
+    // 规范要求 pointerId；遍历常见 id（0/1）幂等释放
+    for (const id of [0, 1]) {
+      try {
+        if (el.hasPointerCapture(id)) el.releasePointerCapture(id)
+      } catch {
+        /* noop */
+      }
+    }
   }
 }
 
-/** 发送文件：文件选择器，选中后回传 send；取消选择视作放弃传输 */
-async function pickSendFile(): Promise<void> {
-  const key = current.value?.key
-  if (!key) return
-  mode.value = 'picking'
-  dialogError.value = ''
-  let file: string | string[] | null
-  try {
-    file = await open({ multiple: false, title: '选择要上传的文件' })
-  } catch (e) {
-    // 选择器异常（会话级错误）：对话框内提示并回退三选手选
-    dialogError.value = errText(e)
-    mode.value = 'choose'
-    return
-  }
-  if (typeof file === 'string') {
-    await respond(key, 'send', file)
-  } else {
-    await respond(key, 'cancel', '')
-  }
-}
-
-/** 取消传输 */
+/** 取消传输（picking/choose/progress 分支的取消按钮）。
+ * 传输进行中取 active.key（rzsz_respond 结束键在会话表即中止循环），
+ * 本地先清掉进度占位——rzsz-end 随后到达时不再回弹失败框；
+ * 否则（选择阶段）走 respond(cancel) 放弃待选队首。 */
 async function cancel(): Promise<void> {
-  const key = current.value?.key
+  const activeKey = active.value?.key
+  const key = activeKey ?? current.value?.key
   if (!key) return
+  if (activeKey) {
+    active.value = null
+    pending.value = pending.value.filter((p) => p.key !== key)
+    dialogError.value = ''
+    try {
+      await rzszRespond(key, 'cancel', '')
+    } catch (e) {
+      console.warn('[rzsz] rzsz_respond 失败:', e)
+    }
+    presentNext()
+    return
+  }
   await respond(key, 'cancel', '')
 }
 
@@ -230,6 +260,7 @@ async function respond(
   localPath: string,
 ): Promise<void> {
   pending.value = pending.value.filter((p) => p.key !== key)
+  dialogError.value = ''
   try {
     await rzszRespond(key, action, localPath)
   } catch (e) {
@@ -255,13 +286,13 @@ function onDialogChange(value: boolean): void {
       void rzszRespond(key, 'cancel', '')
       pending.value = pending.value.filter((p) => p.key !== key)
       presentNext()
-    } else if (mode.value === 'failed') {
+    } else if (mode.value === 'ended') {
       dismiss()
     }
   }
 }
 
-/** 关闭失败提示 */
+/** 关闭结束提示（完成/失败），回到隐藏态或呈现下一条 */
 function dismiss(): void {
   ended.value = null
   presentNext()
@@ -292,13 +323,11 @@ onMounted(() => {
     pending.value = pending.value.filter((p) => p.key !== payload.key)
     if (active.value?.key === payload.key) {
       active.value = null
-      if (payload.ok) {
-        // 成功自动关闭；有待选请求时呈现下一条
-        presentNext()
-      } else {
-        ended.value = payload
-        mode.value = 'failed'
-      }
+      // 完成与失败都显示在对话框（用户指令：提示框显示进度及任务完成）
+      ended.value = payload.ok && !payload.message
+        ? { ...payload, message: '传输完成' }
+        : payload
+      mode.value = 'ended'
     } else if (
       (mode.value === 'choose' || mode.value === 'picking') &&
       pending.value.length === 0
@@ -339,5 +368,4 @@ onBeforeUnmount(() => {
 .rzsz-error {
   word-break: break-all;
 }
-
 </style>

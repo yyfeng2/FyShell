@@ -82,7 +82,7 @@
 /**
  * SshPanels —— SSH：安全性 / 隧道 / SFTP（SSH 选项）
  */
-import { open } from '@tauri-apps/plugin-dialog'
+import { localPickDialog } from '@/api/sftp'
 import { useSshOptionsStore } from '@/stores/sshOptions'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -105,7 +105,7 @@ function onDownloadDirChange(e: Event): void {
 
 async function pickDownloadDir(): Promise<void> {
   try {
-    const selected = await open({ directory: true, multiple: false, title: '选择默认下载目录' })
+    const selected = await localPickDialog('recv', { title: '选择默认下载目录' })
     if (typeof selected === 'string' && selected) {
       settings.setSftpDownloadDir(selected)
     }

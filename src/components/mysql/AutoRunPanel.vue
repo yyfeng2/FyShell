@@ -142,7 +142,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { save } from '@tauri-apps/plugin-dialog'
+import { localSaveDialog } from '@/api/sftp'
 import {
   mysqlBackup,
   mysqlBackupProfileDelete,
@@ -247,12 +247,12 @@ async function saveProfile(): Promise<void> {
 
 // ---------- 立即运行 ----------
 
-/** 按任务配置立即运行备份：dialog save 获取路径 → 调 mysqlBackup */
+/** 按任务配置立即运行备份：原生保存对话框获取路径 → 调 mysqlBackup */
 async function runNow(profile: MySqlBackupProfile): Promise<void> {
-  const selected = await save({
+  const selected = await localSaveDialog('backup.sql', {
     title: `选择「${profile.name}」的备份保存路径`,
-    defaultPath: 'backup.sql',
-    filters: [{ name: 'SQL', extensions: ['sql'] }],
+    filterName: 'SQL',
+    extensions: ['sql'],
   })
   if (typeof selected !== 'string') return
   try {

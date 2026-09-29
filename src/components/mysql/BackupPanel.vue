@@ -228,7 +228,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { open, save } from '@tauri-apps/plugin-dialog'
+import { localPickDialog, localSaveDialog } from '@/api/sftp'
 import {
   mysqlBackup,
   mysqlBackupRunHistory,
@@ -305,24 +305,24 @@ async function loadHistory(): Promise<void> {
   }
 }
 
-// ---------- 文件路径选择（Tauri dialog 插件） ----------
+// ---------- 文件路径选择（自研原生对话框） ----------
 
 /** 备份：保存对话框获取目标路径 */
 async function pickBackupPath(): Promise<void> {
-  const selected = await save({
+  const selected = await localSaveDialog('backup.sql', {
     title: '选择备份保存路径',
-    defaultPath: 'backup.sql',
-    filters: [{ name: 'SQL', extensions: ['sql'] }],
+    filterName: 'SQL',
+    extensions: ['sql'],
   })
   if (typeof selected === 'string') backupPath.value = selected
 }
 
 /** 还原：打开对话框选择备份文件 */
 async function pickRestorePath(): Promise<void> {
-  const selected = await open({
+  const selected = await localPickDialog('send', {
     title: '选择备份文件',
-    multiple: false,
-    filters: [{ name: 'SQL 备份文件', extensions: ['sql'] }],
+    filterName: 'SQL 备份文件',
+    extensions: ['sql'],
   })
   if (typeof selected === 'string') restorePath.value = selected
 }
