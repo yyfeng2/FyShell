@@ -13,3 +13,4 @@ vs_buildtools.exe
 
 # updater 签名私钥（仅本地开发用，不入库）
 src-tauri/keys/
+signing/*.key
