@@ -1,10 +1,10 @@
 //! 真实 lrzsz 对局 harness：经 russh 直连测试服务器运行远端 sz，
 //! 把真实字节流喂给自研接收器，验证协议互通并定位传输挂起根因。
 //!
-//! 用法: cargo run --bin sz_harness -- [remote_path] [local_dir]
+//! 用法: cargo run --example sz_harness -- [remote_path] [local_dir]
 //! 不依赖 UI、不经终端管道；协议层诊断走 temp/fyshell-rzsz.log。
 
-#[path = "../services/rzsz_protocol.rs"]
+#[path = "../src/services/rzsz_protocol.rs"]
 mod rzsz_protocol;
 
 use rzsz_protocol::{Action, Event, Receiver};
