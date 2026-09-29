@@ -134,9 +134,10 @@ watch(
       <v-alert
         v-for="item in ui.toasts"
         :key="item.id"
-        :color="item.color ?? 'surface'"
+        :color="item.color ?? 'primary'"
         :type="item.color === 'success' || item.color === 'error' || item.color === 'warning' || item.color === 'info' ? item.color : undefined"
         :icon="toastIcon(item.color)"
+        :class="{ 'fy-toast--blue': !item.color || item.color === 'info' }"
         density="compact"
         variant="elevated"
         closable
@@ -173,6 +174,28 @@ watch(
 }
 .global-toasts :deep(.v-alert) {
   pointer-events: auto;
+}
+
+/* 蓝底黑字提示（默认无强调色 + info 类）：用户指定提示框统一蓝底黑字，
+   primary 蓝底上的文字/图标/详情折叠全部改为黑色保证对比清晰；
+   右上角项目以 primary 色外观预览为准。 */
+.global-toasts :deep(.fy-toast--blue.v-alert) {
+  background-color: rgb(var(--v-theme-primary)) !important;
+  border-color: rgb(var(--v-theme-primary)) !important;
+}
+.global-toasts :deep(.fy-toast--blue .v-alert__content),
+.global-toasts :deep(.fy-toast--blue .v-alert__content * ) {
+  color: #111 !important;
+}
+.global-toasts :deep(.fy-toast--blue .v-alert__close .v-icon) {
+  color: #111 !important;
+}
+.global-toasts :deep(.fy-toast--blue .global-toast__detail-toggle) {
+  color: #111 !important;
+}
+/* info 型自带的前置图标与语义色边条一并归一为黑字 */
+.global-toasts :deep(.fy-toast--blue .v-alert__prepend .v-icon) {
+  color: #111 !important;
 }
 
 

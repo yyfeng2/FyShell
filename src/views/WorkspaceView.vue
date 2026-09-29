@@ -2122,12 +2122,18 @@ function openTransferTab(): void {
     远程栏初始路径 = 绑定 SSH 终端的实时 cwd（终端 OSC 7 追踪，无记录则留空走 DualPane 内部默认） */
 function openSftpTab(): void {
   const existing = tabs.value.find((t) => t.type === 'sftp' && !t.sessionId)
+  const boundKey = lastTerminalSession.value?.id
+  // 单例命中：重新同步绑定终端最新 cwd 再激活（终端可能已 cd 别处；原实现只激活不更新，
+  // 是"快捷打开窗口依然没和 ssh 所在目录一致"的主要复现路径）。路径为空保留现值不覆盖
   if (existing) {
+    if (boundKey) {
+      const cwd = terminalStore.getSessionCwd(boundKey)
+      if (cwd) sftpRemotePaths.value[existing.id] = cwd
+    }
     activeId.value = existing.id
     return
   }
   const tab: WorkTab = { id: genTabId(), type: 'sftp', title: 'SFTP 文件传输' }
-  const boundKey = lastTerminalSession.value?.id
   sftpRemotePaths.value[tab.id] = boundKey ? terminalStore.getSessionCwd(boundKey) : ''
   tabs.value.push(tab)
   activeId.value = tab.id
@@ -2808,17 +2814,33 @@ const activeTerminalId = computed(() => {
   return tab?.type === 'terminal' && tab.sessionId ? tab.sessionId : null
 })
 
-/** 最近一个可作 SFTP 远程栏的终端会话（倒序找已连接的 SSH 终端；本地/Telnet/串口与
-    断开会话无 SFTP 能力排除——断开后自动回退到更早的已连接会话） */
+/** 最近一个可作 SFTP 远程栏的终端会话：优先当前活动终端 Tab（用户在哪个终端，快捷 SFTP 就绑定它，
+    其最新 cwd 即用户期望的远程栏初始目录），兜底倒序找已连接的 SSH 终端。
+    本地/Telnet/串口与断开会话无 SFTP 能力排除——断开后自动回退到更早的已连接会话。
+    修复：原实现仅按标签序取"最后打开的 SSH 终端"，对当前活动终端 cd 后点快捷 SFTP 会绑定到
+    其他标签的陈旧 cwd，导致目录对不上（快捷打开窗口与 SSH 所在目录不一致）。 */
 const lastTerminalSession = computed<{ id: string; name: string } | null>(() => {
-  const tabs = terminalStore.tabs
-  for (let i = tabs.length - 1; i >= 0; i--) {
-    const t = tabs[i]
-    const sid = t?.panes[0]?.sessionId
-    if (!sid || sid.startsWith('local-')) continue
+  const terminalOf = (t: {
+    title: string
+    panes?: { sessionId: string }[]
+  }): { id: string; name: string } | null => {
+    const sid = t?.panes?.[0]?.sessionId
+    if (!sid || sid.startsWith('local-')) return null
     if (terminalStore.isConnected(sid) && terminalStore.sessionTypeOf(sid) === 'ssh') {
       return { id: sid, name: t.title }
     }
+    return null
+  }
+  // 活动终端优先：当前正看着的终端 cwd 就是快捷 SFTP 应镜像的目录
+  const activeTab0 = activeTab.value
+  if (activeTab0?.type === 'terminal' && activeTab0.connId) {
+    const hit = terminalOf({ title: activeTab0.title, panes: [{ sessionId: activeTab0.connId }] })
+    if (hit) return hit
+  }
+  const tabs = terminalStore.tabs
+  for (let i = tabs.length - 1; i >= 0; i--) {
+    const hit = terminalOf(tabs[i])
+    if (hit) return hit
   }
   return null
 })

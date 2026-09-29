@@ -161,9 +161,12 @@ export const useTransferStore = defineStore('transfer', {
     /** 入队上传（进度经 api 层 Channel 实时回调 upsert） */
     async enqueueUpload(sessionId: string, localPath: string, remotePath: string): Promise<void> {
       // 入队返回后端生成的实时任务快照（含真实任务 id）立即入列；
-      // Channel 回调用 upsert 继续驱动进度，不再每次全量 refresh
+      // Channel 回调用 upsert 继续驱动进度；随后再拉一次权威快照对齐后端终态
+      //（实时推送偶发不可达时的兜底——小文件可能瞬间完成，队列 Tab 未打开时
+      //  事件/Channel 有丢失风险，主动 refresh 保证 UI 立即反映真实状态）
       const task = await sftpUpload(sessionId, localPath, remotePath, (t) => this.upsert(t))
       this.upsert(task)
+      await this.refresh()
     },
 
     /** 入队下载（同上传） */
@@ -174,6 +177,7 @@ export const useTransferStore = defineStore('transfer', {
     ): Promise<void> {
       const task = await sftpDownload(sessionId, remotePath, localPath, (t) => this.upsert(t))
       this.upsert(task)
+      await this.refresh()
     },
 
     /** 取消任务（乐观更新状态，最终以后端广播为准） */

@@ -113,13 +113,27 @@ const refreshing = ref(false)
 const cancelError = ref('')
 const cancelSnackbar = ref(false)
 
+/**
+ * 活跃任务期间定时对齐后端权威快照（1.5s），作为实时推送不可达的兜底：
+ * 内存/事件链路偶发丢失时（实测存在「后端已完成、UI 仍显示排队中」），
+ * 仅靠打开时的一次 refresh 无法自愈，轻量轮询保证队列始终反映后端真实状态。
+ */
+let syncTimer: number | undefined
+
 onMounted(() => {
   void store.start()
   void store.refresh()
+  syncTimer = window.setInterval(() => {
+    // 仅当存在进行中（含排队）任务才刷新，避免常驻空转
+    if (store.activeCount > 0) void store.refresh()
+  }, 1500)
 })
 
 // transfer-status 监听在组件卸载时 unlisten（store 内引用计数）
-onUnmounted(() => store.stop())
+onUnmounted(() => {
+  store.stop()
+  if (syncTimer !== undefined) window.clearInterval(syncTimer)
+})
 
 function displayName(task: TransferTask): string {
   return task.kind === 'Upload' ? baseName(task.local_path) : baseName(task.remote_path)

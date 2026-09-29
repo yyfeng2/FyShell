@@ -19,6 +19,11 @@ use crate::state::AppState;
 /// 进度推送节流间隔：AppState 每批都更新，emit / Channel 按间隔节流（事件仅低频状态）
 const EMIT_INTERVAL: Duration = Duration::from_millis(100);
 
+/// 单个传输任务整体超时兜底：底层 open_sftp / 读写在对端断连、通道异常等场景
+/// 可能无限挂起（此前无任何超时，任务会永久停在 Running/Queued——即「上传卡住」
+/// 的后端根因）。超时后任务归 Failed 并携带明确错误信息，前端不再无限等待。
+const TRANSPORT_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// 取消标记信息（终态 error 字段用）
 const CANCELLED_MSG: &str = "传输已取消";
 
@@ -152,10 +157,24 @@ async fn run_task(app: AppHandle, task_id: String) {
 
     let result = match kind {
         TransferKind::Upload => {
-            sftp::upload_file(&state, &session_id, &local_path, &remote_path, &mut progress).await
+            timeout_transport(sftp::upload_file(
+                &state,
+                &session_id,
+                &local_path,
+                &remote_path,
+                &mut progress,
+            ))
+            .await
         }
         TransferKind::Download => {
-            sftp::download_file(&state, &session_id, &remote_path, &local_path, &mut progress).await
+            timeout_transport(sftp::download_file(
+                &state,
+                &session_id,
+                &remote_path,
+                &local_path,
+                &mut progress,
+            ))
+            .await
         }
     };
 
@@ -181,6 +200,20 @@ async fn run_task(app: AppHandle, task_id: String) {
         broadcast(&app, &task);
     }
     cleanup(&state, &task_id);
+}
+
+/// 包一层整体传输超时：底层挂起（对端断连/通道异常等）超过限时即失败返回，
+/// 避免任务无限期停留在 Running/Queued（上传卡住整治）。内部错误原样透传。
+async fn timeout_transport(
+    fut: impl std::future::Future<Output = Result<(), AppError>>,
+) -> Result<(), AppError> {
+    match tokio::time::timeout(TRANSPORT_TIMEOUT, fut).await {
+        Err(_) => Err(AppError::general(format!(
+            "传输超时（超过 {} 秒无进展），任务已中止",
+            TRANSPORT_TIMEOUT.as_secs()
+        ))),
+        Ok(r) => r,
+    }
 }
 
 /// 任务是否已被取消
