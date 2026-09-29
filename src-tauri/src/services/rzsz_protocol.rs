@@ -177,36 +177,37 @@ const ZRUB0: u8 = 0x6c;
 /// ZRUB1 序列（ZDLE 'm'）：数据位置表达 0xff
 const ZRUB1: u8 = 0x6d;
 
-/// 需要 ZDLE 转义的字节集（lrzsz 约定）：CR、DLE、XON、XOFF、ZDLE 本身，
-/// 以及 0x7f/0xff（经 ZRUB0/ZRUB1 序列表达，其余字节原样上线）。
+/// 需要 ZDLE 转义的字节集（lrzsz zsendline_tab 约定，turbo_escape=0）：
+/// CR、^P、XON、XOFF、ZDLE 本身及 XON|0x80（0x91）、XOFF|0x80（0x93）。
+/// 注意 0x7f/0xff 不转义（lrz 的 zdlread 快速路径原样放行；且其 XOR 0x40
+/// 结果 0x3f/0xbf 不在可解区间 0x40-0x5F/0xC0-0xDF，转义反而致对端
+/// Bad escape sequence）；0x91/0x93 必须转义（lrz 的 zdlread2 无条件把
+/// 这四个流控变体当 XON/XOFF 跳过，原样上线会被对端吃掉致 CRC 错位）。
 fn needs_escape(b: u8) -> bool {
-    matches!(b, 0x0d | 0x10 | 0x11 | 0x13 | 0x18 | 0x7f | 0xff)
+    matches!(b, 0x0d | 0x10 | 0x11 | 0x13 | 0x18 | 0x91 | 0x93)
 }
 
 /// 将 data 按 ZDLE 转义规则追加到 out：转义字节前缀 ZDLE，随字节与 0x40
-/// 异或（0x7f/0xff 走 ZRUB0/ZRUB1 序列）。
+/// 异或（仅 (b & 0x60)==0 的字节参与，转义后落在 0x40-0x5F/0xC0-0xDF 可解区间）。
 fn zdle_escape(out: &mut Vec<u8>, data: &[u8]) {
     for &b in data {
         if needs_escape(b) {
             out.push(ZDLE);
-            out.push(match b {
-                0x7f => ZRUB0,
-                0xff => ZRUB1,
-                other => other ^ 0x40,
-            });
+            out.push(b ^ 0x40);
         } else {
             out.push(b);
         }
     }
 }
 
-/// ZDLE 后字节的还原：0x40..0x5f 区间 XOR 0x40 还原控制字符，
+/// ZDLE 后字节的还原：可解区间（(b & 0x60)==0x40，即 0x40-0x5F 与
+/// 0xC0-0xDF）XOR 0x40 还原原字节（lrzsz 转义 0x80-0x9F 后落在 0xC0-0xDF），
 /// ZRUB0/ZRUB1 还原 0x7f/0xff，其余原样。
 fn zdle_unescape(b: u8) -> u8 {
     match b {
         ZRUB0 => 0x7f,
         ZRUB1 => 0xff,
-        0x40..=0x5f => b ^ 0x40,
+        b if (b & 0x60) == 0x40 => b ^ 0x40,
         other => other,
     }
 }

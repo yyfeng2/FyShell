@@ -277,13 +277,13 @@ fn run(
         }
         RzszChoice::Cancel => {
             // 用户取消：发中止序列，避免远端 sz/rz 继续重试刷出乱码
-            write_to_wire(&write_tx, &CAN_ABORT);
+            let _ = write_to_wire(&write_tx, &CAN_ABORT, &respond_rx);
             Ok(())
         }
     };
     // 失败路径补发中止序列，避免远端 sz/rz 继续重试刷出乱码
     if result.is_err() {
-        write_to_wire(&write_tx, &CAN_ABORT);
+        let _ = write_to_wire(&write_tx, &CAN_ABORT, &respond_rx);
     }
 
     // 终态：移除条目（读循环恢复常规转发）+ emit rzsz-end
@@ -322,7 +322,7 @@ fn run_recv(
         match receiver.poll() {
             Action::WriteWire(bytes) => {
                 let n = bytes.len();
-                write_to_wire(write_tx, bytes);
+                write_to_wire(write_tx, bytes, respond_rx)?;
                 receiver.wire_written(n);
             }
             _ => break,
@@ -364,7 +364,7 @@ fn run_recv(
             match receiver.poll() {
                 Action::WriteWire(bytes) => {
                     let n = bytes.len();
-                    write_to_wire(write_tx, bytes);
+                    write_to_wire(write_tx, bytes, respond_rx)?;
                     receiver.wire_written(n);
                 }
                 Action::Event(Event::FileStarted(info)) => {
@@ -417,7 +417,7 @@ fn run_recv(
                             match receiver.poll() {
                                 Action::WriteWire(bytes) => {
                                     let n = bytes.len();
-                                    write_to_wire(write_tx, bytes);
+                                    write_to_wire(write_tx, bytes, respond_rx)?;
                                     receiver.wire_written(n);
                                 }
                                 _ => break,
@@ -538,7 +538,7 @@ fn run_send(
         match sender.poll() {
             Action::WriteWire(bytes) => {
                 let n = bytes.len();
-                write_to_wire(write_tx, bytes);
+                write_to_wire(write_tx, bytes, respond_rx)?;
                 sender.wire_written(n);
             }
             _ => break,
@@ -598,7 +598,7 @@ fn run_send(
             match sender.poll() {
                 Action::WriteWire(bytes) => {
                     let n = bytes.len();
-                    write_to_wire(write_tx, bytes);
+                    write_to_wire(write_tx, bytes, respond_rx)?;
                     sender.wire_written(n);
                 }
                 Action::ReadFile { offset, max_len } => {
@@ -647,7 +647,7 @@ fn run_send(
                             match sender.poll() {
                                 Action::WriteWire(bytes) => {
                                     let n = bytes.len();
-                                    write_to_wire(write_tx, bytes);
+                                    write_to_wire(write_tx, bytes, respond_rx)?;
                                     sender.wire_written(n);
                                 }
                                 _ => break,
@@ -758,22 +758,33 @@ fn wait_pipe(pipe_rx: &std::sync::mpsc::Receiver<Vec<u8>>) -> PipeWait {
 }
 
 /// 经既有写转发路径回传协议字节（与键盘输入同路）。
-/// 有界通道满（下游写入积压）时丢弃本批并告警——阻塞线程无法 async 等待，
-/// 丢弃后由 rz/sz 重传/超时机制重发对齐，避免无界积压导致内存膨胀。
+/// 可靠投递：有界通道满（下游 SSH 写积压、窗口暂停）时轮询等待而非丢弃——
+/// rz/sz 数据段无重传，静默丢弃 = 上传静默损坏/远端挂起（"rz 无法上传" 的确定性
+/// 根因，与键盘输入「满了可丢、下一批自适应」的语义不同）。写阻塞由 spawn_blocking
+/// 承载（阻塞线程无法 async 等待），等待期间轮询感知用户取消（respond_rx）——
+/// persistent 对话框挡住终端时取消必须旁路可中断。仅当写通道关闭（会话断开）时
+/// 返回错误，交由调用方按断开路径处理。
 fn write_to_wire(
     write_tx: &tokio::sync::mpsc::Sender<crate::services::ssh::SshWriteMsg>,
     bytes: &[u8],
-) {
+    respond_rx: &std::sync::mpsc::Receiver<RzszChoice>,
+) -> Result<(), String> {
     diag(&format!(">> wire: {} [{}]", bytes.len(), hex_head(bytes, 16)));
-    match write_tx.try_send(crate::services::ssh::SshWriteMsg::Data(bytes.to_vec())) {
-        Ok(()) => {}
-        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
-            eprintln!(
-                "[rzsz] 写缓冲已满：{} 字节协议数据被丢弃（等待对端重传）",
-                bytes.len()
-            );
+    let mut msg = crate::services::ssh::SshWriteMsg::Data(bytes.to_vec());
+    loop {
+        match write_tx.try_send(msg) {
+            Ok(()) => return Ok(()),
+            Err(tokio::sync::mpsc::error::TrySendError::Full(back)) => {
+                // 下游积压：短暂让出后重试投递；等待期间接受用户取消中止
+                msg = back;
+                if matches!(respond_rx.try_recv(), Ok(RzszChoice::Cancel)) {
+                    return Err("rz/sz 传输已取消".into());
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            // 写通道已关闭（会话断开）：无法投递，交由调用方按断开路径处理
+            Err(_) => return Err("会话已断开".into()),
         }
-        Err(_) => {}
     }
 }
 
