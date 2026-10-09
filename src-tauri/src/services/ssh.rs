@@ -851,13 +851,15 @@ async fn run_login_script(
 
 /// OSC 7 目录跟踪注入：shell 就绪后发送**三条**命令（PTY 输入回显边收边显、
 /// bash 按行执行，`stty -echo` 与注入若同一行则藏不住该行自身——故分三行）：
-/// ① `HIDE`：关闭输入回显，并用 `printf "\033[2K\r"`（清当前行+回行首）清掉
-///    自己的回显文本（闪过即净）；② `INJECT`：一次性上报当前路径（立即让快捷
-///    SFTP 拿到初始目录）+ 安装 `PROMPT_COMMAND` 使此后每个提示符前自动上报
-///    （目录跟踪持续生效）——此时 echo 已关，完全不可见；③ `RESTORE`：恢复回显
-///    （echo 关闭态输入仍不可见）。整体对用户无痕，终端直接回到干净提示符
-///    （用户反馈：裸跑两行长命令太难看）。远端无 `stty` 时 `2>/dev/null` 静默退化
-///    （注入照常执行，仅可见），语义不受损。
+/// ① `HIDE`：**先在 echo 未关、readline 正常态下**清掉本行（`\033[2K\r`），随后
+///    才 `stty -echo` 进入 noecho 窗口——清行发生在正常态，避免 noecho 窗口内
+///    清行与 bash 提示符渲染的时序竞态（xterm 残留提示符前伪影绿点，v0.2.1 实测）；
+/// ② `INJECT`：一次性上报当前路径（立即让快捷 SFTP 拿到初始目录）+ 安装
+///    `PROMPT_COMMAND` 使此后每个提示符前自动上报（目录跟踪持续生效）——
+///    此时 echo 已关，完全不可见；③ `RESTORE`：恢复回显并补 `\r` 让 readline
+///    刷新行首（防残留伪影）。整体对用户无痕（HIDE 行闪现即净），终端干净回到
+///    提示符（用户反馈：裸跑两行长命令太难看）。远端无 `stty` 时 `2>/dev/null`
+///    静默退化（注入照常执行，仅可见），语义不受损。
 ///
 /// ⚠️ 头号红线：字节必须**逐字发送**（`\033`/`\\`/`${PWD}` 均为可见文本），
 /// 绝不发送"已含真实 ESC(0x1b) 的渲染后命令行"——否则命令回显文本里的
@@ -866,11 +868,11 @@ async fn run_login_script(
 /// printf 求值输出真实 ESC 序列（`\033`→ESC、`\\`→`\`）。
 /// 每条末尾显式补 `\r` 提交执行（登录脚本不补，此处注入必须补，否则命令不执行）。
 async fn run_osc7_inject(key: String, write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>) {
-    const HIDE: &str = r#"stty -echo 2>/dev/null; printf "\033[2K\r""#;
+    const HIDE: &str = r#"printf "\033[2K\r"; stty -echo 2>/dev/null"#;
     const INJECT: &str = r#"printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\"; export PROMPT_COMMAND='printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\"'"#;
-    const RESTORE: &str = r#"stty echo 2>/dev/null"#;
+    const RESTORE: &str = r#"stty echo 2>/dev/null; printf "\r""#;
     let lines = [HIDE, INJECT, RESTORE];
-    let delays = [600u64, 200, 150];
+    let delays = [600u64, 200, 200];
     for (idx, cmd) in lines.iter().enumerate() {
         // 首条延迟 600ms 等 shell 就绪（PTY 行缓冲不会丢输入）；后续短间隔
         tokio::time::sleep(Duration::from_millis(delays[idx])).await;
@@ -880,7 +882,7 @@ async fn run_osc7_inject(key: String, write_tx: tokio::sync::mpsc::Sender<SshWri
             return; // 会话已关闭，注入中止
         }
     }
-    ssh_trace!("[ssh] {key} osc7 inject done (silent 3-line)");
+    ssh_trace!("[ssh] {key} osc7 inject done (silent 3-line v0.2.2)");
 }
 
 /// 断开并清理会话：从 ssh_sessions 移除句柄（触发连接关闭），
