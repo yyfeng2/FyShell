@@ -133,6 +133,8 @@ defineExpose({
   pasteFromClipboard: () => xterm.pasteFromClipboard(),
   /** 全选缓冲区文本 */
   selectAll: () => xterm.selectAllText(),
+  /** 解析最后一条提示符中的绝对路径（SFTP 快捷双栏初始目录跟随；只读缓冲零注入） */
+  readPromptCwd: () => xterm.readPromptCwd(),
   /** 终端获得焦点（Tab 激活/新开时由 WorkspaceView 调用，含复制会话后自动聚焦） */
   focus: () => xterm.focus(),
 })

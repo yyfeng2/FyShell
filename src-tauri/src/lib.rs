@@ -63,6 +63,7 @@ fn specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             commands::ssh::ssh_disconnect,
             commands::ssh::ssh_write,
             commands::ssh::ssh_resize,
+            commands::ssh::ssh_query_cwd,
             commands::ssh::ssh_hostkey_accept,
             commands::ssh::rzsz_respond,
             // 前端诊断日志（临时调试用）
@@ -274,6 +275,7 @@ pub fn run() {
             commands::ssh::ssh_disconnect,
             commands::ssh::ssh_write,
             commands::ssh::ssh_resize,
+            commands::ssh::ssh_query_cwd,
             commands::ssh::ssh_hostkey_accept,
             commands::ssh::rzsz_respond,
             // 前端诊断日志（临时调试用）

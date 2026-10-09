@@ -2118,38 +2118,50 @@ function openTransferTab(): void {
   activeId.value = tab.id
 }
 
+/** 定位会话键对应的终端窗格实例（找不到返回 null）：
+    工作台 WorkTab 的 connId 即终端会话 connKey，paneRefs 按 WorkTab id 存实例 */
+function paneForSessionKey(key: string): InstanceType<typeof TerminalPane> | null {
+  for (const t of tabs.value) {
+    if (t.type === 'terminal' && t.connId === key) {
+      return paneRefs.get(t.id) ?? null
+    }
+  }
+  return null
+}
+
+/**
+ * 解析绑定终端会话的初始远程路径（三级回退，全部零注入、零闪现）：
+ *   ① store 里 OSC 7 实时 cwd（shell 自上报主机，如 iask.in，已实时跟随 cd）
+ *   ② 终端缓冲末条提示符解析的绝对路径（bash 提示符含当前目录 → 跟随 cd，如 root@host:/tmp# → /tmp）
+ *   ③ 控制通道 `ssh_query_cwd` 独立 channel 执行 `pwd`（只能拿到登录目录，如 /root）
+ * 全部失败返回空串，DualPane 按内部默认（/）兜底。
+ */
+async function resolveBoundCwd(boundKey: string): Promise<string> {
+  const fromStore = terminalStore.getSessionCwd(boundKey)
+  if (fromStore) return fromStore
+  const fromPrompt = paneForSessionKey(boundKey)?.readPromptCwd() ?? ''
+  if (fromPrompt) return fromPrompt
+  return (await terminalStore.refreshSessionCwd(boundKey)) ?? ''
+}
+
 /** 打开 SFTP 双栏 Tab（单例，P0）：本地/远程双栏文件传输（绑定最近终端会话，独立 SFTP 会话 Tab 不参与单例判定）。
-    远程栏初始路径 = 绑定 SSH 终端的实时 cwd（终端 OSC 7 追踪，无记录则留空走 DualPane 内部默认） */
-function openSftpTab(): void {
+    远程栏初始路径 = 绑定 SSH 终端的当前 cwd（v0.2.3 重设计：彻底放弃带内注入——PTY 回显必然闪现；
+    改为 提示符解析（跟随 cd）+ OSC 7（shell 自上报）+ 控制通道 `pwd`（登录目录兜底）三级零注入方案） */
+async function openSftpTab(): Promise<void> {
   const existing = tabs.value.find((t) => t.type === 'sftp' && !t.sessionId)
   const boundKey = lastTerminalSession.value?.id
-  // 单例命中：重新同步绑定终端最新 cwd 再激活（终端可能已 cd 别处；原实现只激活不更新，
-  // 是"快捷打开窗口依然没和 ssh 所在目录一致"的主要复现路径）。路径为空保留现值不覆盖
+  // 单例命中：重新同步绑定终端最新 cwd 再激活（终端可能已 cd 别处；路径为空保留现值不覆盖）
   if (existing) {
     if (boundKey) {
-      const cwd = terminalStore.getSessionCwd(boundKey)
+      const cwd = await resolveBoundCwd(boundKey)
       if (cwd) sftpRemotePaths.value[existing.id] = cwd
     }
     activeId.value = existing.id
     return
   }
   const tab: WorkTab = { id: genTabId(), type: 'sftp', title: 'SFTP 文件传输' }
-  sftpRemotePaths.value[tab.id] = boundKey ? terminalStore.getSessionCwd(boundKey) : ''
-  // 迟到 cwd 兜底：初始 cwd 为空（终端尚无 OSC 7 上报，如刚换主机的会话）时，
-  // 挂一次性 watcher 等 sessionCwd 到位——注入的 PROMPT_COMMAND 会在首个提示符前上报；
-  // 5s 未到位即放弃，保持 DualPane 内部 '/' 兜底。
-  if (boundKey && !sftpRemotePaths.value[tab.id]) {
-    const stop = watch(
-      () => terminalStore.getSessionCwd(boundKey),
-      (cwd) => {
-        if (cwd) {
-          sftpRemotePaths.value[tab.id] = cwd
-          stop()
-        }
-      },
-    )
-    setTimeout(() => stop(), 5000)
-  }
+  // 解析绑定终端 cwd（一次查询后挂载，路径即初始正确值；失败空串走 DualPane 内部默认）
+  sftpRemotePaths.value[tab.id] = boundKey ? await resolveBoundCwd(boundKey) : ''
   tabs.value.push(tab)
   activeId.value = tab.id
 }

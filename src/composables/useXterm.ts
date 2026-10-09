@@ -97,6 +97,17 @@ const FONT_WEIGHT_MAP = {
   italic: 'normal',
 } as const
 
+/**
+ * 提示符中的绝对路径匹配（readPromptCwd 用）。
+ * 锚定行尾的提示符标记（#/$/%/> 允许尾随空白），取紧邻标记前、以 / 开头的段：
+ *   `root@host:/tmp#`     → 捕获 /tmp
+ *   `[root@host /opt]$`   → 捕获 /opt
+ *   `(venv)user@host:/srv/app$` → 捕获 /srv/app
+ * 排除：`~`（相对 $HOME，非绝对）、含空白的段、以及标记前是文件名输出等非路径形态。
+ */
+const PROMPT_PATH_RE =
+  /(?:^|:\s*|\[\s*|\s|\()(\/[\w.@/+:-]+?)(?:[\]\)])?[#$%>]\s*$/
+
 export function useXterm(options: UseXtermOptions = {}) {
   const containerRef: Ref<HTMLElement | null> = ref(null)
 
@@ -948,6 +959,35 @@ export function useXterm(options: UseXtermOptions = {}) {
   // 在组合式函数作用域结束时自动清理（兜底，组件内仍建议显式调用）
   onScopeDispose(dispose)
 
+  /**
+   * 从终端缓冲解析最后一条 shell 提示符中的绝对路径（SFTP 快捷双栏初始目录跟随 cd 用）。
+   * 只读 xterm 已有渲染内容、零注入——不发送任何字节到远端。
+   * 常见提示符形态：`root@host:/tmp#`、`[root@host /opt/proj]$`、`user@host:~/x$`（~ 非绝对路径 → 返回 null，回退登录目录）。
+   * 找不到（提示符不含绝对路径 / 纯符号提示符 / 无匹配）返回 null，由调用方回退控制通道 `pwd`。
+   */
+  function readPromptCwd(): string | null {
+    if (!term) return null
+    const buf = term.buffer.active
+    // 从缓冲末尾向上扫描：shell 等待输入时当前提示符即最后一行；长命令输出走上方，
+    // 逐行向上取首个匹配即接近光标，误中历史输出的概率被多重排除（见下）
+    const scanFrom = Math.max(0, buf.length - 200)
+    for (let i = buf.length - 1; i >= scanFrom; i--) {
+      const line = buf.getLine(i)
+      // 折行续行是上一行的物理碎片，单独匹配会截断路径，跳过
+      if (!line || line.isWrapped) continue
+      const text = line.translateToString(true).trim()
+      if (!text) continue
+      const m = text.match(PROMPT_PATH_RE)
+      if (!m) continue
+      const p = m[1]
+      if (!p) continue
+      // 末端去除多级斜杠（如 /tmp/ 归一 /tmp；纯 / 保持根目录）
+      const norm = p.replace(/\/+$/, '')
+      return norm === '' ? '/' : norm
+    }
+    return null
+  }
+
   return {
     /** 终端容器 ref，模板上绑定到根元素 */
     containerRef,
@@ -963,6 +1003,8 @@ export function useXterm(options: UseXtermOptions = {}) {
     pasteFromClipboard,
     /** 全选缓冲区文本（菜单「编辑 → 全选」入口） */
     selectAllText,
+    /** 解析最后一条提示符中的绝对路径（SFTP 初始目录跟随 cd；只读缓冲零注入，无匹配返回 null） */
+    readPromptCwd,
     /** 终端获得焦点（Tab 激活/新开时由工作台调用） */
     focus,
     /** 切换会话编码 */

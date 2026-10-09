@@ -62,6 +62,15 @@ export function sshResize(
   return invoke<void>('ssh_resize', { id, cols, rows });
 }
 
+/**
+ * 控制通道查询会话当前 cwd（SFTP 快捷双栏远程栏初始路径）。
+ * 重设计：后端在 SSH 连接上另开独立 channel 执行 `pwd`，终端通道零字节写入，
+ * 不再注入任何命令（带内 OSC7 注入已废除——PTY 回显必然闪现）。
+ */
+export function sshQueryCwd(id: string): Promise<string> {
+  return invoke<string>('ssh_query_cwd', { id });
+}
+
 /** HostKey 确认结果回传（收到 hostkey-prompt 事件后由前端调用） */
 export function sshHostkeyAccept(id: string, accept: boolean): Promise<void> {
   return invoke<void>('ssh_hostkey_accept', { id, accept });

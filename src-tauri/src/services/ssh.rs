@@ -110,6 +110,37 @@ impl SshSessionHandle {
             .map_err(|e| AppError::Ssh(format!("初始化 SFTP 会话失败: {e}")))
     }
 
+    /// 控制通道查询远端 cwd（SFTP 快捷双栏远程栏初始路径）。
+    /// 重设计（v0.2.3 定稿版）：不再向终端注入 OSC 7 命令——带内注入必然经过
+    /// 「PTY 回显 → bash 逐行执行 → 事后清除」一个来回，HIDE 回显行要等执行完
+    /// 才被清掉，肉眼可见闪现（用户实测否决）。改为在本 SSH 连接上另开独立
+    /// channel 执行 `pwd`：控制通道不分配 PTY、终端通道零字节写入，物理上
+    /// 不可能污染/闪现屏幕；且任意远端 shell（bash/zsh/sh/fish 均有 pwd）通用。
+    /// 返回远端路径文本（已去空白）；失败（远端无 pwd/会话断开）→ Err，
+    /// 前端回退 DualPane 内部默认路径。
+    pub async fn query_cwd(&self) -> Result<String, AppError> {
+        let channel = self
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|e| AppError::Ssh(format!("打开 cwd 查询通道失败: {e}")))?;
+        channel
+            .exec(true, "pwd")
+            .await
+            .map_err(|e| AppError::Ssh(format!("执行 cwd 查询命令失败: {e}")))?;
+        let (mut read_half, _write_half) = channel.split();
+        let mut buf: Vec<u8> = Vec::with_capacity(64);
+        loop {
+            match read_half.wait().await {
+                Some(ChannelMsg::Data { data }) => buf.extend_from_slice(&data),
+                Some(ChannelMsg::ExtendedData { data, .. }) => buf.extend_from_slice(&data),
+                Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                Some(_) => {}
+            }
+        }
+        Ok(String::from_utf8_lossy(&buf).trim().to_string())
+    }
+
     /// 开通 direct-tcpip 通道（P1：供 SSH 隧道本地/SOCKS5 转发使用）。
     /// 返回的 Channel 经 `into_stream()` 转为流后双向转发。
     pub async fn open_direct_tcpip(
@@ -756,14 +787,6 @@ async fn connect_impl(
         }
     }
 
-    // OSC 7 目录跟踪注入（SSH 选项逃生门 sshopt_osc7_inject，默认开启，无 UI）：
-    // 让远端每次提示符前上报 cwd（`ESC]7;file://host/path`），供前端「SFTP 快捷双栏」
-    // 初始化远程栏路径。多数 Linux 远端 bash 默认不主动发 OSC 7——此前换主机后 SFTP
-    // 拿不到目录落到根目录；本注入让目录跟踪持续生效（Xshell/MobaXterm 同类做法）。
-    if settings_flag("sshopt_osc7_inject", true) {
-        tauri::async_runtime::spawn(run_osc7_inject(key.to_string(), write_tx.clone()));
-    }
-
     // 注册会话句柄（断开时清理）；Handle 用 Arc 包裹以便跨 await 共享
     let handle = Arc::new(handle);
     state.ssh_sessions.lock().map_err(lock_err)?.insert(
@@ -849,42 +872,6 @@ async fn run_login_script(
     ssh_trace!("[ssh] {key} login script done ({total} lines)");
 }
 
-/// OSC 7 目录跟踪注入：shell 就绪后发送**三条**命令（PTY 输入回显边收边显、
-/// bash 按行执行，`stty -echo` 与注入若同一行则藏不住该行自身——故分三行）：
-/// ① `HIDE`：**先在 echo 未关、readline 正常态下**清掉本行（`\033[2K\r`），随后
-///    才 `stty -echo` 进入 noecho 窗口——清行发生在正常态，避免 noecho 窗口内
-///    清行与 bash 提示符渲染的时序竞态（xterm 残留提示符前伪影绿点，v0.2.1 实测）；
-/// ② `INJECT`：一次性上报当前路径（立即让快捷 SFTP 拿到初始目录）+ 安装
-///    `PROMPT_COMMAND` 使此后每个提示符前自动上报（目录跟踪持续生效）——
-///    此时 echo 已关，完全不可见；③ `RESTORE`：恢复回显并补 `\r` 让 readline
-///    刷新行首（防残留伪影）。整体对用户无痕（HIDE 行闪现即净），终端干净回到
-///    提示符（用户反馈：裸跑两行长命令太难看）。远端无 `stty` 时 `2>/dev/null`
-///    静默退化（注入照常执行，仅可见），语义不受损。
-///
-/// ⚠️ 头号红线：字节必须**逐字发送**（`\033`/`\\`/`${PWD}` 均为可见文本），
-/// 绝不发送"已含真实 ESC(0x1b) 的渲染后命令行"——否则命令回显文本里的
-/// `]7;file://...` 会被前端 `checkOsc7Cwd` 误判为 cwd，产生垃圾路径污染
-/// sessionCwd（SFTP 落到不存在目录）。字面反斜杠经 bash 双引号解析后由
-/// printf 求值输出真实 ESC 序列（`\033`→ESC、`\\`→`\`）。
-/// 每条末尾显式补 `\r` 提交执行（登录脚本不补，此处注入必须补，否则命令不执行）。
-async fn run_osc7_inject(key: String, write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>) {
-    const HIDE: &str = r#"printf "\033[2K\r"; stty -echo 2>/dev/null"#;
-    const INJECT: &str = r#"printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\"; export PROMPT_COMMAND='printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\"'"#;
-    const RESTORE: &str = r#"stty echo 2>/dev/null; printf "\r""#;
-    let lines = [HIDE, INJECT, RESTORE];
-    let delays = [600u64, 200, 200];
-    for (idx, cmd) in lines.iter().enumerate() {
-        // 首条延迟 600ms 等 shell 就绪（PTY 行缓冲不会丢输入）；后续短间隔
-        tokio::time::sleep(Duration::from_millis(delays[idx])).await;
-        let mut line = cmd.as_bytes().to_vec();
-        line.push(b'\r');
-        if write_tx.send(SshWriteMsg::Data(line)).await.is_err() {
-            return; // 会话已关闭，注入中止
-        }
-    }
-    ssh_trace!("[ssh] {key} osc7 inject done (silent 3-line v0.2.2)");
-}
-
 /// 断开并清理会话：从 ssh_sessions 移除句柄（触发连接关闭），
 /// 同时清理可能挂起的 HostKey 确认与残留 oneshot。
 pub fn disconnect(state: &AppState, app: &tauri::AppHandle, id: &str) {
@@ -933,4 +920,19 @@ pub fn resize(state: &AppState, id: &str, cols: u32, rows: u32) -> Result<(), Ap
         .get(id)
         .ok_or_else(|| AppError::Ssh(format!("会话 {id} 不存在或已断开")))?;
     handle.send_resize(cols, rows)
+}
+
+/// 控制通道查询会话当前 cwd（SFTP 快捷双栏远程栏初始路径）。
+/// 按会话路由键查询（与 write/resize 同键）；失败回退前端 DualPane 默认。
+pub async fn query_cwd(state: &AppState, id: &str) -> Result<String, AppError> {
+    // 锁内仅取句柄 clone（SshSessionHandle 内部 Arc），MutexGuard 不得跨 await
+    // 持有（std MutexGuard 非 Send，跨 await 会使返回的 future 无法跨线程发送）
+    let handle = {
+        let sessions = state.ssh_sessions.lock().map_err(lock_err)?;
+        sessions
+            .get(id)
+            .ok_or_else(|| AppError::Ssh(format!("会话 {id} 不存在或已断开")))?
+            .clone()
+    };
+    handle.query_cwd().await
 }

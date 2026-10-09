@@ -56,6 +56,15 @@ pub fn ssh_resize(
     ssh::resize(state.inner(), &id, cols, rows)
 }
 
+/// 控制通道查询会话当前 cwd（SFTP 快捷双栏远程栏初始路径）。
+/// 重设计：在 SSH 连接上另开独立 channel 执行 `pwd`，终端通道零字节写入，
+/// 不注入任何命令 → 终端物理上不可能闪现注入内容（带内 OSC7 注入已废除）。
+#[tauri::command]
+#[specta::specta]
+pub async fn ssh_query_cwd(id: String, state: State<'_, AppState>) -> Result<String, AppError> {
+    ssh::query_cwd(state.inner(), &id).await
+}
+
 /// HostKey 首次确认：前端确认后取出 AppState::pending_hostkey 中的
 /// oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
 #[tauri::command]

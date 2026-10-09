@@ -37,6 +37,12 @@ export const commands = {
 	/**  终端尺寸变更（按会话 ID 路由 resize） */
 	sshResize: (id: string, cols: number, rows: number) => __TAURI_INVOKE<null>("ssh_resize", { id, cols, rows }),
 	/**
+	 *  控制通道查询会话当前 cwd（SFTP 快捷双栏远程栏初始路径）。
+	 *  重设计：在 SSH 连接上另开独立 channel 执行 `pwd`，终端通道零字节写入，
+	 *  不注入任何命令 → 终端物理上不可能闪现注入内容（带内 OSC7 注入已废除）。
+	 */
+	sshQueryCwd: (id: string) => __TAURI_INVOKE<string>("ssh_query_cwd", { id }),
+	/**
 	 *  HostKey 首次确认：前端确认后取出 AppState::pending_hostkey 中的
 	 *  oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
 	 */

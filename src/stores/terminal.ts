@@ -17,6 +17,7 @@ import {
   sshDisconnect,
   sshResize,
   sshWrite,
+  sshQueryCwd,
   listenSessionStatus,
 } from '@/api/ssh'
 import { localShellConnect, localShellDisconnect, localShellResize, localShellWrite } from '@/api/localShell'
@@ -219,6 +220,24 @@ export const useTerminalStore = defineStore('terminal', () => {
   /** 取会话最新 cwd（无记录返回空串，调用方按内部默认路径退避） */
   function getSessionCwd(sessionId: string): string {
     return sessionCwd.value[sessionId] ?? ''
+  }
+
+  /**
+   * 控制通道查询会话当前 cwd 并写入 store（SFTP 快捷双栏远程栏兜底路径）。
+   * 三级零注入方案的第三级（前两级：OSC 7 shell 自上报实时路径 + 终端提示符解析）：
+   * 后端另开独立 SSH channel 执行 `pwd`，返回的是登录目录（新 shell 从 $HOME 启动，
+   * 读不到交互 shell 里 cd 之后的目录），null 或缺省取该值兜底；终端通道零字节写入，
+   * 物理上不可能闪现注入内容。查询失败返回空串，调用方按内部默认路径退避。
+   */
+  async function refreshSessionCwd(sessionId: string): Promise<string> {
+    let cwd = ''
+    try {
+      cwd = (await sshQueryCwd(sessionId)) ?? ''
+    } catch {
+      cwd = '' // 查询失败回退，保持 '/' 默认
+    }
+    if (cwd) sessionCwd.value[sessionId] = cwd
+    return cwd
   }
 
   /**
@@ -471,6 +490,7 @@ export const useTerminalStore = defineStore('terminal', () => {
     isConnected,
     sessionTypeOf,
     getSessionCwd,
+    refreshSessionCwd,
     // 动作
     openTerminal,
     connectSession,
