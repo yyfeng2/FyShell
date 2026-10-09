@@ -18,3 +18,6 @@ signing/*.key
 # 本地会话/工具产物（不入库）
 .claude/
 .codegraph/
+
+# 设计稿投放目录（源资产已入库 branding/，此目录仅本地留存）
+图标目录/
