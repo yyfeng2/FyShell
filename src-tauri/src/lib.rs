@@ -4,6 +4,7 @@ mod commands;
 mod error;
 mod models;
 mod services;
+mod single_instance;
 mod state;
 mod tray;
 
@@ -257,15 +258,6 @@ pub fn run() {
     export_ipc_bindings(&specta_builder());
 
     tauri::Builder::default()
-        // single-instance 必须最先注册：重复启动时唤起已有主窗口
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-            }
-        }))
-
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_autostart::Builder::new().build())
@@ -470,6 +462,9 @@ pub fn run() {
             crate::services::mysql_backup::init(&data_dir)?;
             // 应用设置（SQLite，同 fyshell.db 独立 Connection，settings 表）
             crate::services::settings_store::init(&data_dir)?;
+            // 单实例守卫：已读过设置（含多开开关）后尽早退出重复实例（唤起既有主窗口）；
+            // 未开多开时后续 SFTP/键位/保险库等初始化可少碰 SQLite
+            single_instance::guard(app.handle())?;
             // SFTP 收藏路径（SQLite，同 fyshell.db 独立 Connection，sftp_favorites 表）
             crate::services::sftp_store::init(&data_dir)?;
             // 键位映射（SQLite，同 fyshell.db 独立 Connection，key_mappings 表）
@@ -477,8 +472,10 @@ pub fn run() {
             // 凭据保险库（SQLite meta 表独立 Connection：解密 DEK 信封）
             crate::services::vault::init(&data_dir)?;
 
-            // 托盘：图标 + 菜单
-            tray::init(app.handle())?;
+            // 托盘：图标 + 菜单——仅「关闭到托盘」开启时创建（未开启不显示托盘图标，运行时随开关增减）
+            if crate::services::settings_store::get("tray_close_to_tray")?.as_deref() == Some("true") {
+                tray::ensure(app.handle())?;
+            }
 
             if let Some(window) = app.get_webview_window("main") {
                 // 关闭窗口时隐藏到托盘而非退出

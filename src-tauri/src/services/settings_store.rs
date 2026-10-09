@@ -28,6 +28,10 @@ pub fn init(app_data_dir: &Path) -> Result<(), AppError> {
     // 建库时自动创建目录
     std::fs::create_dir_all(app_data_dir)?;
     let conn = Connection::open(app_data_dir.join("fyshell.db"))?;
+    // 多实例并发硬化：WAL 允许读写并发（多连接同库），busy_timeout 让写冲突等待
+    // 而非立即 SQLITE_BUSY。默认单实例无并发，仅显式开启「允许多个客户端实例」时受益。
+    conn.pragma_update(None, "journal_mode", "WAL")?;
+    conn.pragma_update(None, "busy_timeout", 5_000)?;
     init_schema(&conn)?;
     // set 失败（并发重复初始化）时丢弃新连接即可，保持幂等语义
     let _ = CONN.set(Mutex::new(conn));

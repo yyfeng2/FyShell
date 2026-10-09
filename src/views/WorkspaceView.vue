@@ -2135,6 +2135,21 @@ function openSftpTab(): void {
   }
   const tab: WorkTab = { id: genTabId(), type: 'sftp', title: 'SFTP 文件传输' }
   sftpRemotePaths.value[tab.id] = boundKey ? terminalStore.getSessionCwd(boundKey) : ''
+  // 迟到 cwd 兜底：初始 cwd 为空（终端尚无 OSC 7 上报，如刚换主机的会话）时，
+  // 挂一次性 watcher 等 sessionCwd 到位——注入的 PROMPT_COMMAND 会在首个提示符前上报；
+  // 5s 未到位即放弃，保持 DualPane 内部 '/' 兜底。
+  if (boundKey && !sftpRemotePaths.value[tab.id]) {
+    const stop = watch(
+      () => terminalStore.getSessionCwd(boundKey),
+      (cwd) => {
+        if (cwd) {
+          sftpRemotePaths.value[tab.id] = cwd
+          stop()
+        }
+      },
+    )
+    setTimeout(() => stop(), 5000)
+  }
   tabs.value.push(tab)
   activeId.value = tab.id
 }

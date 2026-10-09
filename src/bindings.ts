@@ -83,12 +83,18 @@ export const commands = {
 	/**
 	 *  自研调用 Windows 原生文件对话框（IFileOpenDialog，即资源管理器选择器）：
 	 *  send=选单个文件 / recv=选目录；用户取消返回 None。
+	 *  可选 title（对话框标题）与 filter_name/filter_exts（文件扩展名过滤，如 json）。
 	 * 
-	 *  不走任何第三方插件（替代 rz/sz 前端 @tauri-apps/plugin-dialog）：
+	 *  不走任何第三方插件（替代 tauri-plugin-dialog）：
 	 *  对话框经 run_on_main_thread 在主线程（有消息泵）模态展示，
 	 *  父窗口为主窗口，保证置顶与输入焦点正确。
 	 */
-	localPickDialog: (mode: string) => __TAURI_INVOKE<string | null>("local_pick_dialog", { mode }),
+	localPickDialog: (mode: string, title: string | null, filterName: string | null, filterExts: string[] | null) => __TAURI_INVOKE<string | null>("local_pick_dialog", { mode, title, filterName, filterExts }),
+	/**
+	 *  自研调用 Windows 原生保存对话框（IFileSaveDialog，带覆盖确认）：
+	 *  default_path 为默认文件名；用户取消返回 None。参数语义同 local_pick_dialog。
+	 */
+	localSaveDialog: (defaultPath: string, title: string | null, filterName: string | null, filterExts: string[] | null) => __TAURI_INVOKE<string | null>("local_save_dialog", { defaultPath, title, filterName, filterExts }),
 	/**  本地新建文件夹（fe-sftp 双栏本地侧） */
 	localMkdir: (path: string) => __TAURI_INVOKE<null>("local_mkdir", { path }),
 	/**  本地重命名 */
@@ -424,7 +430,10 @@ export const commands = {
 	 *  SFTP 收藏/隧道/认证配置/应用设置/主密码保险库；运行中的内存状态重启后重置。
 	 */
 	userDataClear: () => __TAURI_INVOKE<null>("user_data_clear"),
-	/**  设置关闭到托盘行为（运行时状态 + 托盘菜单勾选态同步） */
+	/**
+	 *  设置关闭到托盘行为（运行时状态 + 托盘图标按需显隐）；AppHandle 由 Tauri 注入，
+	 *  JS 调用形态与 bindings 均不破坏。
+	 */
 	traySetCloseToTray: (enabled: boolean) => __TAURI_INVOKE<null>("tray_set_close_to_tray", { enabled }),
 	/**  读取配色方案文件（JSON 文本） */
 	schemeReadFile: (path: string) => __TAURI_INVOKE<string>("scheme_read_file", { path }),
