@@ -13,9 +13,13 @@ static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(false);
 /// 托盘菜单「托盘」勾选项引用（设置对话框修改时同步勾选态）
 static TRAY_TOGGLE_ITEM: Mutex<Option<CheckMenuItem<tauri::Wry>>> = Mutex::new(None);
 
-/// 创建托盘图标与菜单。
+/// 创建托盘图标与菜单（幂等：已存在则直接返回，避免重复建）。未开启「关闭到托盘」时
+/// 由 `remove` 移除，图标随开关按需显隐。
 /// 图标取应用默认窗口图标（`app.default_window_icon()`），缺省时优雅降级（托盘仍可用但无图标）。
-pub fn init(app: &AppHandle) -> tauri::Result<()> {
+pub fn ensure(app: &AppHandle) -> tauri::Result<()> {
+    if app.tray_by_id("fyshell-tray").is_some() {
+        return Ok(());
+    }
     // 菜单项：显示主窗口 / 设置 / 托盘（勾选=关闭时隐藏到托盘）/ 退出
     let show_item = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
     let settings_item = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
@@ -45,9 +49,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 }
             }
             "tray-toggle" => {
-                // 托盘勾选：切换关闭到托盘行为，并通知前端同步设置 store（持久化）
+                // 托盘勾选：切换关闭到托盘行为（含图标按需显隐），并通知前端同步设置 store（持久化）
                 let enabled = !CLOSE_TO_TRAY.load(Ordering::Relaxed);
-                set_close_to_tray(enabled);
+                apply_close_to_tray(app, enabled);
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.emit("tray-close-to-tray-changed", enabled);
                 }
@@ -81,6 +85,25 @@ pub fn set_close_to_tray(enabled: bool) {
     CLOSE_TO_TRAY.store(enabled, Ordering::Relaxed);
     if let Some(item) = TRAY_TOGGLE_ITEM.lock().expect("tray toggle 锁中毒").as_ref() {
         let _ = item.set_checked(enabled);
+    }
+}
+
+/// 移除托盘图标与菜单。关闭到托盘未开启时调用：丢弃菜单引用（随托盘销毁），
+/// 状态位保持（保证下次 `ensure` 重建时勾选态正确）。
+pub fn remove(app: &AppHandle) {
+    *TRAY_TOGGLE_ITEM.lock().expect("tray toggle 锁中毒") = None;
+    let _ = app.remove_tray_by_id("fyshell-tray");
+}
+
+/// 应用「关闭到托盘」开关：设运行时状态 + 按需创建/移除托盘图标。
+/// 关闭时先 `show_main_window`——否则若主窗口正隐藏在托盘里、此处移除托盘会使应用不可达。
+pub fn apply_close_to_tray(app: &AppHandle, enabled: bool) {
+    set_close_to_tray(enabled);
+    if enabled {
+        let _ = ensure(app);
+    } else {
+        show_main_window(app);
+        remove(app);
     }
 }
 

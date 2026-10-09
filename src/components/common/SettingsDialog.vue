@@ -100,6 +100,16 @@
               hide-details
               @update:model-value="(v: unknown) => settings.setTrayCloseToTray(!!v)"
             />
+            <!-- 实例：允许多个实例并行（默认单实例，第二实例唤起首个窗口），重启后生效 -->
+            <div class="key-mouse__group-title">其他</div>
+            <v-checkbox
+              :model-value="settings.allowMultipleInstances"
+              label="允许多个客户端实例（重启后生效）"
+              color="primary"
+              density="compact"
+              hide-details
+              @update:model-value="(v: unknown) => settings.setAllowMultipleInstances(!!v)"
+            />
           </template>
 
           <!-- 终端 -->

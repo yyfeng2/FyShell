@@ -28,6 +28,7 @@ export const SETTING_KEYS = {
   toolbarMode: 'toolbar_mode',
   toolbarVisible: 'toolbar_visible',
   trayCloseToTray: 'tray_close_to_tray',
+  allowMultipleInstances: 'allow_multiple_instances',
   terminalFontSize: 'terminal_font_size',
   terminalFontFamily: 'terminal_font_family',
   terminalFontStyle: 'terminal_font_style',
@@ -96,6 +97,8 @@ const DEFAULTS = {
   toolbar_visible: true,
   /** 默认关闭窗口即退出（用户指定：默认退出不到任务栏） */
   tray_close_to_tray: false,
+  /** 默认单实例（用户指定：默认不可多开；开启需重启生效） */
+  allow_multiple_instances: false,
   /** 默认不自动检测更新（用户指定：默认不自动更新，仅菜单栏「检测更新」手动触发） */
   auto_update_check: false,
   terminal_font_size: 14,
@@ -136,6 +139,8 @@ export const useSettingsStore = defineStore('settings', () => {
   const toolbarVisible = ref(DEFAULTS.toolbar_visible)
   /** 托盘关闭行为（勾选=关闭窗口隐藏到托盘，默认关闭即退出） */
   const trayCloseToTray = ref(DEFAULTS.tray_close_to_tray)
+  /** 允许多个客户端实例（默认单实例；重启后生效） */
+  const allowMultipleInstances = ref(DEFAULTS.allow_multiple_instances)
   /** 启动时自动检测更新（默认关闭：仅菜单栏「检测更新」手动触发） */
   const autoUpdateCheck = ref(DEFAULTS.auto_update_check)
   /** 布局缩放百分比（100 = 默认大小，等比缩放全部界面） */
@@ -224,6 +229,10 @@ export const useSettingsStore = defineStore('settings', () => {
         const trayCloseSaved = map[SETTING_KEYS.trayCloseToTray]
         if (trayCloseSaved !== undefined) {
           trayCloseToTray.value = trayCloseSaved === 'true'
+        }
+        const multiInstanceSaved = map[SETTING_KEYS.allowMultipleInstances]
+        if (multiInstanceSaved !== undefined) {
+          allowMultipleInstances.value = multiInstanceSaved === 'true'
         }
         const autoUpdateSaved = map[SETTING_KEYS.autoUpdateCheck]
         if (autoUpdateSaved !== undefined) {
@@ -362,6 +371,12 @@ export const useSettingsStore = defineStore('settings', () => {
     void traySetCloseToTray(enabled).catch(() => {
       /* 运行时同步失败不影响 UI */
     })
+  }
+
+  /** 允许多个客户端实例：仅持久化（Rust 侧启动时读该开关决定互斥），重启后生效 */
+  function setAllowMultipleInstances(enabled: boolean): void {
+    allowMultipleInstances.value = enabled
+    persist(SETTING_KEYS.allowMultipleInstances, enabled ? 'true' : 'false')
   }
 
   /** 启动时自动检测更新开关，立即生效并持久化 */
@@ -532,6 +547,7 @@ export const useSettingsStore = defineStore('settings', () => {
     toolbarMode,
     toolbarVisible,
     trayCloseToTray,
+    allowMultipleInstances,
     autoUpdateCheck,
     terminalFontSize,
     terminalFontFamily,
@@ -569,6 +585,7 @@ export const useSettingsStore = defineStore('settings', () => {
     setToolbarMode,
     setToolbarVisible,
     setTrayCloseToTray,
+    setAllowMultipleInstances,
     setAutoUpdateCheck,
     setUiFontSize,
     setTerminalFontSize,
