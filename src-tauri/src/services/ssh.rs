@@ -849,30 +849,38 @@ async fn run_login_script(
     ssh_trace!("[ssh] {key} login script done ({total} lines)");
 }
 
-/// OSC 7 目录跟踪注入任务：shell 就绪后发送两行令远端上报 cwd 的命令——
-/// ① 一次性上报当前路径（立即让快捷 SFTP 拿到初始目录）；
-/// ② 安装 `PROMPT_COMMAND` 使此后每个提示符前自动上报（目录跟踪持续生效）。
+/// OSC 7 目录跟踪注入：shell 就绪后发送**三条**命令（PTY 输入回显边收边显、
+/// bash 按行执行，`stty -echo` 与注入若同一行则藏不住该行自身——故分三行）：
+/// ① `HIDE`：关闭输入回显，并用 `printf "\033[2K\r"`（清当前行+回行首）清掉
+///    自己的回显文本（闪过即净）；② `INJECT`：一次性上报当前路径（立即让快捷
+///    SFTP 拿到初始目录）+ 安装 `PROMPT_COMMAND` 使此后每个提示符前自动上报
+///    （目录跟踪持续生效）——此时 echo 已关，完全不可见；③ `RESTORE`：恢复回显
+///    （echo 关闭态输入仍不可见）。整体对用户无痕，终端直接回到干净提示符
+///    （用户反馈：裸跑两行长命令太难看）。远端无 `stty` 时 `2>/dev/null` 静默退化
+///    （注入照常执行，仅可见），语义不受损。
 ///
 /// ⚠️ 头号红线：字节必须**逐字发送**（`\033`/`\\`/`${PWD}` 均为可见文本），
 /// 绝不发送"已含真实 ESC(0x1b) 的渲染后命令行"——否则命令回显文本里的
-/// `]7;file://${HOSTNAME:-}${PWD}"'` 会被前端 `checkOsc7Cwd` 误判为 cwd，
-/// 产生垃圾路径污染 sessionCwd（SFTP 落到不存在目录）。字面反斜杠经
-/// bash 双引号解析后由 printf 求值输出真实 ESC 序列（`\033`→ESC、`\\`→`\`）。
-/// 末尾显式补 `\r` 提交执行（登录脚本不补，此处注入必须补，否则命令不执行）。
+/// `]7;file://...` 会被前端 `checkOsc7Cwd` 误判为 cwd，产生垃圾路径污染
+/// sessionCwd（SFTP 落到不存在目录）。字面反斜杠经 bash 双引号解析后由
+/// printf 求值输出真实 ESC 序列（`\033`→ESC、`\\`→`\`）。
+/// 每条末尾显式补 `\r` 提交执行（登录脚本不补，此处注入必须补，否则命令不执行）。
 async fn run_osc7_inject(key: String, write_tx: tokio::sync::mpsc::Sender<SshWriteMsg>) {
-    const ONE_SHOT: &str = r#"printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\""#;
-    const INSTALL: &str = r#"export PROMPT_COMMAND='printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\"'"#;
-    let lines = [ONE_SHOT, INSTALL];
+    const HIDE: &str = r#"stty -echo 2>/dev/null; printf "\033[2K\r""#;
+    const INJECT: &str = r#"printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\"; export PROMPT_COMMAND='printf "\033]7;file://${HOSTNAME:-}${PWD}\033\\"'"#;
+    const RESTORE: &str = r#"stty echo 2>/dev/null"#;
+    let lines = [HIDE, INJECT, RESTORE];
+    let delays = [600u64, 200, 150];
     for (idx, cmd) in lines.iter().enumerate() {
-        // 首条延迟 600ms 等 shell 就绪（PTY 行缓冲不会丢输入）；两条间隔 200ms
-        tokio::time::sleep(Duration::from_millis(if idx == 0 { 600 } else { 200 })).await;
+        // 首条延迟 600ms 等 shell 就绪（PTY 行缓冲不会丢输入）；后续短间隔
+        tokio::time::sleep(Duration::from_millis(delays[idx])).await;
         let mut line = cmd.as_bytes().to_vec();
         line.push(b'\r');
         if write_tx.send(SshWriteMsg::Data(line)).await.is_err() {
             return; // 会话已关闭，注入中止
         }
     }
-    ssh_trace!("[ssh] {key} osc7 inject done");
+    ssh_trace!("[ssh] {key} osc7 inject done (silent 3-line)");
 }
 
 /// 断开并清理会话：从 ssh_sessions 移除句柄（触发连接关闭），
