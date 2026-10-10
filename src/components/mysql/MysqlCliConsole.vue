@@ -34,18 +34,25 @@
  *
  * 深色控制台：mysql> 提示符 + 上下键历史 + ASCII 表格输出（CJK 双列宽对齐）。
  * 任意语句走 mysqlCliExec（不做 COUNT 包装/分页，SHOW/DESC/EXPLAIN 均可）；
+ * 危险 SQL（DROP/TRUNCATE/ALTER、无 WHERE 的 DELETE/UPDATE）后端 reject 后
+ * ui.confirm 二次确认重发（与查询 Tab execute 同款管道）。全角分号 ； 归一化为
+ * ASCII ;（中文输入法误触防护）。
  * 内置命令 exit/quit（关闭 Tab）、clear（清屏）、help、use <库名>（走
  * store.switchDb 重建连接池，连接代际守卫，连接默认库全局生效）。
  * 与 MySQL 工作台共享连接（store.connId），关闭本 Tab 不断开连接。
  */
 import { nextTick, onMounted, ref, watch } from 'vue'
-import { useMysqlStore } from '@/stores/mysql'
+import { useMysqlStore, CONFIRM_HINT_RE } from '@/stores/mysql'
+import { useUiStore } from '@/stores/ui'
 import { mysqlCliExec } from '@/api/mysql'
+import { mysqlDbList } from '@/api/mysqlDb'
+import type { MySqlQueryResult } from '@/api/types'
 import { friendlyError } from '@/utils/errors'
 
 const emit = defineEmits<{ (e: 'exit'): void }>()
 
 const store = useMysqlStore()
+const ui = useUiStore()
 
 interface Entry {
   kind: 'input' | 'output' | 'error' | 'info'
@@ -140,6 +147,29 @@ function onKeydown(e: KeyboardEvent): void {
   }
 }
 
+/**
+ * 执行 SQL（带危险 SQL 二次确认）：首次不带 confirmed，后端 reject 的提示命中
+ * CONFIRM_HINT_RE 时弹 ui.confirm，确认后带 confirmed=true 重发；取消抛 CANCELLED。
+ */
+const CANCELLED = Symbol('cli-cancelled')
+async function execSql(connId: string, sql: string): Promise<MySqlQueryResult> {
+  try {
+    return await mysqlCliExec(connId, sql)
+  } catch (e) {
+    if (CONFIRM_HINT_RE.test(friendlyError(e))) {
+      const ok = await ui.confirm({
+        title: '危险操作确认',
+        message: `语句包含危险操作（DROP/TRUNCATE/ALTER 或无 WHERE 的 DELETE/UPDATE），确定执行吗？\n\n${sql}`,
+        confirmText: '执行',
+        danger: true,
+      })
+      if (!ok) throw CANCELLED
+      return await mysqlCliExec(connId, sql, true)
+    }
+    throw e
+  }
+}
+
 /** 执行一行：echo → 内置命令分发 → mysql_cli_exec */
 async function runLine(raw: string): Promise<void> {
   const line = raw.trim()
@@ -148,7 +178,9 @@ async function runLine(raw: string): Promise<void> {
     await scrollToBottom()
     return
   }
-  history.value.push(line)
+  // 全角分号归一化（中文输入法误触防护）；历史存归一化后语句，上翻重发即干净
+  const norm = line.replace(/；/g, ';')
+  history.value.push(norm)
   const connId = store.connId
   if (!connId) {
     push('error', '连接已断开，请重新连接后再试')
@@ -157,7 +189,7 @@ async function runLine(raw: string): Promise<void> {
   }
   running.value = true
   try {
-    const lower = line.toLowerCase()
+    const lower = norm.toLowerCase()
     if (
       lower === 'exit' || lower === 'quit' || lower === '\\q' ||
       lower === 'exit;' || lower === 'quit;' || lower === '\\q;'
@@ -176,7 +208,7 @@ async function runLine(raw: string): Promise<void> {
     }
     // use <库名> → 切库（统一走 store.switchDb：重建连接池 + 连接代际守卫；
     // 失败由外层 catch 提示；未生效（已被其它入口接管）则不更新本地显示）
-    const useMatch = line.match(/^use\s+(.+?)\s*;?$/i)
+    const useMatch = norm.match(/^use\s+(.+?)\s*;?$/i)
     if (useMatch) {
       const dbName = useMatch[1].replace(/`/g, '').trim()
       if (!dbName) {
@@ -190,7 +222,7 @@ async function runLine(raw: string): Promise<void> {
       return
     }
     const started = performance.now()
-    const result = await mysqlCliExec(connId, line)
+    const result = await execSql(connId, norm)
     const elapsed = Math.max(0, Math.round(performance.now() - started))
     if (result.columns.length > 0) {
       push('output', formatTable(result.columns, result.rows))
@@ -203,7 +235,11 @@ async function runLine(raw: string): Promise<void> {
       push('info', `Query OK, ${result.total} row(s) affected (${elapsed} ms)`)
     }
   } catch (e) {
-    push('error', friendlyError(e))
+    if (e === CANCELLED) {
+      push('info', '已取消')
+    } else {
+      push('error', friendlyError(e))
+    }
   } finally {
     running.value = false
     await scrollToBottom()
@@ -214,7 +250,8 @@ function focusInput(): void {
   inputEl.value?.focus()
 }
 
-/** 回读当前库（打开时与连接切换后各一次；失败留空即可） */
+/** 回读当前库（打开时与连接切换后各一次；失败留空即可）
+ *  走 mysql_db_list 的 current_db 字段，不经 cli_exec → 不污染查询历史 */
 async function refreshCurrentDb(): Promise<void> {
   const connId = store.connId
   if (!connId) {
@@ -222,8 +259,8 @@ async function refreshCurrentDb(): Promise<void> {
     return
   }
   try {
-    const result = await mysqlCliExec(connId, 'SELECT DATABASE()')
-    currentDb.value = result.rows[0]?.[0] ?? null
+    const list = await mysqlDbList(connId)
+    currentDb.value = list.current_db
   } catch {
     currentDb.value = null
   }

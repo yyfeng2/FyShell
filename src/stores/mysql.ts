@@ -88,6 +88,8 @@ export interface SavedMysqlConnection {
   username: string
   password: string
   schema: string | null
+  /** 显示编码（null = 默认 utf8mb4；旧存量数据缺省该字段） */
+  charset?: string | null
 }
 
 /** 生成连接配置 id（前端本地标识，仅用于保存列表） */
@@ -144,7 +146,7 @@ const WHERE_RE = /\bWHERE\b/i
 /** 后端"危险 SQL 未确认"错误的匹配：取 commands/mysql.rs reject 文案的确切特征
  *  "请确认后以 confirmed=true 重新执行"。此前宽松匹配危险/confirm 等单词，
  *  会把普通错误里恰好含表名 dangerous_data / "确认" 等文本的报错误判为需二次确认 */
-const CONFIRM_HINT_RE = /请确认后以 confirmed=true 重新执行/i
+export const CONFIRM_HINT_RE = /请确认后以 confirmed=true 重新执行/i
 
 /** 危险 SQL 判定（供组件预检复用） */
 export function isDangerousSql(sql: string): boolean {
@@ -341,6 +343,7 @@ export const useMysqlStore = defineStore('mysql', {
       if (existing) {
         existing.password = config.password
         existing.schema = config.schema
+        existing.charset = config.charset
         id = existing.id
       } else {
         id = uuid()
@@ -352,6 +355,7 @@ export const useMysqlStore = defineStore('mysql', {
           username: config.username,
           password: config.password,
           schema: config.schema,
+          charset: config.charset,
         })
       }
       this.persistSavedConnections()
@@ -401,10 +405,10 @@ export const useMysqlStore = defineStore('mysql', {
     async connectSaved(id: string): Promise<void> {
       const cfg = this.savedConnections.find((c) => c.id === id)
       if (!cfg) return
-      const { host, port, username, password, schema } = cfg
+      const { host, port, username, password, schema, charset } = cfg
       if (this.connId) await this.disconnect()
       this.activeSavedId = id
-      await this.connect({ host, port, username, password, schema })
+      await this.connect({ host, port, username, password, schema, charset: charset ?? null })
     },
 
     // ---------- 表列表 ----------

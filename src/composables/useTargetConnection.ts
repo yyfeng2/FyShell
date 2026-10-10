@@ -97,6 +97,8 @@ export function useTargetConnection() {
         username: saved.username,
         password: saved.password,
         schema: null,
+        // 继承保存连接的显示编码（旧库兼容模式对目标连接同样生效）
+        charset: saved.charset ?? null,
       })
       targetConnId.value = established
       await loadTargetDbs()

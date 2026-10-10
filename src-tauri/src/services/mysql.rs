@@ -14,6 +14,7 @@ use std::sync::{Mutex, OnceLock};
 
 use mysql_async::prelude::*;
 use mysql_async::{Conn, Pool, PoolConstraints, PoolOpts, Value};
+use encoding_rs::Encoding;
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -115,13 +116,28 @@ pub fn give_tx_conn(conn_id: &str, conn: Conn) {
 
 /// mysql_connect：OptsBuilder 建立连接池，生成 uuid connection_id 存模块级注册表。
 /// 首次取连接以尽早暴露认证/网络错误。
+///
+/// 显式 SET NAMES：握手包里协商的字符集会被开启
+/// skip-character-set-client-handshake 的服务器忽略（回退服务器默认字符集，
+/// 如 latin1），导致中文列在读取时被服务器端有损转换成 `?`。
+/// 用 setup 而非 init：setup 在新连接和每次池归还 reset 时都会执行，
+/// 保证连接字符集在整个生命周期内不回落。
+///
+/// 显示编码（charset）：None = utf8mb4；Some(E) = 旧库兼容模式——SET NAMES latin1
+/// 字节透传（服务器端不做有损转换，原始字节原样到达客户端），由 value_to_string
+/// 按 E 解码（典型场景：latin1 列存 GBK 数据的旧系统）。
 pub async fn connect(cfg: &MySqlConnection) -> Result<String, AppError> {
+    let set_names = match cfg.charset.as_deref() {
+        Some(c) if Encoding::for_label(c.as_bytes()).is_some() => "SET NAMES latin1",
+        _ => "SET NAMES utf8mb4",
+    };
     let mut builder = mysql_async::OptsBuilder::default()
         .ip_or_hostname(cfg.host.clone())
         .tcp_port(cfg.port)
         .user(Some(cfg.username.clone()))
         .pass(Some(cfg.password.clone()))
-        .db_name(cfg.schema.clone());
+        .db_name(cfg.schema.clone())
+        .setup(vec![set_names.to_string()]);
     // 桌面工具单连接低频使用，池约束收窄（min=1 保证常驻一条、max=10 封顶）
     if let Some(constraints) = PoolConstraints::new(1, 10) {
         builder = builder.pool_opts(PoolOpts::default().with_constraints(constraints));
@@ -156,6 +172,13 @@ pub fn config_of(conn_id: &str) -> Result<MySqlConnection, AppError> {
         .get(conn_id)
         .cloned()
         .ok_or_else(|| AppError::general(format!("MySQL 连接不存在: {conn_id}")))
+}
+
+/// 连接的显示编码（configs 注册表 -> encoding_rs 静态实例；None = UTF-8 解码）。
+/// 非法编码名防御性回退 None。
+fn display_encoding(conn_id: &str) -> Option<&'static Encoding> {
+    let charset = config_of(conn_id).ok()?.charset?;
+    Encoding::for_label(charset.as_bytes())
 }
 
 /// mysql_disconnect：从注册表取出并关闭（含事务连接清理）
@@ -284,8 +307,9 @@ pub async fn query(
     let offset = (page - 1) * page_size;
 
     let started = std::time::Instant::now();
+    let enc = display_encoding(conn_id);
     let (mut conn, from_tx) = take_conn(conn_id).await?;
-    let outcome = do_query(&mut conn, sql, page, page_size, offset).await;
+    let outcome = do_query(&mut conn, sql, page, page_size, offset, enc).await;
     if from_tx {
         restore_tx_conn(conn_id, conn);
     }
@@ -307,6 +331,7 @@ async fn do_query(
     page: u32,
     page_size: u32,
     offset: u32,
+    enc: Option<&'static Encoding>,
 ) -> Result<MySqlQueryResult, AppError> {
     let has_limit = contains_limit_clause(sql);
 
@@ -360,9 +385,9 @@ async fn do_query(
             let value = row.take::<Option<Value>, _>(i).flatten();
             out.push(value.and_then(|v| {
                 if bin_flags.get(i).copied().unwrap_or(false) {
-                    bin_value_to_string(v)
+                    bin_value_to_string(v, enc)
                 } else {
-                    value_to_string(v)
+                    value_to_string(v, enc)
                 }
             }));
         }
@@ -419,8 +444,9 @@ pub async fn cli_exec(conn_id: &str, sql: &str) -> Result<MySqlQueryResult, AppE
         return Err(AppError::general("SQL 语句为空"));
     }
     let started = std::time::Instant::now();
+    let enc = display_encoding(conn_id);
     let (mut conn, from_tx) = take_conn(conn_id).await?;
-    let outcome = do_cli_exec(&mut conn, sql).await;
+    let outcome = do_cli_exec(&mut conn, sql, enc).await;
     if from_tx {
         restore_tx_conn(conn_id, conn);
     }
@@ -436,7 +462,11 @@ pub async fn cli_exec(conn_id: &str, sql: &str) -> Result<MySqlQueryResult, AppE
 }
 
 /// 命令列执行主体（拆出以便错误后仍归还事务连接，与 do_execute 同型）
-async fn do_cli_exec(conn: &mut Conn, sql: &str) -> Result<MySqlQueryResult, AppError> {
+async fn do_cli_exec(
+    conn: &mut Conn,
+    sql: &str,
+    enc: Option<&'static Encoding>,
+) -> Result<MySqlQueryResult, AppError> {
     const MAX_ROWS: usize = 1000;
     let mut result = conn.query_iter(sql).await.map_err(mysql_err)?;
     let col_names: Vec<String> = result
@@ -456,9 +486,9 @@ async fn do_cli_exec(conn: &mut Conn, sql: &str) -> Result<MySqlQueryResult, App
             let value = row.take::<Option<Value>, _>(i).flatten();
             out.push(value.and_then(|v| {
                 if bin_flags.get(i).copied().unwrap_or(false) {
-                    bin_value_to_string(v)
+                    bin_value_to_string(v, enc)
                 } else {
-                    value_to_string(v)
+                    value_to_string(v, enc)
                 }
             }));
         }
@@ -572,11 +602,12 @@ fn contains_limit_clause(sql: &str) -> bool {
     find_word(&sql.to_ascii_lowercase(), "limit").is_some()
 }
 
-/// 值 -> 契约的 Option<String>：NULL -> None，其余统一转字符串
-fn value_to_string(value: Value) -> Option<String> {
+/// 值 -> 契约的 Option<String>：NULL -> None，其余统一转字符串。
+/// enc = None 按 UTF-8 lossy 解码；Some(E) 按连接显示编码解码（旧库兼容模式）
+fn value_to_string(value: Value, enc: Option<&'static Encoding>) -> Option<String> {
     match value {
         Value::NULL => None,
-        Value::Bytes(b) => Some(String::from_utf8_lossy(&b).into_owned()),
+        Value::Bytes(b) => Some(decode_bytes(&b, enc)),
         Value::Int(i) => Some(i.to_string()),
         Value::UInt(u) => Some(u.to_string()),
         Value::Float(f) => Some(f.to_string()),
@@ -595,13 +626,23 @@ fn value_to_string(value: Value) -> Option<String> {
     }
 }
 
+/// 原始字节 -> 字符串：enc = None 按 UTF-8 lossy；Some(E) 按连接显示编码
+/// （如 GBK——latin1 连接下 latin1 列的原始字节原样到达客户端，按 GBK 解码
+/// 即还原中文），解码不兼容的字节序列由 encoding_rs 替换为 U+FFFD
+fn decode_bytes(bytes: &[u8], enc: Option<&'static Encoding>) -> String {
+    match enc {
+        Some(e) => e.decode(bytes).0.into_owned(),
+        None => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
 /// 二进制列值 -> 契约的 Option<String>：Bytes 转 `0x<HEX>`（字节无损可辨识，
 /// 替代 from_utf8_lossy 乱码）；NULL -> None；其余变体兜底走文本路径
 /// （二进制列按协议只会取到 Bytes 或 NULL，其余变体不应出现）。
-fn bin_value_to_string(value: Value) -> Option<String> {
+fn bin_value_to_string(value: Value, enc: Option<&'static Encoding>) -> Option<String> {
     match value {
         Value::Bytes(b) => Some(format!("0x{}", hex_encode(&b))),
-        other => value_to_string(other),
+        other => value_to_string(other, enc),
     }
 }
 

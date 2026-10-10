@@ -675,6 +675,7 @@ async function runTest(): Promise<void> {
         username: cfg.username,
         password: password.value,
         schema: null,
+        charset: null,
       })
       await mysqlDisconnect(connId)
       setTestResult({ ok: true, message: '连接成功' })

@@ -68,6 +68,21 @@
                 />
               </div>
             </v-col>
+            <v-col cols="12">
+              <div class="fy-field-row">
+                <span class="fy-field-row__label">显示编码（可选）</span>
+                <v-select
+                  v-model="charset"
+                  density="compact"
+                  clearable
+                  :items="[
+                    { title: 'GBK（旧库乱码时选）', value: 'gbk' },
+                    { title: 'Latin1', value: 'latin1' },
+                  ]"
+                  placeholder="默认（utf8mb4）"
+                />
+              </div>
+            </v-col>
           </v-row>
         </v-form>
 
@@ -114,6 +129,8 @@ const port = ref(3306)
 const username = ref('root')
 const password = ref('')
 const schema = ref<string | null>(null)
+// None = 默认 utf8mb4；"gbk"/"latin1" = 旧库兼容模式（SET NAMES latin1 字节透传 + 按所选编码解码）
+const charset = ref<string | null>(null)
 
 const showPassword = ref(false)
 const connecting = ref(false)
@@ -132,6 +149,7 @@ async function submit(): Promise<void> {
       username: username.value.trim(),
       password: password.value,
       schema: schema.value?.trim() || null,
+      charset: charset.value || null,
     })
     emit('connected', store.connLabel)
     emit('update:modelValue', false)

@@ -1156,6 +1156,8 @@ async function connectMysqlSession(target: SessionNode): Promise<void> {
     username: cfg.username ?? '',
     password: auth && (auth.type === 'password' || auth.type === 'interactive') ? (auth.password ?? '') : '',
     schema: null as string | null,
+    // 会话扩展配置无编码选项，恒默认 utf8mb4
+    charset: null,
   }
   // 已连接/正在连接同一配置时直接复用（单击导航语义，双击/重复点击不反复重连）
   const last = mysqlStore.lastConfig

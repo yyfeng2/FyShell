@@ -42,6 +42,8 @@ export const commands = {
 	 *  不注入任何命令 → 终端物理上不可能闪现注入内容（带内 OSC7 注入已废除）。
 	 */
 	sshQueryCwd: (id: string) => __TAURI_INVOKE<string>("ssh_query_cwd", { id }),
+	/**  控制通道查询会话当前用户 HOME（SFTP 快捷双栏 `~` 路径展开，同 query_cwd 零注入）。 */
+	sshQueryHome: (id: string) => __TAURI_INVOKE<string>("ssh_query_home", { id }),
 	/**
 	 *  HostKey 首次确认：前端确认后取出 AppState::pending_hostkey 中的
 	 *  oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
@@ -176,12 +178,14 @@ export const commands = {
 	 */
 	mysqlExecute: (connId: string, sql: string, confirmed: boolean | null) => __TAURI_INVOKE<number>("mysql_execute", { connId, sql, confirmed }),
 	/**
-	 *  `mysql_cli_exec` (conn_id: String, sql: String) -> MySqlQueryResult
+	 *  `mysql_cli_exec` (conn_id: String, sql: String [, confirmed: bool]) -> MySqlQueryResult
 	 * 
 	 *  命令列界面专用：任意语句直接执行（不做 COUNT 包装与分页），
 	 *  行语句返回全部列与行（最多 1000 行），非行语句 total 为受影响行数。
+	 *  危险 SQL 与 `mysql_execute` 同款二次确认：未 confirmed 时命中
+	 *  is_dangerous_sql 返回带提示的错误，前端确认后带 confirmed=true 重发。
 	 */
-	mysqlCliExec: (connId: string, sql: string) => __TAURI_INVOKE<MySqlQueryResult>("mysql_cli_exec", { connId, sql }),
+	mysqlCliExec: (connId: string, sql: string, confirmed: boolean | null) => __TAURI_INVOKE<MySqlQueryResult>("mysql_cli_exec", { connId, sql, confirmed }),
 	/**  `mysql_begin` (conn_id: String) -> 开启事务 */
 	mysqlBegin: (connId: string) => __TAURI_INVOKE<null>("mysql_begin", { connId }),
 	/**  `mysql_commit` (conn_id: String) -> 提交事务 */
@@ -633,6 +637,11 @@ export type MySqlConnection = {
 	password: string,
 	/**  默认数据库（None = 连接时不指定，需在 SQL 中用全限定表名） */
 	schema: string | null,
+	/**
+	 *  显示编码（None = 默认 utf8mb4；"gbk"/"latin1" = 旧库兼容模式：
+	 *  连接 SET NAMES latin1 字节透传，客户端按所选编码解码原始字节）
+	 */
+	charset: string | null,
 };
 
 /**

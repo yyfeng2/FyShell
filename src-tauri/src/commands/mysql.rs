@@ -66,16 +66,24 @@ pub async fn mysql_execute(
     services::mysql::execute(&conn_id, &sql).await
 }
 
-/// `mysql_cli_exec` (conn_id: String, sql: String) -> MySqlQueryResult
+/// `mysql_cli_exec` (conn_id: String, sql: String [, confirmed: bool]) -> MySqlQueryResult
 ///
 /// 命令列界面专用：任意语句直接执行（不做 COUNT 包装与分页），
 /// 行语句返回全部列与行（最多 1000 行），非行语句 total 为受影响行数。
+/// 危险 SQL 与 `mysql_execute` 同款二次确认：未 confirmed 时命中
+/// is_dangerous_sql 返回带提示的错误，前端确认后带 confirmed=true 重发。
 #[tauri::command]
 #[specta::specta]
 pub async fn mysql_cli_exec(
     conn_id: String,
     sql: String,
+    confirmed: Option<bool>,
 ) -> Result<MySqlQueryResult, AppError> {
+    if services::mysql::is_dangerous_sql(&sql) && confirmed != Some(true) {
+        return Err(AppError::general(
+            "危险 SQL（DROP/TRUNCATE/ALTER 或无 WHERE 的 DELETE/UPDATE），请确认后以 confirmed=true 重新执行",
+        ));
+    }
     services::mysql::cli_exec(&conn_id, &sql).await
 }
 

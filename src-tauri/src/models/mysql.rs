@@ -13,6 +13,9 @@ pub struct MySqlConnection {
     pub password: String,
     /// 默认数据库（None = 连接时不指定，需在 SQL 中用全限定表名）
     pub schema: Option<String>,
+    /// 显示编码（None = 默认 utf8mb4；"gbk"/"latin1" = 旧库兼容模式：
+    /// 连接 SET NAMES latin1 字节透传，客户端按所选编码解码原始字节）
+    pub charset: Option<String>,
 }
 
 /// 表信息（表列表命令返回）
