@@ -2090,7 +2090,7 @@ dependencies = [
 
 [[package]]
 name = "fyshell"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "chacha20poly1305",
  "chrono",
