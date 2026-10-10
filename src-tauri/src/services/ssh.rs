@@ -110,24 +110,24 @@ impl SshSessionHandle {
             .map_err(|e| AppError::Ssh(format!("初始化 SFTP 会话失败: {e}")))
     }
 
-    /// 控制通道查询远端 cwd（SFTP 快捷双栏远程栏初始路径）。
+    /// 控制通道执行一条命令并收集输出（SFTP 快捷双栏路径解析用，零注入）。
     /// 重设计（v0.2.3 定稿版）：不再向终端注入 OSC 7 命令——带内注入必然经过
     /// 「PTY 回显 → bash 逐行执行 → 事后清除」一个来回，HIDE 回显行要等执行完
     /// 才被清掉，肉眼可见闪现（用户实测否决）。改为在本 SSH 连接上另开独立
-    /// channel 执行 `pwd`：控制通道不分配 PTY、终端通道零字节写入，物理上
-    /// 不可能污染/闪现屏幕；且任意远端 shell（bash/zsh/sh/fish 均有 pwd）通用。
-    /// 返回远端路径文本（已去空白）；失败（远端无 pwd/会话断开）→ Err，
+    /// channel 执行单条查询命令：控制通道不分配 PTY、终端通道零字节写入，物理上
+    /// 不可能污染/闪现屏幕；且任意远端 shell（bash/zsh/sh/fish）通用。
+    /// 返回命令输出文本（已去首尾空白）；失败（远端无此命令/会话断开）→ Err，
     /// 前端回退 DualPane 内部默认路径。
-    pub async fn query_cwd(&self) -> Result<String, AppError> {
+    async fn exec_capture(&self, cmd: &str) -> Result<String, AppError> {
         let channel = self
             .handle
             .channel_open_session()
             .await
-            .map_err(|e| AppError::Ssh(format!("打开 cwd 查询通道失败: {e}")))?;
+            .map_err(|e| AppError::Ssh(format!("打开查询通道失败: {e}")))?;
         channel
-            .exec(true, "pwd")
+            .exec(true, cmd)
             .await
-            .map_err(|e| AppError::Ssh(format!("执行 cwd 查询命令失败: {e}")))?;
+            .map_err(|e| AppError::Ssh(format!("执行查询命令失败: {e}")))?;
         let (mut read_half, _write_half) = channel.split();
         let mut buf: Vec<u8> = Vec::with_capacity(64);
         loop {
@@ -139,6 +139,20 @@ impl SshSessionHandle {
             }
         }
         Ok(String::from_utf8_lossy(&buf).trim().to_string())
+    }
+
+    /// 控制通道查询远端 cwd（SFTP 快捷双栏远程栏初始路径）。
+    /// 新起的非交互 shell 执行 `pwd` → 登录目录；拿不到交互 shell 里 cd 之后的位置
+    /// （架构红线），故仅作提示符/OSC7 跟随失败后的兜底。
+    pub async fn query_cwd(&self) -> Result<String, AppError> {
+        self.exec_capture("pwd").await
+    }
+
+    /// 控制通道查询远端当前用户 HOME（供 `~` 路径展开，零注入同 query_cwd）。
+    /// 新起的 shell 的 HOME 与交互 shell 一致（登录固定，不随 cd 改变），可安全用于
+    /// 还原提示符中的 `~`/`~/xxx`（bash `\w` 在 home 下的显示形态）。
+    pub async fn query_home(&self) -> Result<String, AppError> {
+        self.exec_capture("printf %s \"$HOME\"").await
     }
 
     /// 开通 direct-tcpip 通道（P1：供 SSH 隧道本地/SOCKS5 转发使用）。
@@ -935,4 +949,17 @@ pub async fn query_cwd(state: &AppState, id: &str) -> Result<String, AppError> {
             .clone()
     };
     handle.query_cwd().await
+}
+
+/// 控制通道查询会话当前用户 HOME（SFTP 快捷双栏 `~` 路径展开用）。
+/// 按会话路由键查询（与 query_cwd 同键）；失败回退前端下一级路径。
+pub async fn query_home(state: &AppState, id: &str) -> Result<String, AppError> {
+    let handle = {
+        let sessions = state.ssh_sessions.lock().map_err(lock_err)?;
+        sessions
+            .get(id)
+            .ok_or_else(|| AppError::Ssh(format!("会话 {id} 不存在或已断开")))?
+            .clone()
+    };
+    handle.query_home().await
 }

@@ -65,6 +65,13 @@ pub async fn ssh_query_cwd(id: String, state: State<'_, AppState>) -> Result<Str
     ssh::query_cwd(state.inner(), &id).await
 }
 
+/// 控制通道查询会话当前用户 HOME（SFTP 快捷双栏 `~` 路径展开，同 query_cwd 零注入）。
+#[tauri::command]
+#[specta::specta]
+pub async fn ssh_query_home(id: String, state: State<'_, AppState>) -> Result<String, AppError> {
+    ssh::query_home(state.inner(), &id).await
+}
+
 /// HostKey 首次确认：前端确认后取出 AppState::pending_hostkey 中的
 /// oneshot::Sender 并 send(bool)，挂起中的连接验证随之继续或中止。
 #[tauri::command]

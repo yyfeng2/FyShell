@@ -55,6 +55,7 @@ import { mysqlDbList, mysqlDbDrop } from '@/api/mysqlDb'
 import { mysqlListTables, mysqlQuery } from '@/api/mysql'
 import { sessionList, sessionClone, sessionReorder, type NodeReorderItem } from '@/api/session'
 import { transferList } from '@/api/sftp'
+import { sshQueryHome } from '@/api/ssh'
 import { useUiStore } from '@/stores/ui'
 import { useSettingsStore, type FontFamilyStyle } from '@/stores/settings'
 import { useSessionStore, type SessionConfig } from '@/stores/session'
@@ -2132,7 +2133,8 @@ function paneForSessionKey(key: string): InstanceType<typeof TerminalPane> | nul
 /**
  * 解析绑定终端会话的初始远程路径（三级回退，全部零注入、零闪现）：
  *   ① store 里 OSC 7 实时 cwd（shell 自上报主机，如 iask.in，已实时跟随 cd）
- *   ② 终端缓冲末条提示符解析的绝对路径（bash 提示符含当前目录 → 跟随 cd，如 root@host:/tmp# → /tmp）
+ *   ② 终端缓冲当前提示符解析的路径（bash 提示符含当前目录 → 跟随 cd，如 root@host:/tmp# → /tmp；
+ *      `~/xxx` 形态经控制通道取 `$HOME` 展开 → /home/xxx）
  *   ③ 控制通道 `ssh_query_cwd` 独立 channel 执行 `pwd`（只能拿到登录目录，如 /root）
  * 全部失败返回空串，DualPane 按内部默认（/）兜底。
  */
@@ -2140,7 +2142,20 @@ async function resolveBoundCwd(boundKey: string): Promise<string> {
   const fromStore = terminalStore.getSessionCwd(boundKey)
   if (fromStore) return fromStore
   const fromPrompt = paneForSessionKey(boundKey)?.readPromptCwd() ?? ''
-  if (fromPrompt) return fromPrompt
+  if (fromPrompt === '~' || fromPrompt.startsWith('~/')) {
+    // bash `\w` 在 home 下显示 ~ → 控制通道取当前用户 HOME 展开；取不到回退下一级
+    let home = ''
+    try {
+      home = (await sshQueryHome(boundKey)) ?? ''
+    } catch {
+      home = '' // HOME 查询失败按无展开回退
+    }
+    if (home) return fromPrompt === '~' ? home : home + fromPrompt.slice(1)
+  } else if (fromPrompt && !fromPrompt.startsWith('~')) {
+    // 绝对路径直接使用
+    return fromPrompt
+  }
+  // 无提示符 / ~user 无法展开 / HOME 查询失败 → 控制通道 pwd 兜底（登录目录）
   return (await terminalStore.refreshSessionCwd(boundKey)) ?? ''
 }
 

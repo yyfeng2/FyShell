@@ -12,8 +12,12 @@ use crate::models::transfer::FileEntry;
 use crate::services::ssh::SshSessionHandle;
 use crate::state::AppState;
 
-/// 每批读写字节数（架构红线：Rust 侧 4KB 批量读取）
-const CHUNK_SIZE: usize = 4096;
+/// 每批读写字节数。256KB 大块：下载侧 russh-sftp 的 AsyncRead 单请求串行
+/// （一个 read 一个 RTT），4KB 块在高 RTT 下吞吐 ≈ 4KB/RTT 极慢；上传侧虽有
+/// 8 路写流水窗口也是 4KB×8 受限。增大后 russh-sftp 内部按服务器
+/// `max_packet_len` 自动 clamp 单请求大小，无溢出风险；同时把进度回调频率
+/// 降到 ~256KB 一次，减轻 update_task 锁竞争。
+const CHUNK_SIZE: usize = 256 * 1024;
 
 /// 取消标记信息（队列侧以 cancelled_transfers 命中与否判定 Cancelled，此文案仅供展示）
 const CANCELLED_MSG: &str = "传输已取消";

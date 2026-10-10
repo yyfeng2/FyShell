@@ -98,15 +98,18 @@ const FONT_WEIGHT_MAP = {
 } as const
 
 /**
- * 提示符中的绝对路径匹配（readPromptCwd 用）。
- * 锚定行尾的提示符标记（#/$/%/> 允许尾随空白），取紧邻标记前、以 / 开头的段：
+ * 提示符中的路径匹配（readPromptCwd 用）。
+ * 锚定行尾的提示符标记（#/$/%/> 允许尾随空白），取紧邻标记前、以 `/` 或 `~` 开头的段：
  *   `root@host:/tmp#`     → 捕获 /tmp
  *   `[root@host /opt]$`   → 捕获 /opt
  *   `(venv)user@host:/srv/app$` → 捕获 /srv/app
- * 排除：`~`（相对 $HOME，非绝对）、含空白的段、以及标记前是文件名输出等非路径形态。
+ *   `user@host:/var/log$` → 捕获 /var/log
+ *   `user@host:~/proj$`、`user@host:~$` → 捕获 `~/proj`、`~`（bash `\w` 在 home 下显示 `~`，
+ *     由调用方经控制通道展开 `$HOME`；`~user` 形态不匹配，安全回退）
+ * 排除：含空白的段、以及标记前是文件名输出等非路径形态。
  */
 const PROMPT_PATH_RE =
-  /(?:^|:\s*|\[\s*|\s|\()(\/[\w.@/+:-]+?)(?:[\]\)])?[#$%>]\s*$/
+  /(?:^|:\s*|\[\s*|\s|\()((?:~(?:\/[\w.@/+:-]*)?)|\/[\w.@/+:-]*)(?:[\]\)])?[#$%>]\s*$/
 
 export function useXterm(options: UseXtermOptions = {}) {
   const containerRef: Ref<HTMLElement | null> = ref(null)
@@ -960,28 +963,32 @@ export function useXterm(options: UseXtermOptions = {}) {
   onScopeDispose(dispose)
 
   /**
-   * 从终端缓冲解析最后一条 shell 提示符中的绝对路径（SFTP 快捷双栏初始目录跟随 cd 用）。
+   * 从终端缓冲解析当前提示符中的路径（SFTP 快捷双栏初始目录跟随 cd 用）。
    * 只读 xterm 已有渲染内容、零注入——不发送任何字节到远端。
-   * 常见提示符形态：`root@host:/tmp#`、`[root@host /opt/proj]$`、`user@host:~/x$`（~ 非绝对路径 → 返回 null，回退登录目录）。
-   * 找不到（提示符不含绝对路径 / 纯符号提示符 / 无匹配）返回 null，由调用方回退控制通道 `pwd`。
+   * 返回约定：绝对路径原样返回；`~`/`~/xxx` 原样返回（调用方展开 `$HOME`）。
+   * 找不到（当前提示符不含路径 / 纯符号提示符 / 无匹配）返回 null，由调用方回退控制通道 `pwd`。
+   *
+   * 扫描策略：shell 空闲时缓冲最后一行即当前提示符。从末尾向上只跳过尾部的
+   * 空行与折行续行（多回车 / 长输出尾部），取第一个「非空且非 wrapped」的行作为
+   * 当前提示符候选；仅当它命中正则才返回——不命中立即返回 null，绝不继续向上扫历史行。
+   * 修复：旧的"向上扫 200 行取第一条匹配"会在用户曾 cd 到 /tmp、随后回到 home
+   * （提示符变 `~/xxx` 不命中）时误命中缓存里陈旧的历史 /tmp 提示符，导致快捷
+   * 双栏远程栏错误落在 /tmp。
    */
   function readPromptCwd(): string | null {
     if (!term) return null
     const buf = term.buffer.active
-    // 从缓冲末尾向上扫描：shell 等待输入时当前提示符即最后一行；长命令输出走上方，
-    // 逐行向上取首个匹配即接近光标，误中历史输出的概率被多重排除（见下）
-    const scanFrom = Math.max(0, buf.length - 200)
-    for (let i = buf.length - 1; i >= scanFrom; i--) {
+    for (let i = buf.length - 1; i >= 0; i--) {
       const line = buf.getLine(i)
-      // 折行续行是上一行的物理碎片，单独匹配会截断路径，跳过
-      if (!line || line.isWrapped) continue
+      if (!line) continue
       const text = line.translateToString(true).trim()
-      if (!text) continue
+      if (!text) continue // 尾随空行：跳过
+      if (line.isWrapped) continue // 长输出尾部折行：跳过，继续向上找提示符
       const m = text.match(PROMPT_PATH_RE)
-      if (!m) continue
+      if (!m) return null // 首个非空提示符候选不命中 → 无当前提示符可依，回退下一步
       const p = m[1]
-      if (!p) continue
-      // 末端去除多级斜杠（如 /tmp/ 归一 /tmp；纯 / 保持根目录）
+      if (!p) return null
+      // 末端去除多级斜杠（如 /tmp/ 归一 /tmp）；~ 与纯 / 保持原样
       const norm = p.replace(/\/+$/, '')
       return norm === '' ? '/' : norm
     }

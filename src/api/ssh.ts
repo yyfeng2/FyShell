@@ -71,6 +71,14 @@ export function sshQueryCwd(id: string): Promise<string> {
   return invoke<string>('ssh_query_cwd', { id });
 }
 
+/**
+ * 控制通道查询会话当前用户 HOME（SFTP 快捷双栏 `~` 路径展开用）。
+ * 同步零注入：后端另开独立 channel 执行 `printf %s "$HOME"`，终端通道零字节写入。
+ */
+export function sshQueryHome(id: string): Promise<string> {
+  return invoke<string>('ssh_query_home', { id });
+}
+
 /** HostKey 确认结果回传（收到 hostkey-prompt 事件后由前端调用） */
 export function sshHostkeyAccept(id: string, accept: boolean): Promise<void> {
   return invoke<void>('ssh_hostkey_accept', { id, accept });
